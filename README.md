@@ -4,4 +4,4 @@ Frustrated by syntax-heavy languages, I designed *sauravcode* for simplicity and
 Home page: https://sites.google.com/view/sauravcode
 
 Example usage:
->python parser.py a.srv
+>python saurav.py a.srv
