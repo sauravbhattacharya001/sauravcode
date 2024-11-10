@@ -74,6 +74,14 @@ def tokenize(code):
 class ASTNode:
     pass
 
+class AssignmentNode(ASTNode):
+    def __init__(self, name, expression):
+        self.name = name
+        self.expression = expression
+
+    def __repr__(self):
+        return f"AssignmentNode(name={self.name}, expression={self.expression})"
+
 class FunctionNode(ASTNode):
     def __init__(self, name, params, body):
         self.name = name
@@ -143,20 +151,29 @@ class Parser:
         token_type, value, *_ = self.peek()
         print(f"Parsing statement: token_type={token_type}, value={repr(value)}")  # Debug statement
 
-        if token_type == 'KEYWORD' and value == 'function':
+        if token_type == 'COMMENT':
+            # Skip comment lines
+            self.advance()
+            return None
+        elif token_type == 'KEYWORD' and value == 'function':
             return self.parse_function()
         elif token_type == 'KEYWORD' and value == 'return':
             self.expect('KEYWORD', 'return')
             expression = self.parse_expression()
             return ReturnNode(expression)
         elif token_type == 'IDENT':
-            func_name = self.expect('IDENT')[1]
-            return self.parse_function_call(func_name)
+            name = self.expect('IDENT')[1]
+            if self.peek()[0] == 'ASSIGN':
+                self.expect('ASSIGN')
+                expression = self.parse_expression()
+                print(f"Parsed assignment: {name} = {expression}")  # Debug statement
+                return AssignmentNode(name, expression)
+            else:
+                return self.parse_function_call(name)
         elif token_type == 'NEWLINE':
             self.advance()  # Skip extraneous newlines
             return None
         elif token_type in {'INDENT', 'DEDENT'}:
-            # Skip unexpected INDENT and DEDENT tokens outside blocks
             print(f"Skipping unexpected {token_type} with value={value}")  # Debug statement
             self.advance()
             return None
@@ -188,7 +205,7 @@ class Parser:
             statement = self.parse_statement()
             if statement:
                 statements.append(statement)
-            if self.peek()[0] == 'NEWLINE':
+            while self.peek()[0] == 'NEWLINE':
                 self.advance()
         print(f"Parsed block: {statements}\n")  # Debug statement
         return statements
@@ -197,7 +214,19 @@ class Parser:
         print(f"Parsing function call for: {name}")  # Debug statement
         arguments = []
         while self.peek()[0] in ('NUMBER', 'IDENT'):
-            arguments.append(self.parse_expression())
+            token_type, value, *_ = self.peek()
+            if token_type == 'NUMBER':
+                self.advance()
+                number_node = NumberNode(float(value))
+                arguments.append(number_node)
+                print(f"Added NumberNode argument: {number_node}")  # Debug statement
+            elif token_type == 'IDENT':
+                self.advance()
+                ident_node = IdentifierNode(value)
+                arguments.append(ident_node)
+                print(f"Added IdentifierNode argument: {ident_node}")  # Debug statement
+            else:
+                break  # Break if it's not a number or identifier
         function_call_node = FunctionCallNode(name, arguments)
         print(f"Created {function_call_node}\n")  # Debug statement
         return function_call_node
@@ -217,11 +246,22 @@ class Parser:
         print(f"Parsing term: token_type={token_type}, value={repr(value)}")  # Debug statement
         if token_type == 'NUMBER':
             self.advance()
-            return NumberNode(float(value))
+            number_node = NumberNode(float(value))
+            print(f"parse_term returning NumberNode: {number_node}")  # Debug statement
+            return number_node
         elif token_type == 'IDENT':
             self.advance()
-            return IdentifierNode(value)
-        raise SyntaxError(f'Unexpected token: {value}')
+            if self.peek()[0] in ('NUMBER', 'IDENT'):
+                # If the next token is a number or identifier, it's a function call
+                func_call_node = self.parse_function_call(value)
+                print(f"parse_term returning FunctionCallNode: {func_call_node}")  # Debug statement
+                return func_call_node
+            else:
+                ident_node = IdentifierNode(value)
+                print(f"parse_term returning IdentifierNode: {ident_node}")  # Debug statement
+                return ident_node
+        else:
+            raise SyntaxError(f'Unexpected token: {value}')
 
     def skip_newlines(self):
         while self.peek()[0] == 'NEWLINE':
@@ -246,13 +286,15 @@ class Parser:
 # Interpreter Class
 class Interpreter:
     def __init__(self):
-        self.environment = {}
+        self.functions = {}  # Store function definitions
+        self.variables = {}  # Store variable values
 
     def interpret(self, ast):
         print("Interpreting AST...")  # Debug statement
         if isinstance(ast, FunctionNode):
+            # Store the function in the functions dictionary
             print(f"Storing function: {ast.name}\n")
-            self.environment[ast.name] = ast
+            self.functions[ast.name] = ast
         elif isinstance(ast, ReturnNode):
             result = self.evaluate(ast.expression)
             print(f"ReturnNode evaluated with result: {result}\n")
@@ -260,20 +302,26 @@ class Interpreter:
         elif isinstance(ast, FunctionCallNode):
             print(f"Interpreting function call: {ast.name}")
             return self.execute_function(ast)
+        elif isinstance(ast, AssignmentNode):
+            # Handle assignments by storing in the variables dictionary
+            value = self.evaluate(ast.expression)
+            self.variables[ast.name] = value
+            print(f"Assigned {value} to {ast.name}\n")
         else:
             print(f"Unknown AST node: {ast}\n")
             raise ValueError(f'Unknown AST node type: {ast}')
 
     def execute_function(self, call_node):
-        func = self.environment.get(call_node.name)
+        # Look up the function in the functions dictionary
+        func = self.functions.get(call_node.name)
         if not func:
             raise RuntimeError(f"Function {call_node.name} is not defined.")
         
         print(f"Executing function: {call_node.name} with arguments {call_node.arguments}")  # Debug statement
-        saved_env = self.environment.copy()
+        saved_env = self.variables.copy()  # Save the current variable environment
         for param, arg in zip(func.params, call_node.arguments):
             evaluated_arg = self.evaluate(arg)
-            self.environment[param] = evaluated_arg
+            self.variables[param] = evaluated_arg
             print(f"Set parameter '{param}' to {evaluated_arg}")  # Debug statement
 
         result = None
@@ -282,7 +330,7 @@ class Interpreter:
             if result is not None:
                 break
 
-        self.environment = saved_env
+        self.variables = saved_env  # Restore the variable environment
         print(f"Function {call_node.name} returned {result}\n")  # Debug statement
         return result
 
@@ -291,9 +339,17 @@ class Interpreter:
         if isinstance(node, NumberNode):
             return node.value
         elif isinstance(node, IdentifierNode):
-            value = self.environment.get(node.name, 0)
-            print(f"Identifier '{node.name}' has value {value}")  # Debug statement
-            return value
+            # Check if the identifier is a variable first
+            if node.name in self.variables:
+                value = self.variables[node.name]
+                print(f"Identifier '{node.name}' is a variable with value {value}")  # Debug statement
+                return value
+            # If not a variable, check if it is a function (without executing it)
+            elif node.name in self.functions:
+                print(f"Identifier '{node.name}' is a function name")  # Debug statement
+                return node.name  # Simply return the function name as a placeholder
+            else:
+                raise RuntimeError(f"Name '{node.name}' is not defined.")
         elif isinstance(node, BinaryOpNode):
             left = self.evaluate(node.left)
             right = self.evaluate(node.right)
@@ -349,7 +405,10 @@ def main():
     interpreter = Interpreter()
     result = None
     for node in ast_nodes:
-        result = interpreter.interpret(node)
+        if isinstance(node, FunctionNode):
+            interpreter.interpret(node)  # Store the function definitions
+        elif isinstance(node, FunctionCallNode):
+            result = interpreter.execute_function(node)  # Execute standalone function calls
     
     print("\nFinal result:", result)
 
