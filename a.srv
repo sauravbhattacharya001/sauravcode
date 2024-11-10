@@ -9,6 +9,11 @@ function fun f g
     res = sub g f
     return ret * res
 
+function fun2 f g
+    ret = fun f g
+    return ret
+
 #add 3 5
 #sub 4 3
 fun 4 6 
+fun2 2.3 4.6
