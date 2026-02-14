@@ -4,6 +4,8 @@
     <strong>A programming language designed for clarity. No noise, just logic.</strong>
   </p>
   <p align="center">
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/ci.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
+    <a href="https://codecov.io/gh/sauravbhattacharya001/sauravcode"><img src="https://codecov.io/gh/sauravbhattacharya001/sauravcode/branch/main/graph/badge.svg" alt="Coverage"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml/badge.svg" alt="Pages"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sauravbhattacharya001/sauravcode" alt="License"></a>
