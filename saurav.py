@@ -11,14 +11,16 @@ def debug(msg):
         print(msg)
 
 # Define token specifications with indentation tokens
+# NOTE: Order matters! Longer patterns (e.g. '==') must come before shorter
+# ones (e.g. '=') so the regex alternation matches the longest token first.
 token_specification = [
     ('COMMENT',  r'#.*'),  # Comments
     ('NUMBER',   r'\d+(\.\d*)?'),  # Integer or decimal number
     ('STRING',   r'\".*?\"'),  # String literal
+    ('EQ',       r'=='),  # Equality operator (must precede ASSIGN)
     ('ASSIGN',   r'='),  # Assignment operator
-    ('EQ',       r'=='),  # Equality operator
     ('OP',       r'[+\-*/]'),  # Arithmetic operators
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|while|try|catch|list|set|map|stack|queue)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|while|try|catch|print|list|set|map|stack|queue)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -122,12 +124,26 @@ class NumberNode(ASTNode):
     def __repr__(self):
         return f"NumberNode(value={self.value})"
 
+class StringNode(ASTNode):
+    def __init__(self, value):
+        self.value = value
+
+    def __repr__(self):
+        return f"StringNode(value={self.value!r})"
+
 class IdentifierNode(ASTNode):
     def __init__(self, name):
         self.name = name
 
     def __repr__(self):
         return f"IdentifierNode(name={self.name})"
+
+class PrintNode(ASTNode):
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __repr__(self):
+        return f"PrintNode(expression={self.expression})"
 
 class FunctionCallNode(ASTNode):
     def __init__(self, name, arguments):
@@ -169,6 +185,10 @@ class Parser:
             self.expect('KEYWORD', 'return')
             expression = self.parse_expression()
             return ReturnNode(expression)
+        elif token_type == 'KEYWORD' and value == 'print':
+            self.expect('KEYWORD', 'print')
+            expression = self.parse_expression()
+            return PrintNode(expression)
         elif token_type == 'IDENT':
             name = self.expect('IDENT')[1]
             if self.peek()[0] == 'ASSIGN':
@@ -257,6 +277,11 @@ class Parser:
             number_node = NumberNode(float(value))
             debug(f"parse_term returning NumberNode: {number_node}")
             return number_node
+        elif token_type == 'STRING':
+            self.advance()
+            string_node = StringNode(value[1:-1])  # Strip surrounding quotes
+            debug(f"parse_term returning StringNode: {string_node}")
+            return string_node
         elif token_type == 'IDENT':
             self.advance()
             if self.peek()[0] in ('NUMBER', 'IDENT'):
@@ -307,6 +332,14 @@ class Interpreter:
             result = self.evaluate(ast.expression)
             debug(f"ReturnNode evaluated with result: {result}\n")
             return result
+        elif isinstance(ast, PrintNode):
+            value = self.evaluate(ast.expression)
+            # Format numeric output: show integers without decimal point
+            if isinstance(value, float) and value == int(value):
+                print(int(value))
+            else:
+                print(value)
+            debug(f"Printed: {value}\n")
         elif isinstance(ast, FunctionCallNode):
             debug(f"Interpreting function call: {ast.name}")
             return self.execute_function(ast)
@@ -346,6 +379,8 @@ class Interpreter:
         debug(f"Evaluating node: {node}")
         if isinstance(node, NumberNode):
             return node.value
+        elif isinstance(node, StringNode):
+            return node.value
         elif isinstance(node, IdentifierNode):
             # Check if the identifier is a variable first
             if node.name in self.variables:
@@ -369,6 +404,8 @@ class Interpreter:
             elif node.operator == '*':
                 return left * right
             elif node.operator == '/':
+                if right == 0:
+                    raise RuntimeError("Division by zero")
                 return left / right
             else:
                 raise ValueError(f'Unknown operator: {node.operator}')
@@ -425,8 +462,11 @@ def main():
             interpreter.interpret(node)  # Store the function definitions
         elif isinstance(node, FunctionCallNode):
             result = interpreter.execute_function(node)  # Execute standalone function calls
+        elif isinstance(node, (PrintNode, AssignmentNode)):
+            interpreter.interpret(node)  # Execute print and assignment statements
     
-    print("\nFinal result:", result)
+    if result is not None:
+        print("\nFinal result:", result)
 
 if __name__ == '__main__':
     main()
