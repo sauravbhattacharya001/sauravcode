@@ -1,98 +1,121 @@
-# sauravcode
+<p align="center">
+  <h1 align="center">sauravcode</h1>
+  <p align="center">
+    <strong>A programming language designed for clarity. No noise, just logic.</strong>
+  </p>
+  <p align="center">
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml/badge.svg" alt="Pages"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sauravbhattacharya001/sauravcode" alt="License"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode"><img src="https://img.shields.io/github/languages/top/sauravbhattacharya001/sauravcode" alt="Language"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode"><img src="https://img.shields.io/github/repo-size/sauravbhattacharya001/sauravcode" alt="Repo Size"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/releases"><img src="https://img.shields.io/github/v/release/sauravbhattacharya001/sauravcode" alt="Release"></a>
+  </p>
+</p>
 
-Frustrated by syntax-heavy languages, I designed *sauravcode* for simplicity and clarity. It removes unnecessary punctuation and rigid conventions, focusing purely on logic. No parentheses for function calls, no commas between arguments, no semicolons, no braces — just clean, readable code.
+---
 
-**Home page:** https://sites.google.com/view/sauravcode
+**sauravcode** is a programming language that strips away the ceremony of traditional syntax. No parentheses for function calls. No commas between arguments. No semicolons. No braces. Just clean, readable code that flows like thought.
 
-## Quick Start
+It comes with both an **interpreter** for rapid prototyping and a **compiler** that produces native executables via C code generation.
 
-```
-# Interpreter
+🌐 **[Documentation Site](https://sauravbhattacharya001.github.io/sauravcode/)** · 📖 **[Language Reference](docs/LANGUAGE.md)** · 🏗️ **[Architecture Guide](docs/ARCHITECTURE.md)**
+
+---
+
+## ✨ Features
+
+- **Minimal syntax** — no parentheses, commas, semicolons, or braces
+- **Dual execution** — interpreted (`saurav.py`) or compiled to native (`sauravcc.py`)
+- **Functions & recursion** — with clean call syntax
+- **Dynamic typing** — integers, floats, booleans, strings, lists
+- **Control flow** — if/else if/else, while loops, range-based for loops
+- **Classes** — with fields, methods, and `self`
+- **Error handling** — try/catch blocks
+- **Lists** — dynamic arrays with append, len, indexing
+- **Logical operators** — `and`, `or`, `not`
+- **Compiler generates readable C** — inspect with `--emit-c`
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Python 3.6+**
+- **gcc** (for compiler — MinGW on Windows, Xcode CLI on macOS)
+
+### Run with the Interpreter
+
+```bash
 python saurav.py hello.srv
-
-# Compiler (compiles to C, then to native executable via gcc)
-python sauravcc.py hello.srv
 ```
 
-## Language Features
+### Compile to Native Executable
+
+```bash
+python sauravcc.py hello.srv     # Compile and run
+./hello                          # Run the binary directly
+```
+
+## 📝 Language at a Glance
+
+### Hello World
+
+```
+print "Hello, World!"
+```
 
 ### Functions
-No parentheses, no commas — just the function name and arguments:
-```
-function add x y
-    return x + y
 
+No parentheses, no commas — just the function name and its arguments:
+
+```
 function greet name
-    print "hello"
+    print "Hello,"
     print name
 
-add 3 5          # prints 8
-greet "world"    # prints hello, then world
+greet "world"
 ```
 
-### Variables & Assignment
+### Variables & Arithmetic
+
 ```
 x = 10
-name = "sauravcode"
-flag = true
+y = 3
+print x + y      # 13
+print x * y      # 30
+print x % y      # 1
 ```
 
-### Arithmetic
-All standard operators including modulo:
-```
-a = 10 + 3       # 13
-b = 10 - 3       # 7
-c = 10 * 3       # 30
-d = 10 / 3       # 3.333...
-e = 10 % 3       # 1
-```
+### Control Flow
 
-### Comparisons
-```
-==  !=  <  >  <=  >=
-```
-
-### Booleans & Logical Operators
-```
-x = true
-y = false
-
-if x and not y
-    print "works"
-
-if x or y
-    print "at least one"
-```
-
-### If / Else If / Else
 ```
 score = 85
 if score >= 90
     print "A"
 else if score >= 80
     print "B"
-else if score >= 70
-    print "C"
 else
-    print "below C"
+    print "below B"
 ```
 
-### While Loops
+### Loops
+
 ```
+# While
 i = 0
 while i < 5
     print i
     i = i + 1
-```
 
-### For Loops (range-based)
-```
+# For (range-based)
 for i 1 6
-    print i    # prints 1 through 5
+    print i        # prints 1 through 5
 ```
 
 ### Recursion
-Use parentheses to disambiguate nested expressions in arguments:
+
+Use parentheses only when you need to disambiguate nested expressions:
+
 ```
 function factorial n
     if n <= 1
@@ -102,47 +125,18 @@ function factorial n
 print factorial 10    # 3628800
 ```
 
-```
-function fib n
-    if n <= 1
-        return n
-    return fib (n - 1) + fib (n - 2)
-
-print fib 10    # 55
-```
-
-### Strings
-```
-name = "sauravcode"
-print name
-print "Hello from sauravcode!"
-```
-
 ### Lists
+
 ```
 nums = [10, 20, 30]
-print nums[0]         # 10
-print nums[2]         # 30
-print len nums        # 3
-
+print nums[0]          # 10
+print len nums         # 3
 append nums 40
-print nums[3]         # 40
-print len nums        # 4
+print nums[3]          # 40
 ```
 
-### Parenthesized Expressions
-Use parentheses for grouping and disambiguation:
-```
-result = (2 + 3) * (4 - 1)    # 15
-```
+### Classes
 
-### Negative Numbers
-```
-x = -42
-print x    # -42
-```
-
-### Classes (basic)
 ```
 class Point
     function init x y
@@ -150,7 +144,8 @@ class Point
         self.y = y
 ```
 
-### Try / Catch
+### Error Handling
+
 ```
 try
     x = risky_operation
@@ -158,15 +153,15 @@ catch err
     print "something went wrong"
 ```
 
-## Compiler
+## ⚙️ Compiler
 
-The compiler (`sauravcc.py`) compiles `.srv` files to C, then uses `gcc` to produce native executables.
+The compiler (`sauravcc.py`) translates sauravcode to C, then uses gcc to produce native executables.
 
-```
+```bash
 # Compile and run
 python sauravcc.py program.srv
 
-# Emit C code only (inspect what's generated)
+# Emit C code only (inspect the generated code)
 python sauravcc.py program.srv --emit-c
 
 # Compile to a specific output name
@@ -179,74 +174,128 @@ python sauravcc.py program.srv --keep-c
 python sauravcc.py program.srv -v
 ```
 
-### Compiler Features
-
-| Feature | Status |
-|---------|--------|
-| Functions & recursion | ✅ |
-| Variables & assignment | ✅ |
-| Arithmetic (+, -, *, /, %) | ✅ |
-| Comparisons (==, !=, <, >, <=, >=) | ✅ |
-| Booleans (true, false) | ✅ |
-| Logical operators (and, or, not) | ✅ |
-| If / else if / else | ✅ |
-| While loops | ✅ |
-| For loops (range-based) | ✅ |
-| Strings | ✅ |
-| Lists (dynamic arrays) | ✅ |
-| List operations (append, len, indexing) | ✅ |
-| Parenthesized expressions | ✅ |
-| Negative numbers | ✅ |
-| Classes (struct generation) | ✅ |
-| Try/catch (setjmp/longjmp) | ✅ |
-| Print (auto-detects type) | ✅ |
-
-### How It Works
-
-1. **Tokenize** — source → tokens (indent-based blocks)
-2. **Parse** — tokens → AST (abstract syntax tree)
-3. **Generate** — AST → C source code
-4. **Compile** — C → native executable via gcc
-
-The compiler generates clean, readable C code. Lists are implemented as dynamic arrays with bounds checking. Try/catch maps to `setjmp`/`longjmp`.
-
-## Requirements
-
-- **Interpreter:** Python 3
-- **Compiler:** Python 3 + gcc (MinGW on Windows)
-
-## Example
-
-`a.srv`:
-```
-function add x y
-    return x + y
-
-function sub x y
-    return x - y
-
-function fun f g
-    ret = add f g
-    res = sub g f
-    return ret * res
-
-fun 4 6      # (4+6) * (6-4) = 20
-fun2 2.3 4.6
-```
+### Compilation Pipeline
 
 ```
-$ python sauravcc.py a.srv
-20
-15.87
+┌──────────┐    ┌─────────┐    ┌──────────┐    ┌──────────┐    ┌────────────┐
+│ .srv     │───▶│ Tokenize │───▶│  Parse   │───▶│ Generate │───▶│   gcc      │
+│ source   │    │ (lexer)  │    │  (AST)   │    │  (C code)│    │ (native)   │
+└──────────┘    └─────────┘    └──────────┘    └──────────┘    └────────────┘
 ```
 
-## Documentation
+### Supported Features
 
-- **[Language Reference](docs/LANGUAGE.md)** — Complete specification with EBNF grammar, all types, operators, and precedence rules
-- **[Architecture Guide](docs/ARCHITECTURE.md)** — How the tokenizer, parser, interpreter, and compiler work under the hood
-- **[Examples](docs/EXAMPLES.md)** — Annotated example programs covering all features
-- **[Changelog](CHANGELOG.md)** — Version history and notable changes
+| Feature | Interpreter | Compiler |
+|---------|:-----------:|:--------:|
+| Functions & recursion | ✅ | ✅ |
+| Variables & assignment | ✅ | ✅ |
+| Arithmetic (+, -, *, /, %) | ✅ | ✅ |
+| Comparisons (==, !=, <, >, <=, >=) | ✅ | ✅ |
+| Booleans & logical ops | ✅ | ✅ |
+| If / else if / else | ✅ | ✅ |
+| While loops | ✅ | ✅ |
+| For loops (range-based) | ✅ | ✅ |
+| Strings | ✅ | ✅ |
+| Lists (dynamic arrays) | ✅ | ✅ |
+| Classes | ✅ | ✅ |
+| Try / catch | ✅ | ✅ |
+| Parenthesized expressions | ✅ | ✅ |
+| Negative numbers | ✅ | ✅ |
 
-## Philosophy
+## 🏗️ Architecture
 
-Code should read like thought. No ceremony, no noise — just logic.
+The codebase has two execution paths sharing a common tokenizer design:
+
+- **`saurav.py`** — Tree-walk interpreter. Tokenizes, parses to AST, evaluates directly.
+- **`sauravcc.py`** — Compiler. Tokenizes, parses to AST, generates C source, invokes gcc.
+
+The compiler generates clean, readable C. Lists become dynamic arrays (`SrvList`) with bounds checking. Try/catch maps to `setjmp`/`longjmp`. Classes compile to C structs with associated functions.
+
+For the full deep-dive, see the [Architecture Guide](docs/ARCHITECTURE.md).
+
+## 📂 Project Structure
+
+```
+sauravcode/
+├── saurav.py           # Interpreter
+├── sauravcc.py         # Compiler (.srv → C → native)
+├── hello.srv           # Hello World example
+├── a.srv               # Function composition example
+├── test.srv            # Basic test
+├── test_all.srv        # Comprehensive feature test
+├── docs/
+│   ├── LANGUAGE.md     # Language reference & EBNF grammar
+│   ├── ARCHITECTURE.md # Compiler/interpreter internals
+│   └── EXAMPLES.md     # Annotated examples
+├── site/
+│   └── index.html      # Documentation website
+├── .github/
+│   └── workflows/      # CI/CD (CodeQL, Pages)
+├── CHANGELOG.md        # Version history
+└── LICENSE             # MIT License
+```
+
+## 🧪 Running Tests
+
+Run the comprehensive test suite:
+
+```bash
+# Interpreter
+python saurav.py test_all.srv
+
+# Compiler
+python sauravcc.py test_all.srv
+```
+
+Both should produce identical output, covering all language features.
+
+## 🎯 Design Philosophy
+
+> Code should read like thought. No ceremony, no noise — just logic.
+
+Traditional languages carry decades of syntactic baggage. Sauravcode asks: *what if we kept only what matters?*
+
+- **Function calls without parentheses** — `add 3 5` instead of `add(3, 5)`
+- **Indentation-based blocks** — no `{}` or `end` keywords
+- **Minimal punctuation** — colons, semicolons, and most commas are gone
+- **Disambiguation when needed** — parentheses are available for complex expressions
+
+The result is code that reads almost like pseudocode but actually runs.
+
+## 📖 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Language Reference](docs/LANGUAGE.md) | Complete spec with EBNF grammar, types, operators, precedence |
+| [Architecture Guide](docs/ARCHITECTURE.md) | How the tokenizer, parser, interpreter, and compiler work |
+| [Examples](docs/EXAMPLES.md) | Annotated programs covering all features |
+| [Changelog](CHANGELOG.md) | Version history and notable changes |
+| [Website](https://sauravbhattacharya001.github.io/sauravcode/) | Interactive documentation |
+| [Home Page](https://sites.google.com/view/sauravcode) | Project home |
+
+## 🤝 Contributing
+
+Contributions are welcome! Here's how to get started:
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/my-feature`)
+3. **Make** your changes with tests
+4. **Test** with both interpreter and compiler
+5. **Submit** a pull request
+
+### Ideas for Contributions
+
+- Additional data structures (dictionaries, sets)
+- Import/module system
+- Standard library functions
+- IDE/editor syntax highlighting
+- REPL mode
+- Optimization passes in the compiler
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
+
+## 👤 Author
+
+**Saurav Bhattacharya** — [GitHub](https://github.com/sauravbhattacharya001)
