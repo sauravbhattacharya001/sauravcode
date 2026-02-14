@@ -29,6 +29,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 
 - **Minimal syntax** — no parentheses, commas, semicolons, or braces
 - **Dual execution** — interpreted (`saurav.py`) or compiled to native (`sauravcc.py`)
+- **Interactive REPL** — experiment with sauravcode in real-time
 - **Functions & recursion** — with clean call syntax
 - **Dynamic typing** — integers, floats, booleans, strings, lists
 - **Control flow** — if/else if/else, while loops, range-based for loops
@@ -45,7 +46,35 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Python 3.6+**
 - **gcc** (for compiler — MinGW on Windows, Xcode CLI on macOS)
 
-### Run with the Interpreter
+### Interactive REPL
+
+Start the REPL with no arguments for instant experimentation:
+
+```bash
+python saurav.py
+```
+
+```
+sauravcode REPL v1.0
+Type "help" for commands, "quit" to exit.
+
+>>> x = 10
+>>> print x + 5
+15
+>>> function double n
+...     return n * 2
+...
+>>> print double x
+20
+>>> vars
+  x = 10
+>>> quit
+Bye!
+```
+
+REPL commands: `help`, `vars`, `funcs`, `clear`, `history`, `load FILE`, `quit`
+
+### Run a File
 
 ```bash
 python saurav.py hello.srv
@@ -189,6 +218,7 @@ python sauravcc.py program.srv -v
 
 | Feature | Interpreter | Compiler |
 |---------|:-----------:|:--------:|
+| Interactive REPL | ✅ | — |
 | Functions & recursion | ✅ | ✅ |
 | Variables & assignment | ✅ | ✅ |
 | Arithmetic (+, -, *, /, %) | ✅ | ✅ |
@@ -219,7 +249,7 @@ For the full deep-dive, see the [Architecture Guide](docs/ARCHITECTURE.md).
 
 ```
 sauravcode/
-├── saurav.py           # Interpreter
+├── saurav.py           # Interpreter + interactive REPL
 ├── sauravcc.py         # Compiler (.srv → C → native)
 ├── hello.srv           # Hello World example
 ├── a.srv               # Function composition example
@@ -242,14 +272,15 @@ sauravcode/
 Run the comprehensive test suite:
 
 ```bash
-# Interpreter
+# Full test suite (interpreter + compiler + REPL)
+python -m pytest tests/ -v
+
+# Run .srv test files directly
 python saurav.py test_all.srv
 
 # Compiler
 python sauravcc.py test_all.srv
 ```
-
-Both should produce identical output, covering all language features.
 
 ## 🎯 Design Philosophy
 
@@ -291,7 +322,6 @@ Contributions are welcome! Here's how to get started:
 - Import/module system
 - Standard library functions
 - IDE/editor syntax highlighting
-- REPL mode
 - Optimization passes in the compiler
 
 ## 📄 License

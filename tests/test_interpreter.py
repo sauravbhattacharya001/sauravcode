@@ -28,6 +28,8 @@ from saurav import (
     UnaryOpNode,
     CompareNode,
     LogicalNode,
+    format_value,
+    _repl_execute,
     FunctionNode,
     FunctionCallNode,
     AssignmentNode,
@@ -712,3 +714,131 @@ class TestSrvFiles:
             code = f.read()
         output = run_code(code)
         assert "=== all tests passed ===" in output
+
+
+# ============================================================
+# REPL Tests
+# ============================================================
+
+class TestFormatValue:
+    def test_format_integer_float(self):
+        assert format_value(5.0) == "5"
+
+    def test_format_float(self):
+        assert format_value(3.14) == "3.14"
+
+    def test_format_string(self):
+        assert format_value("hello") == '"hello"'
+
+    def test_format_bool_true(self):
+        assert format_value(True) == "true"
+
+    def test_format_bool_false(self):
+        assert format_value(False) == "false"
+
+    def test_format_list(self):
+        assert format_value([1.0, 2.0, 3.0]) == "[1, 2, 3]"
+
+    def test_format_nested_list(self):
+        result = format_value([1.0, [2.0, 3.0]])
+        assert result == "[1, [2, 3]]"
+
+    def test_format_none(self):
+        assert format_value(None) is None
+
+    def test_format_empty_list(self):
+        assert format_value([]) == "[]"
+
+    def test_format_mixed_list(self):
+        result = format_value([1.0, "hi", True])
+        assert '"hi"' in result
+        assert "true" in result
+
+
+class TestReplExecute:
+    def test_simple_print(self):
+        interp = Interpreter()
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("print 42\n", interp)
+        assert buf.getvalue().strip() == "42"
+
+    def test_variable_persists(self):
+        interp = Interpreter()
+        _repl_execute("x = 10\n", interp)
+        assert interp.variables.get("x") == 10.0
+
+    def test_function_persists(self):
+        interp = Interpreter()
+        _repl_execute("function double x\n    return x * 2\n", interp)
+        assert "double" in interp.functions
+
+    def test_function_call_after_define(self):
+        interp = Interpreter()
+        _repl_execute("function add a b\n    return a + b\n", interp)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("print add 3 5\n", interp)
+        assert buf.getvalue().strip() == "8"
+
+    def test_if_statement(self):
+        interp = Interpreter()
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("if true\n    print 1\n", interp)
+        assert buf.getvalue().strip() == "1"
+
+    def test_while_loop(self):
+        interp = Interpreter()
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("x = 0\nwhile x < 3\n    print x\n    x = x + 1\n", interp)
+        assert buf.getvalue().strip() == "0\n1\n2"
+
+    def test_for_loop(self):
+        interp = Interpreter()
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("for i 1 4\n    print i\n", interp)
+        assert buf.getvalue().strip() == "1\n2\n3"
+
+    def test_syntax_error_does_not_crash(self):
+        """Syntax errors in REPL should raise, not crash."""
+        interp = Interpreter()
+        with pytest.raises(SyntaxError):
+            _repl_execute("if\n", interp)
+
+    def test_list_operations(self):
+        interp = Interpreter()
+        _repl_execute("nums = [10, 20, 30]\n", interp)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("print nums[1]\n", interp)
+        assert buf.getvalue().strip() == "20"
+
+    def test_multiple_sessions(self):
+        """State persists across multiple _repl_execute calls."""
+        interp = Interpreter()
+        _repl_execute("x = 5\n", interp)
+        _repl_execute("y = x + 10\n", interp)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("print y\n", interp)
+        assert buf.getvalue().strip() == "15"
+
+    def test_function_call_result_printed(self):
+        """Standalone function call results should be printed in REPL."""
+        interp = Interpreter()
+        _repl_execute("function sq x\n    return x * x\n", interp)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute("sq 7\n", interp)
+        output = buf.getvalue().strip()
+        assert output == "49"
+
+    def test_string_expression(self):
+        interp = Interpreter()
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute('print "hello world"\n', interp)
+        assert buf.getvalue().strip() == "hello world"

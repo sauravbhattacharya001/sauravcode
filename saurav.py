@@ -810,6 +810,163 @@ class Interpreter:
         else:
             raise ValueError(f'Unknown node type: {node}')
 
+# REPL (Read-Eval-Print Loop)
+def format_value(value):
+    """Format a value for REPL display."""
+    if value is None:
+        return None
+    if isinstance(value, float) and value == int(value):
+        return str(int(value))
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, list):
+        items = ", ".join(format_value(v) for v in value)
+        return f"[{items}]"
+    return str(value)
+
+
+def repl():
+    """Interactive sauravcode REPL."""
+    print("sauravcode REPL v1.0")
+    print('Type "help" for commands, "quit" to exit.\n')
+
+    interpreter = Interpreter()
+    history = []
+
+    while True:
+        try:
+            line = input(">>> ")
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye!")
+            break
+
+        stripped = line.strip()
+
+        # REPL commands
+        if stripped == "quit" or stripped == "exit":
+            print("Bye!")
+            break
+        if stripped == "help":
+            print("sauravcode REPL commands:")
+            print("  help      — show this help message")
+            print("  vars      — list all defined variables")
+            print("  funcs     — list all defined functions")
+            print("  clear     — clear all variables and functions")
+            print("  history   — show input history")
+            print("  load FILE — load and run a .srv file")
+            print("  quit/exit — exit the REPL")
+            print()
+            print("Write sauravcode directly at the prompt.")
+            print("For multi-line blocks (functions, if, while, for),")
+            print("indent with spaces and enter a blank line to execute.")
+            print()
+            continue
+        if stripped == "vars":
+            if not interpreter.variables:
+                print("(no variables defined)")
+            else:
+                for name, val in sorted(interpreter.variables.items()):
+                    print(f"  {name} = {format_value(val)}")
+            continue
+        if stripped == "funcs":
+            if not interpreter.functions:
+                print("(no functions defined)")
+            else:
+                for name, func in sorted(interpreter.functions.items()):
+                    params = " ".join(func.params) if func.params else ""
+                    print(f"  function {name} {params}".rstrip())
+            continue
+        if stripped == "clear":
+            interpreter.variables.clear()
+            interpreter.functions.clear()
+            print("Cleared all variables and functions.")
+            continue
+        if stripped == "history":
+            if not history:
+                print("(no history)")
+            else:
+                for i, entry in enumerate(history, 1):
+                    # Show multi-line entries compactly
+                    lines = entry.split('\n')
+                    print(f"  [{i}] {lines[0]}")
+                    for extra in lines[1:]:
+                        print(f"       {extra}")
+            continue
+        if stripped.startswith("load "):
+            filepath = stripped[5:].strip()
+            if not filepath.endswith('.srv'):
+                filepath += '.srv'
+            if not os.path.isfile(filepath):
+                print(f"Error: File '{filepath}' not found.")
+                continue
+            try:
+                with open(filepath, 'r') as f:
+                    code = f.read()
+                _repl_execute(code, interpreter)
+                print(f"Loaded {filepath}")
+            except Exception as e:
+                print(f"Error: {e}")
+            continue
+
+        if not stripped:
+            continue
+
+        # Multi-line block detection: if the line starts a block construct,
+        # keep reading indented lines until a blank line is entered
+        block_starters = ('function ', 'if ', 'while ', 'for ', 'class ', 'try')
+        needs_block = any(stripped.startswith(s) for s in block_starters)
+
+        code = line
+        if needs_block:
+            while True:
+                try:
+                    continuation = input("... ")
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    break
+                if continuation.strip() == "":
+                    break
+                code += "\n" + continuation
+
+        history.append(code)
+
+        # Ensure code ends with newline for tokenizer
+        if not code.endswith('\n'):
+            code += '\n'
+
+        try:
+            _repl_execute(code, interpreter)
+        except SyntaxError as e:
+            print(f"SyntaxError: {e}")
+        except RuntimeError as e:
+            print(f"RuntimeError: {e}")
+        except Exception as e:
+            print(f"Error: {e}")
+
+
+def _repl_execute(code, interpreter):
+    """Parse and execute code in the REPL context."""
+    tokens = list(tokenize(code))
+    parser = Parser(tokens)
+    ast_nodes = parser.parse()
+
+    for node in ast_nodes:
+        if isinstance(node, FunctionNode):
+            interpreter.interpret(node)
+        elif isinstance(node, FunctionCallNode):
+            result = interpreter.execute_function(node)
+            if result is not None:
+                formatted = format_value(result)
+                if formatted is not None:
+                    print(formatted)
+        elif isinstance(node, (PrintNode, AssignmentNode, IfNode, WhileNode, ForNode, AppendNode)):
+            interpreter.interpret(node)
+        else:
+            interpreter.interpret(node)
+
+
 # Main Execution Code
 def main():
     global DEBUG
@@ -820,8 +977,17 @@ def main():
         DEBUG = True
         args.remove('--debug')
 
+    # No arguments or --repl flag: start interactive REPL
+    if len(args) == 0 or (len(args) == 1 and args[0] == '--repl'):
+        repl()
+        return
+
     if len(args) != 1:
-        print("Usage: python saurav.py <filename>.srv [--debug]")
+        print("Usage: python saurav.py [<filename>.srv] [--debug] [--repl]")
+        print()
+        print("  <filename>.srv  Run a sauravcode source file")
+        print("  --repl          Start interactive REPL (default if no file given)")
+        print("  --debug         Enable debug output")
         sys.exit(1)
     
     filename = args[0]
