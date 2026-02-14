@@ -240,6 +240,13 @@ $ python sauravcc.py a.srv
 15.87
 ```
 
+## Documentation
+
+- **[Language Reference](docs/LANGUAGE.md)** — Complete specification with EBNF grammar, all types, operators, and precedence rules
+- **[Architecture Guide](docs/ARCHITECTURE.md)** — How the tokenizer, parser, interpreter, and compiler work under the hood
+- **[Examples](docs/EXAMPLES.md)** — Annotated example programs covering all features
+- **[Changelog](CHANGELOG.md)** — Version history and notable changes
+
 ## Philosophy
 
 Code should read like thought. No ceremony, no noise — just logic.
