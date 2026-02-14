@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy Docs to GitHub Pages
 
 on:
   push:
@@ -15,14 +15,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs & Material theme
+        run: pip install mkdocs-material
+
+      - name: Build docs
+        run: mkdocs build --strict
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -32,6 +40,13 @@ jobs:
         with:
           path: 'site'
 
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
