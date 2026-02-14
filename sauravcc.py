@@ -236,6 +236,20 @@ class TryCatchNode(ASTNode):
         self.catch_var = catch_var
         self.catch_body = catch_body
 
+class IndexedAssignmentNode(ASTNode):
+    """Assignment to a list element: list[index] = value"""
+    def __init__(self, name, index, value):
+        self.name = name
+        self.index = index
+        self.value = value
+
+class DotAssignmentNode(ASTNode):
+    """Assignment via dot access: obj.field = value"""
+    def __init__(self, obj, field, value):
+        self.obj = obj
+        self.field = field
+        self.value = value
+
 class AppendNode(ASTNode):
     def __init__(self, list_name, value):
         self.list_name = list_name
@@ -314,7 +328,7 @@ class Parser:
                 if self.peek()[0] == 'ASSIGN':
                     self.expect('ASSIGN')
                     val = self.parse_full_expression()
-                    return AssignmentNode(f'{name}[{self.compile_expr_inline(idx)}]', val)
+                    return IndexedAssignmentNode(name, idx, val)
                 return IndexNode(IdentifierNode(name), idx)
             else:
                 return self.parse_function_call(name)
@@ -330,14 +344,6 @@ class Parser:
             return None
         else:
             raise SyntaxError(f"Unknown statement: {token_type} {repr(value)}")
-
-    def compile_expr_inline(self, expr):
-        """Quick inline compile for index expressions."""
-        if isinstance(expr, NumberNode):
-            return str(int(expr.value))
-        elif isinstance(expr, IdentifierNode):
-            return expr.name
-        return "0"
 
     def parse_function(self):
         self.expect('KEYWORD', 'function')
@@ -466,7 +472,7 @@ class Parser:
         if isinstance(obj, DotAccessNode) and self.peek()[0] == 'ASSIGN':
             self.expect('ASSIGN')
             val = self.parse_full_expression()
-            return AssignmentNode(f'__dot__{id(obj)}', val)  # handled specially in codegen
+            return DotAssignmentNode(obj.obj, obj.field, val)
         return obj
 
     def parse_block(self):
@@ -728,7 +734,7 @@ class CCodeGenerator:
     def scan_features(self, program):
         """Pre-scan AST to detect which features are used."""
         def walk(node):
-            if isinstance(node, ListNode) or isinstance(node, AppendNode) or isinstance(node, LenNode) or isinstance(node, PopNode) or isinstance(node, IndexNode):
+            if isinstance(node, ListNode) or isinstance(node, AppendNode) or isinstance(node, LenNode) or isinstance(node, PopNode) or isinstance(node, IndexNode) or isinstance(node, IndexedAssignmentNode):
                 self.uses_lists = True
             if isinstance(node, StringNode):
                 self.uses_strings = True
@@ -764,6 +770,10 @@ class CCodeGenerator:
                 walk(node.expression)
             elif isinstance(node, AssignmentNode):
                 walk(node.expression)
+            elif isinstance(node, IndexedAssignmentNode):
+                walk(node.index); walk(node.value)
+            elif isinstance(node, DotAssignmentNode):
+                walk(node.obj); walk(node.value)
             elif isinstance(node, BinaryOpNode):
                 walk(node.left); walk(node.right)
             elif isinstance(node, UnaryOpNode):
@@ -978,13 +988,19 @@ class CCodeGenerator:
 
     def compile_statement(self, stmt, scope='main', is_top_level=False):
         """Compile a single statement to C."""
-        if isinstance(stmt, AssignmentNode):
+        if isinstance(stmt, IndexedAssignmentNode):
+            idx_c = self.compile_expression(stmt.index)
+            val_c = self.compile_expression(stmt.value)
+            self.emit(f"srv_list_set(&{stmt.name}, (int)({idx_c}), {val_c});")
+
+        elif isinstance(stmt, DotAssignmentNode):
+            obj_c = self.compile_expression(stmt.obj)
+            val_c = self.compile_expression(stmt.value)
+            self.emit(f"{obj_c}.{stmt.field} = {val_c};")
+
+        elif isinstance(stmt, AssignmentNode):
             expr_c = self.compile_expression(stmt.expression)
             name = stmt.name
-            # Handle list indexed assignment: name[idx]
-            if '[' in name:
-                self.emit(f"srv_list_set(&{name.split('[')[0]}, (int)({name.split('[')[1].rstrip(']')}), {expr_c});")
-                return
             if name not in self.declared_vars.get(scope, set()):
                 # Detect type from expression
                 if isinstance(stmt.expression, StringNode):
