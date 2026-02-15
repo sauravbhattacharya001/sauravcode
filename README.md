@@ -36,6 +36,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Classes** — with fields, methods, and `self`
 - **Error handling** — try/catch blocks
 - **Lists** — dynamic arrays with append, len, indexing
+- **Standard library** — 27 built-in functions for strings, math, and utilities
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
 
@@ -183,6 +184,42 @@ try
 catch err
     print "something went wrong"
 ```
+
+### Standard Library
+
+Sauravcode includes 27 built-in functions — no imports needed:
+
+```
+# String functions
+print upper "hello"              # HELLO
+print lower "HELLO"              # hello
+print trim "  spaces  "         # spaces
+print replace "hi world" "world" "sauravcode"
+words = split "a-b-c" "-"       # ["a", "b", "c"]
+print join ", " words            # a, b, c
+print contains "hello" "ell"    # true
+print starts_with "hello" "he"  # true
+print substring "hello" 0 3     # hel
+print char_at "hello" 0         # h
+
+# Math functions
+print sqrt 16                    # 4
+print power 2 10                 # 1024
+print round 3.14159 2           # 3.14
+print floor 3.7                  # 3
+print ceil 3.2                   # 4
+print abs (-42)                  # 42
+
+# Utility functions
+print type_of 42                 # number
+x = to_string 42                # "42"
+y = to_number "3.14"            # 3.14
+nums = range 1 6                # [1, 2, 3, 4, 5]
+print reverse "hello"           # olleh
+print sort [3, 1, 2]            # [1, 2, 3]
+```
+
+Type `builtins` in the REPL to see all available functions with usage.
 
 ## ⚙️ Compiler
 

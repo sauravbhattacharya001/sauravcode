@@ -349,13 +349,57 @@ The catch variable (`err`) receives the error message as a string.
 
 ## Built-in Functions
 
+### Core
+
 | Function          | Syntax                | Description                    |
 |------------------|-----------------------|--------------------------------|
 | `print`          | `print expr`          | Print value to stdout          |
-| `len`            | `len list`            | Return list length             |
+| `len`            | `len list`            | Return list/string length      |
 | `append`         | `append list value`   | Append value to list           |
 | `pop`            | `pop list`            | Remove and return last element |
 | `get`            | `get list index`      | Get element at index           |
+
+### String Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `upper`          | `upper str`                     | Convert string to uppercase            |
+| `lower`          | `lower str`                     | Convert string to lowercase            |
+| `trim`           | `trim str`                      | Remove leading/trailing whitespace     |
+| `replace`        | `replace str old new`           | Replace occurrences in string          |
+| `split`          | `split str delim`               | Split string into list                 |
+| `join`           | `join delim list`               | Join list elements into string         |
+| `contains`       | `contains str sub`              | Check if string/list contains value    |
+| `starts_with`    | `starts_with str prefix`        | Check if string starts with prefix     |
+| `ends_with`      | `ends_with str suffix`          | Check if string ends with suffix       |
+| `substring`      | `substring str start end`       | Extract substring [start:end]          |
+| `index_of`       | `index_of str sub`              | Find index of substring (-1 if none)   |
+| `char_at`        | `char_at str index`             | Get character at index                 |
+
+### Math Functions
+
+| Function          | Syntax                | Description                            |
+|------------------|-----------------------|----------------------------------------|
+| `abs`            | `abs n`               | Absolute value                         |
+| `round`          | `round n [places]`    | Round number (optional decimal places) |
+| `floor`          | `floor n`             | Round down to integer                  |
+| `ceil`           | `ceil n`              | Round up to integer                    |
+| `sqrt`           | `sqrt n`              | Square root                            |
+| `power`          | `power base exp`      | Exponentiation                         |
+
+### Utility Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `type_of`        | `type_of val`                   | Get type name (number/string/bool/list)|
+| `to_string`      | `to_string val`                 | Convert value to string                |
+| `to_number`      | `to_number val`                 | Convert value to number                |
+| `input`          | `input [prompt]`                | Read line from stdin                   |
+| `range`          | `range [start] end [step]`      | Generate list of numbers               |
+| `reverse`        | `reverse val`                   | Reverse a list or string               |
+| `sort`           | `sort list`                     | Sort a list                            |
+
+User-defined functions override builtins, so you can customize any built-in function.
 
 ## Grammar (EBNF)
 

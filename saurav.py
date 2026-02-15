@@ -1,6 +1,7 @@
 import re
 import sys
 import os
+import math
 
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
@@ -607,6 +608,243 @@ class Interpreter:
     def __init__(self):
         self.functions = {}  # Store function definitions
         self.variables = {}  # Store variable values
+        self._init_builtins()
+
+    def _init_builtins(self):
+        """Register built-in standard library functions."""
+        self.builtins = {
+            # --- String functions ---
+            'upper':       self._builtin_upper,
+            'lower':       self._builtin_lower,
+            'trim':        self._builtin_trim,
+            'replace':     self._builtin_replace,
+            'split':       self._builtin_split,
+            'join':        self._builtin_join,
+            'contains':    self._builtin_contains,
+            'starts_with': self._builtin_starts_with,
+            'ends_with':   self._builtin_ends_with,
+            'substring':   self._builtin_substring,
+            'index_of':    self._builtin_index_of,
+            'char_at':     self._builtin_char_at,
+            # --- Math functions ---
+            'abs':         self._builtin_abs,
+            'round':       self._builtin_round,
+            'floor':       self._builtin_floor,
+            'ceil':        self._builtin_ceil,
+            'sqrt':        self._builtin_sqrt,
+            'power':       self._builtin_power,
+            # --- Utility functions ---
+            'type_of':     self._builtin_type_of,
+            'to_string':   self._builtin_to_string,
+            'to_number':   self._builtin_to_number,
+            'input':       self._builtin_input,
+            'range':       self._builtin_range,
+            'reverse':     self._builtin_reverse,
+            'sort':        self._builtin_sort,
+        }
+
+    # --- String built-ins ---
+    def _builtin_upper(self, args):
+        self._expect_args('upper', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            raise RuntimeError("upper expects a string argument")
+        return s.upper()
+
+    def _builtin_lower(self, args):
+        self._expect_args('lower', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            raise RuntimeError("lower expects a string argument")
+        return s.lower()
+
+    def _builtin_trim(self, args):
+        self._expect_args('trim', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            raise RuntimeError("trim expects a string argument")
+        return s.strip()
+
+    def _builtin_replace(self, args):
+        self._expect_args('replace', args, 3)
+        s, old, new = args
+        if not isinstance(s, str):
+            raise RuntimeError("replace expects a string as first argument")
+        return s.replace(str(old), str(new))
+
+    def _builtin_split(self, args):
+        self._expect_args('split', args, 2)
+        s, delim = args
+        if not isinstance(s, str):
+            raise RuntimeError("split expects a string as first argument")
+        return s.split(str(delim))
+
+    def _builtin_join(self, args):
+        self._expect_args('join', args, 2)
+        delim, lst = args
+        if not isinstance(lst, list):
+            raise RuntimeError("join expects a list as second argument")
+        items = []
+        for item in lst:
+            if isinstance(item, float) and item == int(item):
+                items.append(str(int(item)))
+            else:
+                items.append(str(item))
+        return str(delim).join(items)
+
+    def _builtin_contains(self, args):
+        self._expect_args('contains', args, 2)
+        s, sub = args
+        if isinstance(s, str):
+            return str(sub) in s
+        if isinstance(s, list):
+            return sub in s
+        raise RuntimeError("contains expects a string or list as first argument")
+
+    def _builtin_starts_with(self, args):
+        self._expect_args('starts_with', args, 2)
+        s, prefix = args
+        if not isinstance(s, str):
+            raise RuntimeError("starts_with expects a string as first argument")
+        return s.startswith(str(prefix))
+
+    def _builtin_ends_with(self, args):
+        self._expect_args('ends_with', args, 2)
+        s, suffix = args
+        if not isinstance(s, str):
+            raise RuntimeError("ends_with expects a string as first argument")
+        return s.endswith(str(suffix))
+
+    def _builtin_substring(self, args):
+        self._expect_args('substring', args, 3)
+        s, start, end = args
+        if not isinstance(s, str):
+            raise RuntimeError("substring expects a string as first argument")
+        return s[int(start):int(end)]
+
+    def _builtin_index_of(self, args):
+        self._expect_args('index_of', args, 2)
+        s, sub = args
+        if not isinstance(s, str):
+            raise RuntimeError("index_of expects a string as first argument")
+        idx = s.find(str(sub))
+        return float(idx)
+
+    def _builtin_char_at(self, args):
+        self._expect_args('char_at', args, 2)
+        s, idx = args
+        if not isinstance(s, str):
+            raise RuntimeError("char_at expects a string as first argument")
+        i = int(idx)
+        if i < 0 or i >= len(s):
+            raise RuntimeError(f"char_at index {i} out of bounds (length {len(s)})")
+        return s[i]
+
+    # --- Math built-ins ---
+    def _builtin_abs(self, args):
+        self._expect_args('abs', args, 1)
+        return float(abs(args[0]))
+
+    def _builtin_round(self, args):
+        if len(args) == 1:
+            return float(round(args[0]))
+        elif len(args) == 2:
+            return float(round(args[0], int(args[1])))
+        else:
+            raise RuntimeError("round expects 1 or 2 arguments: round value [places]")
+
+    def _builtin_floor(self, args):
+        self._expect_args('floor', args, 1)
+        return float(math.floor(args[0]))
+
+    def _builtin_ceil(self, args):
+        self._expect_args('ceil', args, 1)
+        return float(math.ceil(args[0]))
+
+    def _builtin_sqrt(self, args):
+        self._expect_args('sqrt', args, 1)
+        if args[0] < 0:
+            raise RuntimeError("sqrt of negative number")
+        return float(math.sqrt(args[0]))
+
+    def _builtin_power(self, args):
+        self._expect_args('power', args, 2)
+        return float(args[0] ** args[1])
+
+    # --- Utility built-ins ---
+    def _builtin_type_of(self, args):
+        self._expect_args('type_of', args, 1)
+        val = args[0]
+        if isinstance(val, bool):
+            return "bool"
+        if isinstance(val, float):
+            return "number"
+        if isinstance(val, str):
+            return "string"
+        if isinstance(val, list):
+            return "list"
+        return "unknown"
+
+    def _builtin_to_string(self, args):
+        self._expect_args('to_string', args, 1)
+        val = args[0]
+        if isinstance(val, float) and val == int(val):
+            return str(int(val))
+        if isinstance(val, bool):
+            return "true" if val else "false"
+        return str(val)
+
+    def _builtin_to_number(self, args):
+        self._expect_args('to_number', args, 1)
+        val = args[0]
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                raise RuntimeError(f"Cannot convert '{val}' to number")
+        if isinstance(val, bool):
+            return 1.0 if val else 0.0
+        raise RuntimeError(f"Cannot convert {type(val).__name__} to number")
+
+    def _builtin_input(self, args):
+        if len(args) == 0:
+            return input()
+        elif len(args) == 1:
+            return input(str(args[0]))
+        else:
+            raise RuntimeError("input expects 0 or 1 arguments: input [prompt]")
+
+    def _builtin_range(self, args):
+        if len(args) == 1:
+            return [float(i) for i in range(int(args[0]))]
+        elif len(args) == 2:
+            return [float(i) for i in range(int(args[0]), int(args[1]))]
+        elif len(args) == 3:
+            return [float(i) for i in range(int(args[0]), int(args[1]), int(args[2]))]
+        else:
+            raise RuntimeError("range expects 1-3 arguments: range end | range start end | range start end step")
+
+    def _builtin_reverse(self, args):
+        self._expect_args('reverse', args, 1)
+        val = args[0]
+        if isinstance(val, list):
+            return val[::-1]
+        if isinstance(val, str):
+            return val[::-1]
+        raise RuntimeError("reverse expects a list or string argument")
+
+    def _builtin_sort(self, args):
+        self._expect_args('sort', args, 1)
+        val = args[0]
+        if not isinstance(val, list):
+            raise RuntimeError("sort expects a list argument")
+        return sorted(val)
+
+    def _expect_args(self, name, args, count):
+        if len(args) != count:
+            raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
 
     def interpret(self, ast):
         debug("Interpreting AST...")
@@ -696,27 +934,33 @@ class Interpreter:
         return True
 
     def execute_function(self, call_node):
+        # Check user-defined functions first (allows overriding builtins)
         func = self.functions.get(call_node.name)
-        if not func:
-            raise RuntimeError(f"Function {call_node.name} is not defined.")
+        if func:
+            debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
+            saved_env = self.variables.copy()
+            for param, arg in zip(func.params, call_node.arguments):
+                evaluated_arg = self.evaluate(arg)
+                self.variables[param] = evaluated_arg
+                debug(f"Set parameter '{param}' to {evaluated_arg}")
 
-        debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
-        saved_env = self.variables.copy()
-        for param, arg in zip(func.params, call_node.arguments):
-            evaluated_arg = self.evaluate(arg)
-            self.variables[param] = evaluated_arg
-            debug(f"Set parameter '{param}' to {evaluated_arg}")
+            result = None
+            try:
+                for stmt in func.body:
+                    self.interpret(stmt)
+            except ReturnSignal as ret:
+                result = ret.value
 
-        result = None
-        try:
-            for stmt in func.body:
-                self.interpret(stmt)
-        except ReturnSignal as ret:
-            result = ret.value
+            self.variables = saved_env
+            debug(f"Function {call_node.name} returned {result}\n")
+            return result
 
-        self.variables = saved_env
-        debug(f"Function {call_node.name} returned {result}\n")
-        return result
+        # Check built-in functions
+        if call_node.name in self.builtins:
+            evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+            return self.builtins[call_node.name](evaluated_args)
+
+        raise RuntimeError(f"Function {call_node.name} is not defined.")
 
     def evaluate(self, node):
         debug(f"Evaluating node: {node}")
@@ -733,6 +977,9 @@ class Interpreter:
                 return value
             elif node.name in self.functions:
                 debug(f"Identifier '{node.name}' is a function name")
+                return node.name
+            elif node.name in self.builtins:
+                debug(f"Identifier '{node.name}' is a built-in function")
                 return node.name
             else:
                 raise RuntimeError(f"Name '{node.name}' is not defined.")
@@ -853,6 +1100,7 @@ def repl():
             print("  help      — show this help message")
             print("  vars      — list all defined variables")
             print("  funcs     — list all defined functions")
+            print("  builtins  — list all built-in functions")
             print("  clear     — clear all variables and functions")
             print("  history   — show input history")
             print("  load FILE — load and run a .srv file")
@@ -862,6 +1110,38 @@ def repl():
             print("For multi-line blocks (functions, if, while, for),")
             print("indent with spaces and enter a blank line to execute.")
             print()
+            continue
+        if stripped == "builtins":
+            builtin_info = {
+                'upper':       'upper str           — convert string to uppercase',
+                'lower':       'lower str           — convert string to lowercase',
+                'trim':        'trim str            — remove leading/trailing whitespace',
+                'replace':     'replace str old new — replace occurrences in string',
+                'split':       'split str delim     — split string into list',
+                'join':        'join delim list     — join list into string',
+                'contains':    'contains str sub    — check if string/list contains value',
+                'starts_with': 'starts_with str pre — check if string starts with prefix',
+                'ends_with':   'ends_with str suf   — check if string ends with suffix',
+                'substring':   'substring str s e   — extract substring [start:end]',
+                'index_of':    'index_of str sub    — find index of substring (-1 if not found)',
+                'char_at':     'char_at str idx     — get character at index',
+                'abs':         'abs n               — absolute value',
+                'round':       'round n [places]    — round number',
+                'floor':       'floor n             — round down to integer',
+                'ceil':        'ceil n              — round up to integer',
+                'sqrt':        'sqrt n              — square root',
+                'power':       'power base exp      — exponentiation',
+                'type_of':     'type_of val         — get type name (number/string/bool/list)',
+                'to_string':   'to_string val       — convert value to string',
+                'to_number':   'to_number val       — convert value to number',
+                'input':       'input [prompt]      — read line from stdin',
+                'range':       'range [start] end [step] — generate list of numbers',
+                'reverse':     'reverse val         — reverse a list or string',
+                'sort':        'sort list           — sort a list',
+            }
+            print("Built-in functions:")
+            for name in sorted(builtin_info.keys()):
+                print(f"  {builtin_info[name]}")
             continue
         if stripped == "vars":
             if not interpreter.variables:

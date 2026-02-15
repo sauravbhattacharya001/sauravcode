@@ -842,3 +842,229 @@ class TestReplExecute:
         with redirect_stdout(buf):
             _repl_execute('print "hello world"\n', interp)
         assert buf.getvalue().strip() == "hello world"
+
+
+# ============================================================
+# Built-in Standard Library Tests
+# ============================================================
+
+class TestBuiltinStringFunctions:
+    def test_upper(self):
+        output = run_code('print upper "hello"\n')
+        assert output.strip() == "HELLO"
+
+    def test_upper_with_spaces(self):
+        output = run_code('print upper "hello world"\n')
+        assert output.strip() == "HELLO WORLD"
+
+    def test_lower(self):
+        output = run_code('print lower "HELLO"\n')
+        assert output.strip() == "hello"
+
+    def test_trim(self):
+        output = run_code('print trim "  hello  "\n')
+        assert output.strip() == "hello"
+
+    def test_replace(self):
+        output = run_code('print replace "hello world" "world" "sauravcode"\n')
+        assert output.strip() == "hello sauravcode"
+
+    def test_split(self):
+        code = 'words = split "a-b-c" "-"\nprint words[0]\nprint words[1]\nprint words[2]\n'
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines == ['a', 'b', 'c']
+
+    def test_join(self):
+        code = 'words = split "a-b-c" "-"\nprint join ", " words\n'
+        output = run_code(code)
+        assert output.strip() == "a, b, c"
+
+    def test_contains_string_true(self):
+        output = run_code('print contains "hello" "ell"\n')
+        assert output.strip() == "true"
+
+    def test_contains_string_false(self):
+        output = run_code('print contains "hello" "xyz"\n')
+        assert output.strip() == "false"
+
+    def test_starts_with_true(self):
+        output = run_code('print starts_with "sauravcode" "saurav"\n')
+        assert output.strip() == "true"
+
+    def test_starts_with_false(self):
+        output = run_code('print starts_with "sauravcode" "code"\n')
+        assert output.strip() == "false"
+
+    def test_ends_with_true(self):
+        output = run_code('print ends_with "sauravcode" "code"\n')
+        assert output.strip() == "true"
+
+    def test_ends_with_false(self):
+        output = run_code('print ends_with "sauravcode" "saurav"\n')
+        assert output.strip() == "false"
+
+    def test_substring(self):
+        output = run_code('print substring "hello world" 0 5\n')
+        assert output.strip() == "hello"
+
+    def test_index_of_found(self):
+        output = run_code('print index_of "hello" "ll"\n')
+        assert output.strip() == "2"
+
+    def test_index_of_not_found(self):
+        output = run_code('print index_of "hello" "xyz"\n')
+        assert output.strip() == "-1"
+
+    def test_char_at(self):
+        output = run_code('print char_at "hello" 0\n')
+        assert output.strip() == "h"
+
+    def test_char_at_last(self):
+        output = run_code('print char_at "hello" 4\n')
+        assert output.strip() == "o"
+
+    def test_char_at_out_of_bounds(self):
+        with pytest.raises(RuntimeError, match="out of bounds"):
+            run_code('print char_at "hi" 5\n')
+
+    def test_upper_non_string_raises(self):
+        with pytest.raises(RuntimeError, match="expects a string"):
+            run_code('print upper 42\n')
+
+    def test_lower_non_string_raises(self):
+        with pytest.raises(RuntimeError, match="expects a string"):
+            run_code('print lower 42\n')
+
+
+class TestBuiltinMathFunctions:
+    def test_abs_positive(self):
+        output = run_code('print abs 42\n')
+        assert output.strip() == "42"
+
+    def test_abs_negative(self):
+        output = run_code('print abs (-42)\n')
+        assert output.strip() == "42"
+
+    def test_round_integer(self):
+        output = run_code('print round 3.7\n')
+        assert output.strip() == "4"
+
+    def test_round_with_places(self):
+        output = run_code('print round 3.14159 2\n')
+        assert output.strip() == "3.14"
+
+    def test_floor(self):
+        output = run_code('print floor 3.7\n')
+        assert output.strip() == "3"
+
+    def test_ceil(self):
+        output = run_code('print ceil 3.2\n')
+        assert output.strip() == "4"
+
+    def test_sqrt(self):
+        output = run_code('print sqrt 16\n')
+        assert output.strip() == "4"
+
+    def test_sqrt_irrational(self):
+        output = run_code('print sqrt 2\n')
+        assert output.strip().startswith("1.41421")
+
+    def test_sqrt_negative_raises(self):
+        with pytest.raises(RuntimeError, match="negative"):
+            run_code('print sqrt (-4)\n')
+
+    def test_power(self):
+        output = run_code('print power 2 10\n')
+        assert output.strip() == "1024"
+
+    def test_power_fractional(self):
+        output = run_code('print power 9 0.5\n')
+        assert output.strip() == "3"
+
+
+class TestBuiltinUtilityFunctions:
+    def test_type_of_number(self):
+        output = run_code('print type_of 42\n')
+        assert output.strip() == "number"
+
+    def test_type_of_string(self):
+        output = run_code('print type_of "hello"\n')
+        assert output.strip() == "string"
+
+    def test_type_of_bool(self):
+        output = run_code('print type_of true\n')
+        assert output.strip() == "bool"
+
+    def test_to_string_number(self):
+        output = run_code('x = to_string 42\nprint x\n')
+        assert output.strip() == "42"
+
+    def test_to_number_string(self):
+        output = run_code('x = to_number "3.14"\nprint x\n')
+        assert output.strip() == "3.14"
+
+    def test_to_number_invalid_raises(self):
+        with pytest.raises(RuntimeError, match="Cannot convert"):
+            run_code('x = to_number "abc"\nprint x\n')
+
+    def test_range_one_arg(self):
+        output = run_code('nums = range 5\nprint len nums\n')
+        assert output.strip() == "5"
+
+    def test_range_two_args(self):
+        output = run_code('nums = range 1 4\nprint len nums\n')
+        assert output.strip() == "3"
+
+    def test_range_three_args(self):
+        output = run_code('nums = range 0 10 2\nprint len nums\n')
+        assert output.strip() == "5"
+
+    def test_reverse_string(self):
+        output = run_code('print reverse "hello"\n')
+        assert output.strip() == "olleh"
+
+    def test_reverse_list(self):
+        code = 'nums = [1, 2, 3]\nresult = reverse nums\nprint result[0]\n'
+        output = run_code(code)
+        assert output.strip() == "3"
+
+    def test_sort_list(self):
+        code = 'nums = [3, 1, 2]\nresult = sort nums\nprint result[0]\nprint result[1]\nprint result[2]\n'
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines == ['1', '2', '3']
+
+    def test_sort_non_list_raises(self):
+        with pytest.raises(RuntimeError, match="expects a list"):
+            run_code('print sort "hello"\n')
+
+    def test_reverse_non_iterable_raises(self):
+        with pytest.raises(RuntimeError, match="expects a list or string"):
+            run_code('print reverse 42\n')
+
+    def test_wrong_arg_count_raises(self):
+        with pytest.raises(RuntimeError, match="expects"):
+            run_code('print upper "a" "b"\n')
+
+    def test_user_function_overrides_builtin(self):
+        """User-defined functions should override builtins."""
+        code = """function upper x
+    return "custom"
+
+print upper "hello"
+"""
+        output = run_code(code)
+        assert output.strip() == "custom"
+
+
+class TestBuiltinStdlibDemo:
+    def test_stdlib_demo_runs(self):
+        """stdlib_demo.srv should run without errors."""
+        test_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "stdlib_demo.srv")
+        if not os.path.isfile(test_file):
+            pytest.skip("stdlib_demo.srv not found")
+        with open(test_file) as f:
+            code = f.read()
+        output = run_code(code)
+        assert "=== all stdlib tests passed ===" in output
