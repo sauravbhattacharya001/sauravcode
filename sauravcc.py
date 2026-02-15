@@ -716,6 +716,23 @@ class Parser:
 class CCodeGenerator:
     """Compiles sauravcode AST to C source code."""
 
+    # C reserved words that cannot be used as identifiers
+    C_RESERVED = frozenset([
+        'auto', 'break', 'case', 'char', 'const', 'continue', 'default',
+        'do', 'double', 'else', 'enum', 'extern', 'float', 'for', 'goto',
+        'if', 'inline', 'int', 'long', 'register', 'restrict', 'return',
+        'short', 'signed', 'sizeof', 'static', 'struct', 'switch',
+        'typedef', 'union', 'unsigned', 'void', 'volatile', 'while',
+        '_Bool', '_Complex', '_Imaginary', 'main', 'printf', 'malloc',
+        'free', 'realloc', 'exit', 'fprintf', 'stderr', 'stdout', 'stdin',
+        'NULL', 'sizeof', 'memcpy', 'memset', 'strlen', 'strcmp', 'strcat',
+        'strcpy', 'setjmp', 'longjmp', 'jmp_buf', 'fmod', 'sqrt', 'floor',
+        'ceil', 'abs',
+    ])
+
+    # Valid C identifier pattern
+    _IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
     def __init__(self):
         self.functions = {}       # name -> FunctionNode
         self.classes = {}         # name -> ClassNode
@@ -727,6 +744,31 @@ class CCodeGenerator:
         self.uses_lists = False
         self.uses_strings = False
         self.uses_try_catch = False
+        self._ident_map = {}      # sauravcode name -> safe C name
+
+    def _safe_ident(self, name):
+        """Sanitize a sauravcode identifier for safe use in generated C code.
+
+        Prevents C code injection by:
+        - Rejecting names that aren't valid identifiers
+        - Prefixing names that collide with C reserved words
+        - Caching results for consistency
+        """
+        if name in self._ident_map:
+            return self._ident_map[name]
+
+        if not self._IDENT_RE.match(name):
+            raise ValueError(
+                f"Invalid identifier '{name}': contains characters not "
+                f"allowed in C identifiers"
+            )
+
+        safe = name
+        if safe in self.C_RESERVED or safe.startswith('srv_') or safe.startswith('__'):
+            safe = 'u_' + safe
+
+        self._ident_map[name] = safe
+        return safe
 
     def emit(self, line=""):
         self.output_lines.append("    " * self.indent_level + line)
@@ -836,10 +878,11 @@ class CCodeGenerator:
 
         # Emit forward declarations for functions
         for name, func in self.functions.items():
-            params = ", ".join("double " + p for p in func.params)
+            safe_name = self._safe_ident(name)
+            params = ", ".join("double " + self._safe_ident(p) for p in func.params)
             if not params:
                 params = "void"
-            self.emit(f"double {name}({params});")
+            self.emit(f"double {safe_name}({params});")
         self.emit("")
 
         # Emit function definitions
@@ -968,10 +1011,11 @@ class CCodeGenerator:
 
     def compile_function(self, func):
         """Emit a C function definition."""
-        params = ", ".join(f"double {p}" for p in func.params)
+        safe_name = self._safe_ident(func.name)
+        params = ", ".join(f"double {self._safe_ident(p)}" for p in func.params)
         if not params:
             params = "void"
-        self.emit(f"double {func.name}({params}) {{")
+        self.emit(f"double {safe_name}({params}) {{")
         self.indent_level += 1
         self.declared_vars[func.name] = set(func.params)
 
@@ -989,34 +1033,36 @@ class CCodeGenerator:
     def compile_statement(self, stmt, scope='main', is_top_level=False):
         """Compile a single statement to C."""
         if isinstance(stmt, IndexedAssignmentNode):
+            name = self._safe_ident(stmt.name)
             idx_c = self.compile_expression(stmt.index)
             val_c = self.compile_expression(stmt.value)
-            self.emit(f"srv_list_set(&{stmt.name}, (int)({idx_c}), {val_c});")
+            self.emit(f"srv_list_set(&{name}, (int)({idx_c}), {val_c});")
 
         elif isinstance(stmt, DotAssignmentNode):
             obj_c = self.compile_expression(stmt.obj)
+            field = self._safe_ident(stmt.field)
             val_c = self.compile_expression(stmt.value)
-            self.emit(f"{obj_c}.{stmt.field} = {val_c};")
+            self.emit(f"{obj_c}.{field} = {val_c};")
 
         elif isinstance(stmt, AssignmentNode):
             expr_c = self.compile_expression(stmt.expression)
-            name = stmt.name
-            if name not in self.declared_vars.get(scope, set()):
+            name = self._safe_ident(stmt.name)
+            if stmt.name not in self.declared_vars.get(scope, set()):
                 # Detect type from expression
                 if isinstance(stmt.expression, StringNode):
                     self.emit(f'const char *{name} = {expr_c};')
-                    self.string_vars.add(name)
+                    self.string_vars.add(stmt.name)
                 elif isinstance(stmt.expression, BoolNode):
                     self.emit(f'int {name} = {expr_c};')
                 elif isinstance(stmt.expression, ListNode):
                     self.emit(f'SrvList {name} = srv_list_new();')
-                    self.list_vars.add(name)
+                    self.list_vars.add(stmt.name)
                     for elem in stmt.expression.elements:
                         elem_c = self.compile_expression(elem)
                         self.emit(f'srv_list_append(&{name}, {elem_c});')
                 else:
                     self.emit(f"double {name} = {expr_c};")
-                self.declared_vars.setdefault(scope, set()).add(name)
+                self.declared_vars.setdefault(scope, set()).add(stmt.name)
             else:
                 if isinstance(stmt.expression, ListNode):
                     # Reassigning a list
@@ -1077,8 +1123,8 @@ class CCodeGenerator:
         elif isinstance(stmt, ForNode):
             start_c = self.compile_expression(stmt.start)
             end_c = self.compile_expression(stmt.end)
-            var = stmt.var
-            self.declared_vars.setdefault(scope, set()).add(var)
+            var = self._safe_ident(stmt.var)
+            self.declared_vars.setdefault(scope, set()).add(stmt.var)
             self.emit(f"for (double {var} = {start_c}; {var} < {end_c}; {var}++) {{")
             self.indent_level += 1
             for s in stmt.body:
@@ -1096,19 +1142,21 @@ class CCodeGenerator:
             self.emit("} else {")
             self.indent_level += 1
             if stmt.catch_var:
+                safe_catch = self._safe_ident(stmt.catch_var)
                 if stmt.catch_var not in self.declared_vars.get(scope, set()):
-                    self.emit(f'const char *{stmt.catch_var} = __error_msg;')
+                    self.emit(f'const char *{safe_catch} = __error_msg;')
                     self.declared_vars.setdefault(scope, set()).add(stmt.catch_var)
                 else:
-                    self.emit(f'{stmt.catch_var} = __error_msg;')
+                    self.emit(f'{safe_catch} = __error_msg;')
             for s in stmt.catch_body:
                 self.compile_statement(s, scope=scope)
             self.indent_level -= 1
             self.emit("}")
 
         elif isinstance(stmt, AppendNode):
+            safe_list = self._safe_ident(stmt.list_name)
             val_c = self.compile_expression(stmt.value)
-            self.emit(f"srv_list_append(&{stmt.list_name}, {val_c});")
+            self.emit(f"srv_list_append(&{safe_list}, {val_c});")
 
         elif isinstance(stmt, ClassNode):
             pass  # Already handled in first pass
@@ -1145,7 +1193,7 @@ class CCodeGenerator:
             return "1" if expr.value else "0"
 
         elif isinstance(expr, IdentifierNode):
-            return expr.name
+            return self._safe_ident(expr.name)
 
         elif isinstance(expr, BinaryOpNode):
             left_c = self.compile_expression(expr.left)
@@ -1191,7 +1239,8 @@ class CCodeGenerator:
 
         elif isinstance(expr, DotAccessNode):
             obj_c = self.compile_expression(expr.obj)
-            return f"{obj_c}.{expr.field}"
+            field = self._safe_ident(expr.field)
+            return f"{obj_c}.{field}"
 
         elif isinstance(expr, MethodCallNode):
             obj_c = self.compile_expression(expr.obj)
@@ -1203,8 +1252,9 @@ class CCodeGenerator:
 
     def compile_call(self, call):
         """Compile a function call to C."""
+        safe_name = self._safe_ident(call.name)
         args_c = ", ".join(self.compile_expression(a) for a in call.arguments)
-        return f"{call.name}({args_c})"
+        return f"{safe_name}({args_c})"
 
 
 # ============================================================

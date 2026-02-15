@@ -6,6 +6,10 @@ import math
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
 
+# Security limits to prevent denial-of-service attacks
+MAX_RECURSION_DEPTH = 500      # Maximum nested function call depth
+MAX_LOOP_ITERATIONS = 10_000_000  # Maximum iterations per loop
+
 def debug(msg):
     """Print debug message only when DEBUG mode is enabled."""
     if DEBUG:
@@ -17,7 +21,7 @@ def debug(msg):
 token_specification = [
     ('COMMENT',  r'#.*'),  # Comments
     ('NUMBER',   r'\d+(\.\d*)?'),  # Integer or decimal number
-    ('STRING',   r'\".*?\"'),  # String literal
+    ('STRING',   r'\"(?:[^\"\\]|\\.)*\"'),  # String literal (with escape support)
     ('EQ',       r'=='),  # Equality operator (must precede ASSIGN)
     ('NEQ',      r'!='),  # Not-equal operator
     ('LTE',      r'<='),  # Less-than-or-equal
@@ -608,6 +612,7 @@ class Interpreter:
     def __init__(self):
         self.functions = {}  # Store function definitions
         self.variables = {}  # Store variable values
+        self._call_depth = 0  # Track recursion depth for DoS protection
         self._init_builtins()
 
     def _init_builtins(self):
@@ -904,14 +909,26 @@ class Interpreter:
             self.execute_body(node.else_body)
 
     def execute_while(self, node):
-        """Execute while loop."""
+        """Execute while loop with iteration limit for DoS protection."""
+        iterations = 0
         while self._is_truthy(self.evaluate(node.condition)):
+            iterations += 1
+            if iterations > MAX_LOOP_ITERATIONS:
+                raise RuntimeError(
+                    f"Maximum loop iterations ({MAX_LOOP_ITERATIONS:,}) exceeded "
+                    f"in while loop"
+                )
             self.execute_body(node.body)
 
     def execute_for(self, node):
-        """Execute for loop (range-based)."""
+        """Execute for loop (range-based) with iteration limit for DoS protection."""
         start = int(self.evaluate(node.start))
         end = int(self.evaluate(node.end))
+        if abs(end - start) > MAX_LOOP_ITERATIONS:
+            raise RuntimeError(
+                f"For loop range ({abs(end - start):,}) exceeds maximum "
+                f"iterations ({MAX_LOOP_ITERATIONS:,})"
+            )
         for i in range(start, end):
             self.variables[node.var] = float(i)
             self.execute_body(node.body)
@@ -938,6 +955,16 @@ class Interpreter:
         func = self.functions.get(call_node.name)
         if func:
             debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
+
+            # Guard against excessive recursion (DoS protection)
+            self._call_depth += 1
+            if self._call_depth > MAX_RECURSION_DEPTH:
+                self._call_depth -= 1
+                raise RuntimeError(
+                    f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
+                    f"in function '{call_node.name}'"
+                )
+
             saved_env = self.variables.copy()
             for param, arg in zip(func.params, call_node.arguments):
                 evaluated_arg = self.evaluate(arg)
@@ -950,6 +977,8 @@ class Interpreter:
                     self.interpret(stmt)
             except ReturnSignal as ret:
                 result = ret.value
+            finally:
+                self._call_depth -= 1
 
             self.variables = saved_env
             debug(f"Function {call_node.name} returned {result}\n")
