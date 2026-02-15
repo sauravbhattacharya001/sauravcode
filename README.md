@@ -3,15 +3,32 @@
   <p align="center">
     <strong>A programming language designed for clarity. No noise, just logic.</strong>
   </p>
+  <!-- CI & Quality -->
   <p align="center">
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/ci.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
     <a href="https://codecov.io/gh/sauravbhattacharya001/sauravcode"><img src="https://codecov.io/gh/sauravbhattacharya001/sauravcode/branch/main/graph/badge.svg" alt="Coverage"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml/badge.svg" alt="Pages"></a>
+  </p>
+  <!-- Package & Version -->
+  <p align="center">
+    <a href="https://pypi.org/project/sauravcode/"><img src="https://img.shields.io/pypi/v/sauravcode?color=blue" alt="PyPI"></a>
+    <a href="https://pypi.org/project/sauravcode/"><img src="https://img.shields.io/pypi/dm/sauravcode" alt="Downloads"></a>
+    <a href="https://pypi.org/project/sauravcode/"><img src="https://img.shields.io/pypi/pyversions/sauravcode" alt="Python"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/releases"><img src="https://img.shields.io/github/v/release/sauravbhattacharya001/sauravcode" alt="Release"></a>
+  </p>
+  <!-- Repo Info -->
+  <p align="center">
     <a href="https://github.com/sauravbhattacharya001/sauravcode/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sauravbhattacharya001/sauravcode" alt="License"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode"><img src="https://img.shields.io/github/languages/top/sauravbhattacharya001/sauravcode" alt="Language"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode"><img src="https://img.shields.io/github/repo-size/sauravbhattacharya001/sauravcode" alt="Repo Size"></a>
-    <a href="https://github.com/sauravbhattacharya001/sauravcode/releases"><img src="https://img.shields.io/github/v/release/sauravbhattacharya001/sauravcode" alt="Release"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/commits/main"><img src="https://img.shields.io/github/last-commit/sauravbhattacharya001/sauravcode" alt="Last Commit"></a>
+  </p>
+  <!-- Community -->
+  <p align="center">
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/stargazers"><img src="https://img.shields.io/github/stars/sauravbhattacharya001/sauravcode?style=social" alt="Stars"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/issues"><img src="https://img.shields.io/github/issues/sauravbhattacharya001/sauravcode" alt="Issues"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome"></a>
   </p>
 </p>
 
@@ -43,9 +60,19 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 
 ## 🚀 Quick Start
 
+### Install from PyPI
+
+```bash
+pip install sauravcode
+```
+
+After installation, two commands are available globally:
+- `sauravcode` — interpreter + interactive REPL
+- `sauravcode-compile` — compiler (.srv → C → native executable)
+
 ### Prerequisites
 
-- **Python 3.6+**
+- **Python 3.8+**
 - **gcc** (for compiler — MinGW on Windows, Xcode CLI on macOS)
 
 ### Interactive REPL
