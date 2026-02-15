@@ -33,6 +33,7 @@ from saurav import (
     FunctionNode,
     FunctionCallNode,
     AssignmentNode,
+    IndexedAssignmentNode,
     PrintNode,
     ReturnNode,
     IfNode,
@@ -42,6 +43,7 @@ from saurav import (
     IndexNode,
     AppendNode,
     LenNode,
+    MapNode,
     ASTNode,
 )
 
@@ -1068,3 +1070,328 @@ class TestBuiltinStdlibDemo:
             code = f.read()
         output = run_code(code)
         assert "=== all stdlib tests passed ===" in output
+
+
+# ============================================================
+# Map/Dictionary Tests
+# ============================================================
+
+class TestMapLiteral:
+    """Test map literal parsing and creation."""
+
+    def test_empty_map(self):
+        code = 'x = {}\nprint len x\n'
+        output = run_code(code)
+        assert output.strip() == "0"
+
+    def test_single_pair(self):
+        code = 'x = {"name": "Alice"}\nprint x["name"]\n'
+        output = run_code(code)
+        assert output.strip() == "Alice"
+
+    def test_multiple_pairs(self):
+        code = 'x = {"a": 1, "b": 2, "c": 3}\nprint len x\n'
+        output = run_code(code)
+        assert output.strip() == "3"
+
+    def test_numeric_values(self):
+        code = 'x = {"x": 10, "y": 20}\nprint x["x"]\nprint x["y"]\n'
+        output = run_code(code)
+        assert output.strip() == "10\n20"
+
+    def test_boolean_values(self):
+        code = 'x = {"flag": true, "off": false}\nprint x["flag"]\nprint x["off"]\n'
+        output = run_code(code)
+        assert output.strip() == "true\nfalse"
+
+    def test_mixed_value_types(self):
+        code = 'x = {"name": "Bob", "age": 25, "active": true}\nprint x["name"]\nprint x["age"]\nprint x["active"]\n'
+        output = run_code(code)
+        assert output.strip() == "Bob\n25\ntrue"
+
+    def test_nested_map(self):
+        code = 'inner = {"x": 1}\nouter = {"data": inner}\nd = outer["data"]\nprint d["x"]\n'
+        output = run_code(code)
+        assert output.strip() == "1"
+
+    def test_list_value_in_map(self):
+        code = 'x = {"nums": [10, 20, 30]}\nnums = x["nums"]\nprint nums[1]\n'
+        output = run_code(code)
+        assert output.strip() == "20"
+
+    def test_numeric_keys(self):
+        code = 'x = {1: "one", 2: "two"}\nprint x[1]\nprint x[2]\n'
+        output = run_code(code)
+        assert output.strip() == "one\ntwo"
+
+
+class TestMapAccess:
+    """Test map key access and assignment."""
+
+    def test_key_access(self):
+        code = 'x = {"greeting": "hello"}\nprint x["greeting"]\n'
+        output = run_code(code)
+        assert output.strip() == "hello"
+
+    def test_key_assignment_update(self):
+        code = 'x = {"a": 1}\nx["a"] = 99\nprint x["a"]\n'
+        output = run_code(code)
+        assert output.strip() == "99"
+
+    def test_key_assignment_add_new(self):
+        code = 'x = {"a": 1}\nx["b"] = 2\nprint x["b"]\nprint len x\n'
+        output = run_code(code)
+        assert output.strip() == "2\n2"
+
+    def test_key_not_found_error(self):
+        code = 'x = {"a": 1}\nprint x["missing"]\n'
+        with pytest.raises(RuntimeError, match="Key.*not found"):
+            run_code(code)
+
+    def test_multiple_assignments(self):
+        code = 'x = {}\nx["a"] = 1\nx["b"] = 2\nx["c"] = 3\nprint len x\nprint x["b"]\n'
+        output = run_code(code)
+        assert output.strip() == "3\n2"
+
+    def test_overwrite_value(self):
+        code = 'x = {"key": "old"}\nx["key"] = "new"\nprint x["key"]\n'
+        output = run_code(code)
+        assert output.strip() == "new"
+
+
+class TestMapBuiltins:
+    """Test built-in functions for maps."""
+
+    def test_keys(self):
+        code = 'x = {"a": 1, "b": 2}\nk = keys x\nprint len k\n'
+        output = run_code(code)
+        assert output.strip() == "2"
+
+    def test_values(self):
+        code = 'x = {"a": 10, "b": 20}\nv = values x\nprint len v\n'
+        output = run_code(code)
+        assert output.strip() == "2"
+
+    def test_has_key_true(self):
+        code = 'x = {"name": "test"}\nresult = has_key (x) "name"\nprint result\n'
+        output = run_code(code)
+        assert output.strip() == "true"
+
+    def test_has_key_false(self):
+        code = 'x = {"name": "test"}\nresult = has_key (x) "missing"\nprint result\n'
+        output = run_code(code)
+        assert output.strip() == "false"
+
+    def test_contains_map_key_true(self):
+        code = 'x = {"a": 1}\nresult = contains (x) "a"\nprint result\n'
+        output = run_code(code)
+        assert output.strip() == "true"
+
+    def test_contains_map_key_false(self):
+        code = 'x = {"a": 1}\nresult = contains (x) "b"\nprint result\n'
+        output = run_code(code)
+        assert output.strip() == "false"
+
+    def test_len_map(self):
+        code = 'x = {"a": 1, "b": 2, "c": 3}\nprint len x\n'
+        output = run_code(code)
+        assert output.strip() == "3"
+
+    def test_len_empty_map(self):
+        code = 'x = {}\nprint len x\n'
+        output = run_code(code)
+        assert output.strip() == "0"
+
+    def test_type_of_map(self):
+        code = 'x = {"a": 1}\nprint type_of x\n'
+        output = run_code(code)
+        assert output.strip() == "map"
+
+    def test_to_string_map(self):
+        code = 'x = {"key": "val"}\ns = to_string x\nprint s\n'
+        output = run_code(code)
+        assert '"key": "val"' in output
+
+    def test_keys_error_on_non_map(self):
+        code = 'x = [1, 2, 3]\nk = keys x\n'
+        with pytest.raises(RuntimeError, match="keys expects a map"):
+            run_code(code)
+
+    def test_values_error_on_non_map(self):
+        code = 'x = "hello"\nv = values x\n'
+        with pytest.raises(RuntimeError, match="values expects a map"):
+            run_code(code)
+
+    def test_has_key_error_on_non_map(self):
+        code = 'x = 42\nresult = has_key (x) "key"\n'
+        with pytest.raises(RuntimeError, match="has_key expects a map"):
+            run_code(code)
+
+
+class TestMapPrint:
+    """Test map printing and formatting."""
+
+    def test_print_empty_map(self):
+        code = 'x = {}\nprint x\n'
+        output = run_code(code)
+        assert output.strip() == "{}"
+
+    def test_print_string_values(self):
+        code = 'x = {"name": "Alice"}\nprint x\n'
+        output = run_code(code)
+        assert '"name": "Alice"' in output
+
+    def test_print_numeric_values(self):
+        code = 'x = {"count": 42}\nprint x\n'
+        output = run_code(code)
+        assert '"count": 42' in output
+
+    def test_print_nested_map(self):
+        code = 'inner = {"x": 1}\nouter = {"data": inner}\nprint outer\n'
+        output = run_code(code)
+        assert '"data": {"x": 1}' in output
+
+    def test_print_map_with_list(self):
+        code = 'x = {"nums": [1, 2, 3]}\nprint x\n'
+        output = run_code(code)
+        assert '"nums": [1, 2, 3]' in output
+
+
+class TestMapInControlFlow:
+    """Test maps in control flow constructs."""
+
+    def test_map_in_if(self):
+        code = '''x = {"status": "active"}
+if x["status"] == "active"
+    print "yes"
+else
+    print "no"
+'''
+        output = run_code(code)
+        assert output.strip() == "yes"
+
+    def test_map_in_while(self):
+        code = '''x = {"count": 0}
+while x["count"] < 3
+    x["count"] = x["count"] + 1
+print x["count"]
+'''
+        output = run_code(code)
+        assert output.strip() == "3"
+
+    def test_map_in_for_loop(self):
+        code = '''x = {}
+for i 0 5
+    x[i] = i * i
+print x[3]
+print len x
+'''
+        output = run_code(code)
+        assert output.strip() == "9\n5"
+
+    def test_map_in_function(self):
+        code = '''function get_value m key
+    return m[key]
+
+data = {"x": 42}
+result = get_value (data) "x"
+print result
+'''
+        output = run_code(code)
+        assert output.strip() == "42"
+
+    def test_map_returned_from_function(self):
+        code = '''function make_point x y
+    p = {"x": x, "y": y}
+    return p
+
+pt = make_point 3 4
+print pt["x"]
+print pt["y"]
+'''
+        output = run_code(code)
+        assert output.strip() == "3\n4"
+
+
+class TestMapWordFrequency:
+    """Test practical word frequency counting with maps."""
+
+    def test_word_frequency(self):
+        code = '''words = split "a b a c b a" " "
+freq = {}
+for i 0 len words
+    word = words[i]
+    if contains (freq) word
+        freq[word] = freq[word] + 1
+    else
+        freq[word] = 1
+print freq["a"]
+print freq["b"]
+print freq["c"]
+'''
+        output = run_code(code)
+        assert output.strip() == "3\n2\n1"
+
+
+class TestMapDemo:
+    """Test that map_demo.srv runs successfully."""
+
+    def test_map_demo_runs(self):
+        test_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "map_demo.srv")
+        if not os.path.isfile(test_file):
+            pytest.skip("map_demo.srv not found")
+        with open(test_file) as f:
+            code = f.read()
+        output = run_code(code)
+        assert "=== all map tests passed ===" in output
+
+
+class TestIndexedAssignment:
+    """Test indexed assignment for both lists and maps."""
+
+    def test_list_indexed_assignment(self):
+        code = 'x = [10, 20, 30]\nx[1] = 99\nprint x[1]\n'
+        output = run_code(code)
+        assert output.strip() == "99"
+
+    def test_list_indexed_assignment_first(self):
+        code = 'x = [1, 2, 3]\nx[0] = 100\nprint x[0]\n'
+        output = run_code(code)
+        assert output.strip() == "100"
+
+    def test_list_indexed_assignment_last(self):
+        code = 'x = [1, 2, 3]\nx[2] = 300\nprint x[2]\n'
+        output = run_code(code)
+        assert output.strip() == "300"
+
+    def test_list_indexed_assignment_out_of_bounds(self):
+        code = 'x = [1, 2, 3]\nx[5] = 99\n'
+        with pytest.raises(RuntimeError, match="out of bounds"):
+            run_code(code)
+
+    def test_map_indexed_assignment(self):
+        code = 'x = {"a": 1}\nx["b"] = 2\nprint x["a"]\nprint x["b"]\n'
+        output = run_code(code)
+        assert output.strip() == "1\n2"
+
+    def test_indexed_assignment_non_collection(self):
+        code = 'x = 42\nx["a"] = 1\n'
+        with pytest.raises(RuntimeError, match="not a list or map"):
+            run_code(code)
+
+
+class TestFormatMap:
+    """Test map formatting helper."""
+
+    def test_format_value_map(self):
+        result = format_value({"a": 1.0, "b": "hello"})
+        assert '"a": 1' in result
+        assert '"b": "hello"' in result
+
+    def test_format_value_empty_map(self):
+        result = format_value({})
+        assert result == "{}"
+
+    def test_format_value_nested_map(self):
+        result = format_value({"inner": {"x": 1.0}})
+        assert '"inner": {"x": 1}' in result

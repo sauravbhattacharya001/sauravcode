@@ -2,6 +2,20 @@
 
 All notable changes to sauravcode will be documented in this file.
 
+## [2.2.0] - 2026-02-15
+
+### Maps (Dictionaries)
+- **New data type: maps** — key-value dictionaries with `{ key: value }` literal syntax
+- Bracket access for reading: `m["key"]` and writing: `m["key"] = value`
+- Supports string, number, and boolean keys; any value type including nested maps and lists
+- Empty maps: `{}`
+- **3 new built-in functions:** `keys` (get list of keys), `values` (get list of values), `has_key` (check key existence)
+- Extended existing builtins: `len` works on maps, `type_of` returns `"map"`, `contains` checks map keys, `to_string` formats maps
+- Clean printing: `{"name": "Alice", "age": 30}` (human-readable, consistent formatting)
+- **Indexed assignment node** — fixed `list[i] = val` and `map[key] = val` to use proper `IndexedAssignmentNode` (was previously a simplified `AssignmentNode` that lost index info)
+- `map_demo.srv` — comprehensive demo showing map creation, access, modification, iteration, word frequency counting, nested maps
+- 49 new tests covering map literals, access, assignment, builtins, control flow, formatting, error cases, and indexed assignment for both lists and maps
+
 ## [2.1.0] - 2026-02-14
 
 ### Standard Library

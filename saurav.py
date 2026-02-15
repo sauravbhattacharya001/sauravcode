@@ -34,6 +34,9 @@ token_specification = [
     ('RPAREN',   r'\)'),  # Right parenthesis
     ('LBRACKET', r'\['),  # Left bracket
     ('RBRACKET', r'\]'),  # Right bracket
+    ('LBRACE',   r'\{'),  # Left brace (for maps)
+    ('RBRACE',   r'\}'),  # Right brace (for maps)
+    ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
     ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
@@ -262,6 +265,45 @@ class LenNode(ASTNode):
     def __repr__(self):
         return f"LenNode(expression={self.expression})"
 
+class MapNode(ASTNode):
+    def __init__(self, pairs):
+        self.pairs = pairs  # list of (key_expr, value_expr) tuples
+
+    def __repr__(self):
+        return f"MapNode(pairs={self.pairs})"
+
+class KeysNode(ASTNode):
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __repr__(self):
+        return f"KeysNode(expression={self.expression})"
+
+class ValuesNode(ASTNode):
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __repr__(self):
+        return f"ValuesNode(expression={self.expression})"
+
+class HasKeyNode(ASTNode):
+    def __init__(self, map_expr, key_expr):
+        self.map_expr = map_expr
+        self.key_expr = key_expr
+
+    def __repr__(self):
+        return f"HasKeyNode(map_expr={self.map_expr}, key_expr={self.key_expr})"
+
+class IndexedAssignmentNode(ASTNode):
+    """Assignment to a collection element: list[index] = value, map[key] = value"""
+    def __init__(self, name, index, value):
+        self.name = name
+        self.index = index
+        self.value = value
+
+    def __repr__(self):
+        return f"IndexedAssignmentNode(name={self.name}, index={self.index}, value={self.value})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -313,14 +355,14 @@ class Parser:
                 debug(f"Parsed assignment: {name} = {expression}")
                 return AssignmentNode(name, expression)
             elif self.peek()[0] == 'LBRACKET':
-                # list[index] access — parse as expression starting from name
+                # list[index] or map[key] access — parse index
                 self.expect('LBRACKET')
                 idx = self.parse_full_expression()
                 self.expect('RBRACKET')
                 if self.peek()[0] == 'ASSIGN':
                     self.expect('ASSIGN')
                     val = self.parse_full_expression()
-                    return AssignmentNode(name, val)  # Simplified indexed assign
+                    return IndexedAssignmentNode(name, idx, val)
                 return IndexNode(IdentifierNode(name), idx)
             else:
                 return self.parse_function_call(name)
@@ -428,7 +470,7 @@ class Parser:
     def parse_function_call(self, name):
         debug(f"Parsing function call for: {name}")
         arguments = []
-        while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN', 'LBRACKET', 'KEYWORD'):
+        while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN', 'LBRACKET', 'LBRACE', 'KEYWORD'):
             pk = self.peek()
             if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len'):
                 arguments.append(self.parse_atom())
@@ -547,6 +589,8 @@ class Parser:
             return expr
         elif token_type == 'LBRACKET':
             return self.parse_list_literal()
+        elif token_type == 'LBRACE':
+            return self.parse_map_literal()
         elif token_type == 'IDENT':
             self.advance()
             pk = self.peek()
@@ -565,6 +609,9 @@ class Parser:
             elif pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len'):
                 func_call = self.parse_function_call(value)
                 return func_call
+            elif pk[0] == 'LBRACE':
+                func_call = self.parse_function_call(value)
+                return func_call
             else:
                 ident_node = IdentifierNode(value)
                 debug(f"parse_atom returning IdentifierNode: {ident_node}")
@@ -581,6 +628,20 @@ class Parser:
                 self.advance()
         self.expect('RBRACKET')
         return ListNode(elements)
+
+    def parse_map_literal(self):
+        """Parse a map literal: { key: value, key2: value2 }"""
+        self.expect('LBRACE')
+        pairs = []
+        while self.peek()[0] != 'RBRACE':
+            key = self.parse_full_expression()
+            self.expect('COLON')
+            val = self.parse_full_expression()
+            pairs.append((key, val))
+            if self.peek()[0] == 'COMMA':
+                self.advance()
+        self.expect('RBRACE')
+        return MapNode(pairs)
 
     def skip_newlines(self):
         while self.peek()[0] == 'NEWLINE':
@@ -646,6 +707,10 @@ class Interpreter:
             'range':       self._builtin_range,
             'reverse':     self._builtin_reverse,
             'sort':        self._builtin_sort,
+            # --- Map functions ---
+            'keys':        self._builtin_keys,
+            'values':      self._builtin_values,
+            'has_key':     self._builtin_has_key,
         }
 
     # --- String built-ins ---
@@ -704,7 +769,9 @@ class Interpreter:
             return str(sub) in s
         if isinstance(s, list):
             return sub in s
-        raise RuntimeError("contains expects a string or list as first argument")
+        if isinstance(s, dict):
+            return sub in s
+        raise RuntimeError("contains expects a string, list, or map as first argument")
 
     def _builtin_starts_with(self, args):
         self._expect_args('starts_with', args, 2)
@@ -788,6 +855,8 @@ class Interpreter:
             return "string"
         if isinstance(val, list):
             return "list"
+        if isinstance(val, dict):
+            return "map"
         return "unknown"
 
     def _builtin_to_string(self, args):
@@ -797,6 +866,8 @@ class Interpreter:
             return str(int(val))
         if isinstance(val, bool):
             return "true" if val else "false"
+        if isinstance(val, dict):
+            return _format_map(val)
         return str(val)
 
     def _builtin_to_number(self, args):
@@ -847,6 +918,28 @@ class Interpreter:
             raise RuntimeError("sort expects a list argument")
         return sorted(val)
 
+    # --- Map built-ins ---
+    def _builtin_keys(self, args):
+        self._expect_args('keys', args, 1)
+        val = args[0]
+        if not isinstance(val, dict):
+            raise RuntimeError("keys expects a map argument")
+        return list(val.keys())
+
+    def _builtin_values(self, args):
+        self._expect_args('values', args, 1)
+        val = args[0]
+        if not isinstance(val, dict):
+            raise RuntimeError("values expects a map argument")
+        return list(val.values())
+
+    def _builtin_has_key(self, args):
+        self._expect_args('has_key', args, 2)
+        m, key = args
+        if not isinstance(m, dict):
+            raise RuntimeError("has_key expects a map as first argument")
+        return key in m
+
     def _expect_args(self, name, args, count):
         if len(args) != count:
             raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
@@ -868,7 +961,9 @@ class Interpreter:
             elif isinstance(value, bool):
                 print("true" if value else "false")
             elif isinstance(value, list):
-                print(value)
+                print(_format_list(value))
+            elif isinstance(value, dict):
+                print(_format_map(value))
             else:
                 print(value)
             debug(f"Printed: {value}\n")
@@ -879,6 +974,20 @@ class Interpreter:
             value = self.evaluate(ast.expression)
             self.variables[ast.name] = value
             debug(f"Assigned {value} to {ast.name}\n")
+        elif isinstance(ast, IndexedAssignmentNode):
+            collection = self.variables.get(ast.name)
+            idx_or_key = self.evaluate(ast.index)
+            value = self.evaluate(ast.value)
+            if isinstance(collection, list):
+                idx = int(idx_or_key)
+                if idx < 0 or idx >= len(collection):
+                    raise RuntimeError(f"Index {idx} out of bounds (size {len(collection)})")
+                collection[idx] = value
+            elif isinstance(collection, dict):
+                collection[idx_or_key] = value
+            else:
+                raise RuntimeError(f"'{ast.name}' is not a list or map")
+            debug(f"Indexed assignment: {ast.name}[{idx_or_key}] = {value}\n")
         elif isinstance(ast, IfNode):
             self.execute_if(ast)
         elif isinstance(ast, WhileNode):
@@ -1072,19 +1181,94 @@ class Interpreter:
             return [self.evaluate(e) for e in node.elements]
         elif isinstance(node, IndexNode):
             obj = self.evaluate(node.obj)
-            idx = int(self.evaluate(node.index))
+            idx = self.evaluate(node.index)
             if isinstance(obj, list):
-                if idx < 0 or idx >= len(obj):
-                    raise RuntimeError(f"Index {idx} out of bounds (size {len(obj)})")
+                i = int(idx)
+                if i < 0 or i >= len(obj):
+                    raise RuntimeError(f"Index {i} out of bounds (size {len(obj)})")
+                return obj[i]
+            if isinstance(obj, dict):
+                if idx not in obj:
+                    raise RuntimeError(f"Key {idx!r} not found in map")
                 return obj[idx]
             raise RuntimeError(f"Cannot index into {type(obj).__name__}")
         elif isinstance(node, LenNode):
             obj = self.evaluate(node.expression)
             if isinstance(obj, (list, str)):
                 return float(len(obj))
+            if isinstance(obj, dict):
+                return float(len(obj))
             raise RuntimeError(f"Cannot get length of {type(obj).__name__}")
+        elif isinstance(node, MapNode):
+            result = {}
+            for key_expr, val_expr in node.pairs:
+                key = self.evaluate(key_expr)
+                val = self.evaluate(val_expr)
+                result[key] = val
+            return result
         else:
             raise ValueError(f'Unknown node type: {node}')
+
+# Helper formatting functions
+def _format_value_for_print(value):
+    """Format a value for print output."""
+    if isinstance(value, float) and value == int(value):
+        return str(int(value))
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return _format_list(value)
+    if isinstance(value, dict):
+        return _format_map(value)
+    return str(value)
+
+
+def _format_list(lst):
+    """Format a list for display."""
+    items = []
+    for v in lst:
+        if isinstance(v, str):
+            items.append(f'"{v}"')
+        elif isinstance(v, float) and v == int(v):
+            items.append(str(int(v)))
+        elif isinstance(v, bool):
+            items.append("true" if v else "false")
+        elif isinstance(v, dict):
+            items.append(_format_map(v))
+        elif isinstance(v, list):
+            items.append(_format_list(v))
+        else:
+            items.append(str(v))
+    return "[" + ", ".join(items) + "]"
+
+
+def _format_map(m):
+    """Format a map/dict for display."""
+    pairs = []
+    for k, v in m.items():
+        if isinstance(k, str):
+            key_str = f'"{k}"'
+        elif isinstance(k, float) and k == int(k):
+            key_str = str(int(k))
+        else:
+            key_str = str(k)
+        if isinstance(v, str):
+            val_str = f'"{v}"'
+        elif isinstance(v, float) and v == int(v):
+            val_str = str(int(v))
+        elif isinstance(v, bool):
+            val_str = "true" if v else "false"
+        elif isinstance(v, dict):
+            val_str = _format_map(v)
+        elif isinstance(v, list):
+            val_str = _format_list(v)
+        else:
+            val_str = str(v)
+        pairs.append(f"{key_str}: {val_str}")
+    return "{" + ", ".join(pairs) + "}"
+
 
 # REPL (Read-Eval-Print Loop)
 def format_value(value):
@@ -1100,6 +1284,8 @@ def format_value(value):
     if isinstance(value, list):
         items = ", ".join(format_value(v) for v in value)
         return f"[{items}]"
+    if isinstance(value, dict):
+        return _format_map(value)
     return str(value)
 
 
@@ -1148,7 +1334,7 @@ def repl():
                 'replace':     'replace str old new — replace occurrences in string',
                 'split':       'split str delim     — split string into list',
                 'join':        'join delim list     — join list into string',
-                'contains':    'contains str sub    — check if string/list contains value',
+                'contains':    'contains str sub    — check if string/list/map contains value',
                 'starts_with': 'starts_with str pre — check if string starts with prefix',
                 'ends_with':   'ends_with str suf   — check if string ends with suffix',
                 'substring':   'substring str s e   — extract substring [start:end]',
@@ -1160,13 +1346,16 @@ def repl():
                 'ceil':        'ceil n              — round up to integer',
                 'sqrt':        'sqrt n              — square root',
                 'power':       'power base exp      — exponentiation',
-                'type_of':     'type_of val         — get type name (number/string/bool/list)',
+                'type_of':     'type_of val         — get type name (number/string/bool/list/map)',
                 'to_string':   'to_string val       — convert value to string',
                 'to_number':   'to_number val       — convert value to number',
                 'input':       'input [prompt]      — read line from stdin',
                 'range':       'range [start] end [step] — generate list of numbers',
                 'reverse':     'reverse val         — reverse a list or string',
                 'sort':        'sort list           — sort a list',
+                'keys':        'keys map            — get list of map keys',
+                'values':      'values map          — get list of map values',
+                'has_key':     'has_key map key     — check if map contains key',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):
@@ -1270,7 +1459,7 @@ def _repl_execute(code, interpreter):
                 formatted = format_value(result)
                 if formatted is not None:
                     print(formatted)
-        elif isinstance(node, (PrintNode, AssignmentNode, IfNode, WhileNode, ForNode, AppendNode)):
+        elif isinstance(node, (PrintNode, AssignmentNode, IndexedAssignmentNode, IfNode, WhileNode, ForNode, AppendNode)):
             interpreter.interpret(node)
         else:
             interpreter.interpret(node)
@@ -1333,7 +1522,7 @@ def main():
             interpreter.interpret(node)  # Store the function definitions
         elif isinstance(node, FunctionCallNode):
             result = interpreter.execute_function(node)  # Execute standalone function calls
-        elif isinstance(node, (PrintNode, AssignmentNode, IfNode, WhileNode, ForNode, AppendNode)):
+        elif isinstance(node, (PrintNode, AssignmentNode, IndexedAssignmentNode, IfNode, WhileNode, ForNode, AppendNode)):
             interpreter.interpret(node)  # Execute statements
         else:
             interpreter.interpret(node)

@@ -31,12 +31,13 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Dual execution** — interpreted (`saurav.py`) or compiled to native (`sauravcc.py`)
 - **Interactive REPL** — experiment with sauravcode in real-time
 - **Functions & recursion** — with clean call syntax
-- **Dynamic typing** — integers, floats, booleans, strings, lists
+- **Dynamic typing** — integers, floats, booleans, strings, lists, maps
 - **Control flow** — if/else if/else, while loops, range-based for loops
 - **Classes** — with fields, methods, and `self`
 - **Error handling** — try/catch blocks
 - **Lists** — dynamic arrays with append, len, indexing
-- **Standard library** — 27 built-in functions for strings, math, and utilities
+- **Maps** — key-value dictionaries with `{}` syntax, bracket access, and built-in functions
+- **Standard library** — 30 built-in functions for strings, math, maps, and utilities
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
 
@@ -167,6 +168,37 @@ append nums 40
 print nums[3]          # 40
 ```
 
+### Maps (Dictionaries)
+
+```
+# Create a map with { key: value } syntax
+person = {"name": "Alice", "age": 30, "active": true}
+print person["name"]    # Alice
+
+# Add/update keys
+person["email"] = "alice@example.com"
+person["age"] = 31
+
+# Built-in map functions
+k = keys person          # list of keys
+v = values person        # list of values
+print has_key (person) "name"    # true
+print contains (person) "email"  # true
+print len person                 # 4
+print type_of person             # map
+
+# Word frequency counter
+words = split "hello world hello" " "
+freq = {}
+for i 0 len words
+    word = words[i]
+    if contains (freq) word
+        freq[word] = freq[word] + 1
+    else
+        freq[word] = 1
+print freq["hello"]     # 2
+```
+
 ### Classes
 
 ```
@@ -217,6 +249,13 @@ y = to_number "3.14"            # 3.14
 nums = range 1 6                # [1, 2, 3, 4, 5]
 print reverse "hello"           # olleh
 print sort [3, 1, 2]            # [1, 2, 3]
+
+# Map functions
+m = {"a": 1, "b": 2}
+k = keys m                      # ["a", "b"]
+v = values m                    # [1, 2]
+print has_key (m) "a"           # true
+print contains (m) "c"          # false
 ```
 
 Type `builtins` in the REPL to see all available functions with usage.
@@ -266,6 +305,7 @@ python sauravcc.py program.srv -v
 | For loops (range-based) | ✅ | ✅ |
 | Strings | ✅ | ✅ |
 | Lists (dynamic arrays) | ✅ | ✅ |
+| Maps (dictionaries) | ✅ | — |
 | Classes | ✅ | ✅ |
 | Try / catch | ✅ | ✅ |
 | Parenthesized expressions | ✅ | ✅ |
@@ -292,6 +332,8 @@ sauravcode/
 ├── a.srv               # Function composition example
 ├── test.srv            # Basic test
 ├── test_all.srv        # Comprehensive feature test
+├── stdlib_demo.srv     # Standard library demo
+├── map_demo.srv        # Map/dictionary demo
 ├── docs/
 │   ├── LANGUAGE.md     # Language reference & EBNF grammar
 │   ├── ARCHITECTURE.md # Compiler/interpreter internals
@@ -355,11 +397,12 @@ Contributions are welcome! Here's how to get started:
 
 ### Ideas for Contributions
 
-- Additional data structures (dictionaries, sets)
+- Additional data structures (sets, tuples)
 - Import/module system
 - Standard library functions
 - IDE/editor syntax highlighting
 - Optimization passes in the compiler
+- Map support in the compiler (`sauravcc.py`)
 
 ## 📄 License
 
