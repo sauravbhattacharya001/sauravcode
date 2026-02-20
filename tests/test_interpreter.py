@@ -136,9 +136,15 @@ class TestTokenizer:
         assert "DEDENT" in types
 
     def test_comment_token(self):
+        """Comments are now stripped at the tokenizer level for efficiency."""
         tokens = list(tokenize("# this is a comment\n"))
         comment_tokens = [t for t in tokens if t[0] == "COMMENT"]
-        assert len(comment_tokens) == 1
+        assert len(comment_tokens) == 0, "Comments should be stripped during tokenization"
+        # Verify comments don't interfere with subsequent code
+        tokens = list(tokenize("x = 5\n# comment\ny = 10\n"))
+        idents = [t[1] for t in tokens if t[0] == "IDENT"]
+        assert "x" in idents
+        assert "y" in idents
 
     def test_mismatch_raises(self):
         with pytest.raises(RuntimeError, match="Unexpected character"):

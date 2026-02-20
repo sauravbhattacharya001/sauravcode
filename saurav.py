@@ -47,7 +47,6 @@ token_specification = [
 ]
 
 tok_regex = '|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_specification)
-get_token = re.compile(tok_regex).match
 
 def tokenize(code):
     debug("Tokenizing code...")
@@ -81,7 +80,7 @@ def tokenize(code):
                     tokens.append(('DEDENT', popped_indent, line_num, line_start))
                     debug(f"Added DEDENT token: {popped_indent}")
     
-        elif typ == 'SKIP':
+        elif typ in ('SKIP', 'COMMENT'):
             continue
         elif typ == 'MISMATCH':
             raise RuntimeError(f'Unexpected character {value!r} on line {line_num}')
@@ -285,28 +284,6 @@ class FStringNode(ASTNode):
     def __repr__(self):
         return f"FStringNode(parts={self.parts})"
 
-class KeysNode(ASTNode):
-    def __init__(self, expression):
-        self.expression = expression
-
-    def __repr__(self):
-        return f"KeysNode(expression={self.expression})"
-
-class ValuesNode(ASTNode):
-    def __init__(self, expression):
-        self.expression = expression
-
-    def __repr__(self):
-        return f"ValuesNode(expression={self.expression})"
-
-class HasKeyNode(ASTNode):
-    def __init__(self, map_expr, key_expr):
-        self.map_expr = map_expr
-        self.key_expr = key_expr
-
-    def __repr__(self):
-        return f"HasKeyNode(map_expr={self.map_expr}, key_expr={self.key_expr})"
-
 class IndexedAssignmentNode(ASTNode):
     """Assignment to a collection element: list[index] = value, map[key] = value"""
     def __init__(self, name, index, value):
@@ -339,10 +316,7 @@ class Parser:
         token_type, value, *_ = self.peek()
         debug(f"Parsing statement: token_type={token_type}, value={repr(value)}")
 
-        if token_type == 'COMMENT':
-            self.advance()
-            return None
-        elif token_type == 'KEYWORD' and value == 'function':
+        if token_type == 'KEYWORD' and value == 'function':
             return self.parse_function()
         elif token_type == 'KEYWORD' and value == 'return':
             self.expect('KEYWORD', 'return')
@@ -1312,21 +1286,6 @@ class Interpreter:
         else:
             raise ValueError(f'Unknown node type: {node}')
 
-# Helper formatting functions
-def _format_value_for_print(value):
-    """Format a value for print output."""
-    if isinstance(value, float) and value == int(value):
-        return str(int(value))
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        return _format_list(value)
-    if isinstance(value, dict):
-        return _format_map(value)
-    return str(value)
-
 
 def _format_list(lst):
     """Format a list for display."""
@@ -1556,16 +1515,12 @@ def _repl_execute(code, interpreter):
     ast_nodes = parser.parse()
 
     for node in ast_nodes:
-        if isinstance(node, FunctionNode):
-            interpreter.interpret(node)
-        elif isinstance(node, FunctionCallNode):
+        if isinstance(node, FunctionCallNode):
             result = interpreter.execute_function(node)
             if result is not None:
                 formatted = format_value(result)
                 if formatted is not None:
                     print(formatted)
-        elif isinstance(node, (PrintNode, AssignmentNode, IndexedAssignmentNode, IfNode, WhileNode, ForNode, AppendNode)):
-            interpreter.interpret(node)
         else:
             interpreter.interpret(node)
 
@@ -1623,12 +1578,8 @@ def main():
     interpreter = Interpreter()
     result = None
     for node in ast_nodes:
-        if isinstance(node, FunctionNode):
-            interpreter.interpret(node)  # Store the function definitions
-        elif isinstance(node, FunctionCallNode):
-            result = interpreter.execute_function(node)  # Execute standalone function calls
-        elif isinstance(node, (PrintNode, AssignmentNode, IndexedAssignmentNode, IfNode, WhileNode, ForNode, AppendNode)):
-            interpreter.interpret(node)  # Execute statements
+        if isinstance(node, FunctionCallNode):
+            result = interpreter.execute_function(node)
         else:
             interpreter.interpret(node)
     
