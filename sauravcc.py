@@ -311,6 +311,10 @@ class Parser:
             return self.parse_try()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
+        elif token_type == 'KEYWORD' and value == 'pop':
+            return self.parse_pop()
+        elif token_type == 'KEYWORD' and value == 'self':
+            return self.parse_self_statement()
         elif token_type == 'IDENT':
             name = self.expect('IDENT')[1]
             # Check for dot access / method call
@@ -446,6 +450,20 @@ class Parser:
         value = self.parse_full_expression()
         return AppendNode(list_name, value)
 
+    def parse_pop(self):
+        self.expect('KEYWORD', 'pop')
+        list_name = self.expect('IDENT')[1]
+        return PopNode(list_name)
+
+    def parse_self_statement(self):
+        """Parse self.field = val as a DotAssignmentNode."""
+        self.expect('KEYWORD', 'self')
+        self.expect('DOT')
+        field = self.expect('IDENT')[1]
+        self.expect('ASSIGN')
+        val = self.parse_full_expression()
+        return DotAssignmentNode(IdentifierNode('self'), field, val)
+
     def parse_dot_chain(self, obj):
         """Parse obj.field or obj.method args"""
         while self.peek()[0] == 'DOT':
@@ -489,7 +507,7 @@ class Parser:
         arguments = []
         while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN', 'LBRACKET', 'KEYWORD'):
             pk = self.peek()
-            if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'new'):
+            if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'new', 'pop', 'self'):
                 arguments.append(self.parse_simple_arg())
             elif pk[0] == 'KEYWORD':
                 break
@@ -524,6 +542,10 @@ class Parser:
             self.advance()
             class_name = self.expect('IDENT')[1]
             return NewNode(class_name, [])
+        elif token_type == 'KEYWORD' and value == 'pop':
+            self.advance()
+            list_name = self.expect('IDENT')[1]
+            return PopNode(list_name)
         elif token_type == 'LPAREN':
             # Parenthesized expression — full expression inside
             self.expect('LPAREN')
@@ -651,6 +673,13 @@ class Parser:
             while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN'):
                 args.append(self.parse_atom())
             return NewNode(class_name, args)
+        elif token_type == 'KEYWORD' and value == 'pop':
+            self.advance()
+            list_name = self.expect('IDENT')[1]
+            return PopNode(list_name)
+        elif token_type == 'KEYWORD' and value == 'self':
+            self.advance()
+            return IdentifierNode('self')
         elif token_type == 'LPAREN':
             self.expect('LPAREN')
             expr = self.parse_full_expression()
@@ -669,7 +698,7 @@ class Parser:
                 return self.parse_function_call(value)
             elif pk[0] == 'IDENT':
                 return self.parse_function_call(value)
-            elif pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'new'):
+            elif pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'new', 'pop', 'self'):
                 return self.parse_function_call(value)
             else:
                 return IdentifierNode(value)
@@ -979,7 +1008,11 @@ class CCodeGenerator:
         for stmt in cls.body:
             if isinstance(stmt, FunctionNode):
                 for s in stmt.body:
-                    if isinstance(s, AssignmentNode) and isinstance(s.name, str) and s.name.startswith('self.'):
+                    # Handle DotAssignmentNode: self.field = val
+                    if isinstance(s, DotAssignmentNode) and isinstance(s.obj, IdentifierNode) and s.obj.name == 'self':
+                        fields.add(s.field)
+                    # Legacy: AssignmentNode with self. prefix (shouldn't happen anymore, but keep for safety)
+                    elif isinstance(s, AssignmentNode) and isinstance(s.name, str) and s.name.startswith('self.'):
                         fields.add(s.name[5:])
         if not fields:
             self.emit("double __placeholder;")
@@ -1042,7 +1075,11 @@ class CCodeGenerator:
             obj_c = self.compile_expression(stmt.obj)
             field = self._safe_ident(stmt.field)
             val_c = self.compile_expression(stmt.value)
-            self.emit(f"{obj_c}.{field} = {val_c};")
+            # Use -> for pointer access (self is a pointer in class methods)
+            if isinstance(stmt.obj, IdentifierNode) and stmt.obj.name == 'self':
+                self.emit(f"{obj_c}->{field} = {val_c};")
+            else:
+                self.emit(f"{obj_c}.{field} = {val_c};")
 
         elif isinstance(stmt, AssignmentNode):
             expr_c = self.compile_expression(stmt.expression)
@@ -1158,6 +1195,10 @@ class CCodeGenerator:
             val_c = self.compile_expression(stmt.value)
             self.emit(f"srv_list_append(&{safe_list}, {val_c});")
 
+        elif isinstance(stmt, PopNode):
+            safe_list = self._safe_ident(stmt.list_name)
+            self.emit(f"srv_list_pop(&{safe_list});")
+
         elif isinstance(stmt, ClassNode):
             pass  # Already handled in first pass
 
@@ -1240,7 +1281,28 @@ class CCodeGenerator:
         elif isinstance(expr, DotAccessNode):
             obj_c = self.compile_expression(expr.obj)
             field = self._safe_ident(expr.field)
+            # Use -> for pointer access (self is a pointer in class methods)
+            if isinstance(expr.obj, IdentifierNode) and expr.obj.name == 'self':
+                return f"{obj_c}->{field}"
             return f"{obj_c}.{field}"
+
+        elif isinstance(expr, NewNode):
+            # Generate struct initialization — call ClassName_init if it exists
+            class_name = expr.class_name
+            if class_name in self.classes:
+                # Create a zero-initialized struct and call init
+                args_c = ", ".join(self.compile_expression(a) for a in expr.arguments)
+                if args_c:
+                    return f"({{ {class_name} __tmp = {{0}}; {class_name}_init(&__tmp, {args_c}); __tmp; }})"
+                else:
+                    return f"({{ {class_name} __tmp = {{0}}; {class_name}_init(&__tmp); __tmp; }})"
+            else:
+                # Unknown class — just zero-init
+                return f"(({class_name}){{0}})"
+
+        elif isinstance(expr, PopNode):
+            safe_list = self._safe_ident(expr.list_name)
+            return f"srv_list_pop(&{safe_list})"
 
         elif isinstance(expr, MethodCallNode):
             obj_c = self.compile_expression(expr.obj)

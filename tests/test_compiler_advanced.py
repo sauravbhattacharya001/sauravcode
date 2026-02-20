@@ -3,11 +3,6 @@ Tests for sauravcode compiler (sauravcc.py) — OOP, Pop, and advanced features.
 
 Covers class compilation, object instantiation, dot access, method calls,
 dot assignment, pop operations, and edge cases in C code generation.
-
-KNOWN BUGS DOCUMENTED:
-- self.field = val inside class methods raises SyntaxError (self is a keyword
-  not handled in parse_statement)
-- pop keyword not handled as a statement in the parser
 """
 
 import pytest
@@ -128,19 +123,18 @@ class TestClassCompilation:
         assert "double x" in c_code
         assert "double y" in c_code
 
-    def test_self_field_assignment_is_a_known_bug(self):
-        """BUG: self.field = val inside class methods raises SyntaxError.
-
-        The parser doesn't handle 'self' keyword as a statement starter.
-        self.x = val should parse to DotAssignmentNode but currently fails.
-        """
+    def test_self_field_assignment_compiles(self):
+        """self.field = val inside class methods compiles to struct field assignment via pointer."""
         code = """class Point
     function init x y
         self.x = x
         self.y = y
 """
-        with pytest.raises(SyntaxError, match="Unknown statement.*self"):
-            compile_to_c(code)
+        c_code = compile_to_c(code)
+        assert "self->x =" in c_code
+        assert "self->y =" in c_code
+        assert "double x;" in c_code  # struct field
+        assert "double y;" in c_code  # struct field
 
     def test_multiple_classes_simple(self):
         """Multiple class definitions with simple init generate separate structs."""
@@ -177,16 +171,19 @@ x = new Foo
         assert isinstance(assigns[0].expression, NewNode)
         assert assigns[0].expression.class_name == "Foo"
 
-    def test_new_with_self_field_is_a_known_bug(self):
-        """BUG: new with class using self.field fails because of self parsing bug."""
+    def test_new_with_self_field_compiles(self):
+        """new with class using self.field now compiles correctly."""
         code = """class Point
     function init x y
         self.x = x
         self.y = y
 p = new Point 3 4
 """
-        with pytest.raises(SyntaxError, match="Unknown statement.*self"):
-            parse_program(code)
+        program = parse_program(code)
+        assigns = [s for s in program.statements if isinstance(s, AssignmentNode)]
+        assert len(assigns) == 1
+        assert isinstance(assigns[0].expression, NewNode)
+        assert assigns[0].expression.class_name == "Point"
 
 
 # ============================================================
@@ -196,25 +193,26 @@ p = new Point 3 4
 class TestPopCompilation:
     """Test parsing and C code generation for pop operations."""
 
-    def test_pop_standalone_is_a_known_bug(self):
-        """BUG: pop as a standalone statement isn't handled in the parser.
-
-        The parser's parse_statement doesn't have a case for 'pop' keyword,
-        even though PopNode exists and the code generator supports it.
-        """
+    def test_pop_standalone_compiles(self):
+        """pop as a standalone statement compiles to srv_list_pop call."""
         code = """nums = [1, 2, 3]
 pop nums
 """
-        with pytest.raises(SyntaxError, match="Unknown statement.*pop"):
-            parse_program(code)
+        c_code = compile_to_c(code)
+        assert "srv_list_pop(&nums)" in c_code
 
-    def test_pop_in_expression_is_a_known_bug(self):
-        """BUG: pop in assignment expression also fails to parse."""
+    def test_pop_in_expression_compiles(self):
+        """pop in assignment expression compiles correctly."""
         code = """nums = [1, 2, 3]
 x = pop nums
 """
-        with pytest.raises(SyntaxError, match="Unexpected token.*pop"):
-            parse_program(code)
+        program = parse_program(code)
+        assigns = [s for s in program.statements if isinstance(s, AssignmentNode)]
+        assert len(assigns) == 2
+        assert isinstance(assigns[1].expression, PopNode)
+        
+        c_code = compile_to_c(code)
+        assert "srv_list_pop(&nums)" in c_code
 
     def test_pop_node_exists_in_ast(self):
         """PopNode class exists and can be instantiated."""
@@ -261,20 +259,53 @@ f.x = 42
         dot_assigns = [s for s in program.statements if isinstance(s, DotAssignmentNode)]
         assert len(dot_assigns) == 1
 
-    def test_new_node_in_expression_is_a_known_bug(self):
-        """BUG: NewNode isn't handled in compile_expression.
-
-        When compiling 'f = new Foo', the code generator doesn't know how
-        to compile a NewNode as an expression, raising ValueError.
-        """
+    def test_new_node_in_expression_compiles(self):
+        """NewNode compiles to struct initialization with init call."""
         code = """class Foo
     function init
         return 0
 f = new Foo
 f.x = 99
 """
-        with pytest.raises(ValueError, match="Unknown expression type: NewNode"):
-            compile_to_c(code)
+        c_code = compile_to_c(code)
+        assert "Foo_init" in c_code
+        assert "f.x = 99" in c_code
+
+    def test_full_oop_workflow_compiles(self):
+        """Full OOP workflow: class with fields, new, dot access, methods."""
+        code = """class Point
+    function init x y
+        self.x = x
+        self.y = y
+    function getX
+        return self.x
+
+p = new Point 3 4
+print p.x
+"""
+        c_code = compile_to_c(code)
+        # Struct should have x and y fields
+        assert "double x;" in c_code
+        assert "double y;" in c_code
+        # Init should use pointer access
+        assert "self->x =" in c_code
+        assert "self->y =" in c_code
+        # getX should read via pointer
+        assert "self->x" in c_code
+        # NewNode should generate init call
+        assert "Foo" not in c_code or "Point" in c_code
+        assert "Point_init" in c_code
+
+    def test_pop_in_while_loop_compiles(self):
+        """Pop used in a while loop body compiles correctly."""
+        code = """nums = [1, 2, 3]
+while len nums > 0
+    x = pop nums
+    print x
+"""
+        c_code = compile_to_c(code)
+        assert "srv_list_pop" in c_code
+        assert "srv_list_len" in c_code
 
 
 # ============================================================
