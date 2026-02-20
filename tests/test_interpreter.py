@@ -44,6 +44,7 @@ from saurav import (
     AppendNode,
     LenNode,
     MapNode,
+    FStringNode,
     ASTNode,
 )
 
@@ -1395,3 +1396,313 @@ class TestFormatMap:
     def test_format_value_nested_map(self):
         result = format_value({"inner": {"x": 1.0}})
         assert '"inner": {"x": 1}' in result
+
+
+# ============================================================
+# F-String (String Interpolation) Tests
+# ============================================================
+
+class TestFStringTokenizer:
+    """Test that f-strings are tokenized correctly."""
+
+    def test_fstring_token_type(self):
+        tokens = list(tokenize('f"hello"\n'))
+        fstring_tokens = [t for t in tokens if t[0] == "FSTRING"]
+        assert len(fstring_tokens) == 1
+        assert fstring_tokens[0][1] == 'f"hello"'
+
+    def test_fstring_with_expression(self):
+        tokens = list(tokenize('f"Hello {name}"\n'))
+        fstring_tokens = [t for t in tokens if t[0] == "FSTRING"]
+        assert len(fstring_tokens) == 1
+
+    def test_fstring_not_regular_string(self):
+        """f-strings should NOT be tokenized as regular STRING."""
+        tokens = list(tokenize('f"test"\n'))
+        string_tokens = [t for t in tokens if t[0] == "STRING"]
+        assert len(string_tokens) == 0
+
+    def test_regular_string_unchanged(self):
+        """Regular strings should still work."""
+        tokens = list(tokenize('"hello"\n'))
+        string_tokens = [t for t in tokens if t[0] == "STRING"]
+        assert len(string_tokens) == 1
+
+
+class TestFStringParser:
+    """Test f-string parsing into FStringNode."""
+
+    def test_parse_fstring_literal_only(self):
+        tokens = list(tokenize('x = f"hello world"\n'))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assignments = [n for n in ast if isinstance(n, AssignmentNode)]
+        assert len(assignments) == 1
+        assert isinstance(assignments[0].expression, FStringNode)
+
+    def test_parse_fstring_with_variable(self):
+        tokens = list(tokenize('x = f"Hello {name}"\n'))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assign = [n for n in ast if isinstance(n, AssignmentNode)][0]
+        fstr = assign.expression
+        assert isinstance(fstr, FStringNode)
+        assert len(fstr.parts) == 2  # "Hello " + name expression
+
+    def test_parse_fstring_repr(self):
+        node = FStringNode([StringNode("hello")])
+        assert "FStringNode" in repr(node)
+
+    def test_parse_fstring_empty_expression_raises(self):
+        tokens = list(tokenize('x = f"Hello {}"\n'))
+        parser = Parser(tokens)
+        with pytest.raises(SyntaxError, match="Empty expression"):
+            parser.parse()
+
+    def test_parse_fstring_unmatched_brace_raises(self):
+        tokens = list(tokenize('x = f"Hello {name"\n'))
+        parser = Parser(tokens)
+        with pytest.raises(SyntaxError, match="Unmatched"):
+            parser.parse()
+
+
+class TestFStringBasic:
+    """Test basic f-string evaluation."""
+
+    def test_fstring_no_interpolation(self):
+        output = run_code('print f"hello world"\n')
+        assert output.strip() == "hello world"
+
+    def test_fstring_single_variable(self):
+        output = run_code('name = "Alice"\nprint f"Hello {name}!"\n')
+        assert output.strip() == "Hello Alice!"
+
+    def test_fstring_two_variables(self):
+        output = run_code('first = "John"\nlast = "Doe"\nprint f"{first} {last}"\n')
+        assert output.strip() == "John Doe"
+
+    def test_fstring_number_variable(self):
+        output = run_code('x = 42\nprint f"x is {x}"\n')
+        assert output.strip() == "x is 42"
+
+    def test_fstring_float_variable(self):
+        output = run_code('pi = 3.14\nprint f"pi is {pi}"\n')
+        assert output.strip() == "pi is 3.14"
+
+    def test_fstring_boolean_true(self):
+        output = run_code('flag = true\nprint f"flag is {flag}"\n')
+        assert output.strip() == "flag is true"
+
+    def test_fstring_boolean_false(self):
+        output = run_code('flag = false\nprint f"flag is {flag}"\n')
+        assert output.strip() == "flag is false"
+
+    def test_fstring_empty_text(self):
+        output = run_code('x = "hello"\nprint f"{x}"\n')
+        assert output.strip() == "hello"
+
+
+class TestFStringExpressions:
+    """Test f-strings with expressions inside { }."""
+
+    def test_fstring_arithmetic(self):
+        output = run_code('x = 10\nprint f"x + 5 = {x + 5}"\n')
+        assert output.strip() == "x + 5 = 15"
+
+    def test_fstring_multiplication(self):
+        output = run_code('n = 7\nprint f"n * 3 = {n * 3}"\n')
+        assert output.strip() == "n * 3 = 21"
+
+    def test_fstring_comparison(self):
+        output = run_code('x = 10\nprint f"x > 5? {x > 5}"\n')
+        assert output.strip() == "x > 5? true"
+
+    def test_fstring_function_call(self):
+        output = run_code('s = "hello"\nprint f"upper: {upper s}"\n')
+        assert output.strip() == "upper: HELLO"
+
+    def test_fstring_len(self):
+        output = run_code('items = [1, 2, 3]\nprint f"count: {len items}"\n')
+        assert output.strip() == "count: 3"
+
+    def test_fstring_complex_expression(self):
+        output = run_code('a = 3\nb = 4\nprint f"sum={a + b}, product={a * b}"\n')
+        assert output.strip() == "sum=7, product=12"
+
+    def test_fstring_nested_parens(self):
+        output = run_code('print f"result={(2 + 3) * 4}"\n')
+        assert output.strip() == "result=20"
+
+
+class TestFStringWithCollections:
+    """Test f-strings with lists and maps."""
+
+    def test_fstring_list(self):
+        output = run_code('nums = [1, 2, 3]\nprint f"list: {nums}"\n')
+        # Lists should print as their formatted representation inside f-strings
+        assert "list: [1, 2, 3]" in output.strip()
+
+    def test_fstring_list_index(self):
+        output = run_code('nums = [10, 20, 30]\nprint f"first: {nums[0]}"\n')
+        assert output.strip() == "first: 10"
+
+    def test_fstring_map(self):
+        output = run_code('data = {"key": "val"}\nprint f"map: {data}"\n')
+        assert '"key": "val"' in output.strip()
+
+    def test_fstring_map_access(self):
+        output = run_code('user = {"name": "Bob"}\nkey = "name"\nprint f"user: {user[key]}"\n')
+        assert output.strip() == "user: Bob"
+
+    def test_fstring_len_of_list(self):
+        output = run_code('items = [1, 2, 3, 4, 5]\nprint f"{len items} items"\n')
+        assert output.strip() == "5 items"
+
+
+class TestFStringInControlFlow:
+    """Test f-strings inside if/while/for constructs."""
+
+    def test_fstring_in_if(self):
+        code = '''status = "active"
+if status == "active"
+    print f"Status: {status}"
+'''
+        output = run_code(code)
+        assert output.strip() == "Status: active"
+
+    def test_fstring_in_for_loop(self):
+        code = '''for i 1 4
+    print f"item {i}"
+'''
+        output = run_code(code)
+        assert output.strip() == "item 1\nitem 2\nitem 3"
+
+    def test_fstring_in_while_loop(self):
+        code = '''n = 3
+while n > 0
+    print f"countdown: {n}"
+    n = n - 1
+'''
+        output = run_code(code)
+        assert output.strip() == "countdown: 3\ncountdown: 2\ncountdown: 1"
+
+
+class TestFStringInFunctions:
+    """Test f-strings inside function definitions."""
+
+    def test_fstring_in_function(self):
+        code = '''function greet name
+    return f"Hello, {name}!"
+
+result = greet "World"
+print result
+'''
+        output = run_code(code)
+        assert output.strip() == "Hello, World!"
+
+    def test_fstring_with_function_params(self):
+        code = '''function describe name age
+    return f"{name} is {age} years old"
+
+print describe "Alice" 30
+'''
+        output = run_code(code)
+        assert output.strip() == "Alice is 30 years old"
+
+    def test_fstring_with_computed_value(self):
+        code = '''function rectangle_info w h
+    area = w * h
+    return f"Rectangle {w}x{h}, area={area}"
+
+print rectangle_info 5 3
+'''
+        output = run_code(code)
+        assert output.strip() == "Rectangle 5x3, area=15"
+
+
+class TestFStringAssignment:
+    """Test assigning f-strings to variables."""
+
+    def test_assign_fstring(self):
+        code = 'name = "Alice"\nmsg = f"Hi {name}"\nprint msg\n'
+        output = run_code(code)
+        assert output.strip() == "Hi Alice"
+
+    def test_fstring_concatenation(self):
+        code = 'x = 1\ny = 2\na = f"x={x}"\nb = f"y={y}"\nprint a + ", " + b\n'
+        output = run_code(code)
+        assert output.strip() == "x=1, y=2"
+
+
+class TestFStringEscaping:
+    """Test escaped braces in f-strings."""
+
+    def test_escaped_open_brace(self):
+        output = run_code('print f"use {{braces}}"\n')
+        assert output.strip() == "use {braces}"
+
+    def test_escaped_close_brace(self):
+        output = run_code('print f"open{{ close}}"\n')
+        assert output.strip() == "open{ close}"
+
+    def test_escaped_braces_with_expression(self):
+        output = run_code('x = 42\nprint f"value: {{x}} = {x}"\n')
+        assert output.strip() == "value: {x} = 42"
+
+
+class TestFStringEdgeCases:
+    """Test edge cases for f-strings."""
+
+    def test_fstring_only_expression(self):
+        output = run_code('x = "hello"\nprint f"{x}"\n')
+        assert output.strip() == "hello"
+
+    def test_fstring_adjacent_expressions(self):
+        output = run_code('a = "hello"\nb = "world"\nprint f"{a}{b}"\n')
+        assert output.strip() == "helloworld"
+
+    def test_fstring_expression_with_spaces(self):
+        output = run_code('x = 10\nprint f"{ x + 5 }"\n')
+        assert output.strip() == "15"
+
+    def test_fstring_used_as_function_arg(self):
+        code = '''function echo msg
+    return msg
+
+x = 42
+result = echo f"value is {x}"
+print result
+'''
+        output = run_code(code)
+        assert output.strip() == "value is 42"
+
+    def test_fstring_in_repl(self):
+        interp = Interpreter()
+        _repl_execute('name = "Test"\n', interp)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _repl_execute('print f"Hello {name}"\n', interp)
+        assert buf.getvalue().strip() == "Hello Test"
+
+    def test_fstring_type_is_string(self):
+        output = run_code('x = f"hello"\nprint type_of x\n')
+        assert output.strip() == "string"
+
+    def test_fstring_unmatched_closing_brace_raises(self):
+        tokens = list(tokenize('x = f"hello }"\n'))
+        parser = Parser(tokens)
+        with pytest.raises(SyntaxError, match="Unmatched"):
+            parser.parse()
+
+
+class TestFStringDemo:
+    """Test that fstring_demo.srv runs successfully."""
+
+    def test_fstring_demo_runs(self):
+        test_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fstring_demo.srv")
+        if not os.path.isfile(test_file):
+            pytest.skip("fstring_demo.srv not found")
+        with open(test_file) as f:
+            code = f.read()
+        output = run_code(code)
+        assert "=== all f-string tests passed ===" in output

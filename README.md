@@ -55,6 +55,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Lists** — dynamic arrays with append, len, indexing
 - **Maps** — key-value dictionaries with `{}` syntax, bracket access, and built-in functions
 - **Standard library** — 30 built-in functions for strings, math, maps, and utilities
+- **String interpolation** — `f"Hello {name}, you are {age} years old"` f-strings
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
 
@@ -226,6 +227,27 @@ for i 0 len words
 print freq["hello"]     # 2
 ```
 
+### String Interpolation (F-Strings)
+
+Embed expressions directly in strings with the `f"..."` syntax:
+
+```
+name = "Alice"
+age = 30
+print f"Hello, {name}!"           # Hello, Alice!
+print f"{name} is {age} years old" # Alice is 30 years old
+print f"2 + 3 = {2 + 3}"          # 2 + 3 = 5
+
+# Works with any expression
+items = [1, 2, 3]
+print f"count: {len items}"       # count: 3
+print f"upper: {upper name}"      # upper: ALICE
+
+# Escaped braces: {{ and }} produce literal { and }
+x = 42
+print f"value: {{x}} = {x}"       # value: {x} = 42
+```
+
 ### Classes
 
 ```
@@ -333,6 +355,7 @@ python sauravcc.py program.srv -v
 | Strings | ✅ | ✅ |
 | Lists (dynamic arrays) | ✅ | ✅ |
 | Maps (dictionaries) | ✅ | — |
+| String interpolation (f-strings) | ✅ | — |
 | Classes | ✅ | ✅ |
 | Try / catch | ✅ | ✅ |
 | Parenthesized expressions | ✅ | ✅ |
@@ -361,6 +384,7 @@ sauravcode/
 ├── test_all.srv        # Comprehensive feature test
 ├── stdlib_demo.srv     # Standard library demo
 ├── map_demo.srv        # Map/dictionary demo
+├── fstring_demo.srv    # String interpolation demo
 ├── docs/
 │   ├── LANGUAGE.md     # Language reference & EBNF grammar
 │   ├── ARCHITECTURE.md # Compiler/interpreter internals

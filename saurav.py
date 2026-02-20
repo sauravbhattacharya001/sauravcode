@@ -21,6 +21,7 @@ def debug(msg):
 token_specification = [
     ('COMMENT',  r'#.*'),  # Comments
     ('NUMBER',   r'\d+(\.\d*)?'),  # Integer or decimal number
+    ('FSTRING',  r'f\"(?:[^\"\\]|\\.)*\"'),  # F-string literal (interpolated string)
     ('STRING',   r'\"(?:[^\"\\]|\\.)*\"'),  # String literal (with escape support)
     ('EQ',       r'=='),  # Equality operator (must precede ASSIGN)
     ('NEQ',      r'!='),  # Not-equal operator
@@ -272,6 +273,18 @@ class MapNode(ASTNode):
     def __repr__(self):
         return f"MapNode(pairs={self.pairs})"
 
+class FStringNode(ASTNode):
+    """Interpolated string: f"Hello {name}, you are {age} years old"
+    
+    Parts is a list of items — each is either a StringNode (literal text)
+    or an expression node (to be evaluated and converted to string).
+    """
+    def __init__(self, parts):
+        self.parts = parts  # list of ASTNode (StringNode for literals, others for expressions)
+
+    def __repr__(self):
+        return f"FStringNode(parts={self.parts})"
+
 class KeysNode(ASTNode):
     def __init__(self, expression):
         self.expression = expression
@@ -470,7 +483,7 @@ class Parser:
     def parse_function_call(self, name):
         debug(f"Parsing function call for: {name}")
         arguments = []
-        while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN', 'LBRACKET', 'LBRACE', 'KEYWORD'):
+        while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN', 'LBRACKET', 'LBRACE', 'KEYWORD'):
             pk = self.peek()
             if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len'):
                 arguments.append(self.parse_atom())
@@ -572,6 +585,11 @@ class Parser:
             string_node = StringNode(value[1:-1])
             debug(f"parse_atom returning StringNode: {string_node}")
             return string_node
+        elif token_type == 'FSTRING':
+            self.advance()
+            fstring_node = self.parse_fstring(value)
+            debug(f"parse_atom returning FStringNode: {fstring_node}")
+            return fstring_node
         elif token_type == 'KEYWORD' and value == 'true':
             self.advance()
             return BoolNode(True)
@@ -598,7 +616,7 @@ class Parser:
             if pk[0] == 'LBRACKET':
                 return IdentifierNode(value)
             # Check if next token could be a function argument
-            if pk[0] in ('NUMBER', 'STRING', 'LPAREN'):
+            if pk[0] in ('NUMBER', 'STRING', 'FSTRING', 'LPAREN'):
                 func_call = self.parse_function_call(value)
                 debug(f"parse_atom returning FunctionCallNode: {func_call}")
                 return func_call
@@ -642,6 +660,75 @@ class Parser:
                 self.advance()
         self.expect('RBRACE')
         return MapNode(pairs)
+
+    def parse_fstring(self, raw_value):
+        """Parse an f-string token into an FStringNode.
+        
+        raw_value is the full token text like: f"Hello {name}, age {age + 1}"
+        We strip the f" prefix and " suffix, then split on { } delimiters,
+        parsing the expressions inside { } as sauravcode expressions.
+        """
+        # Strip the f" prefix and " suffix
+        content = raw_value[2:-1]
+        
+        parts = []
+        i = 0
+        text_buf = []
+        
+        while i < len(content):
+            ch = content[i]
+            if ch == '\\' and i + 1 < len(content):
+                # Handle escape sequences
+                text_buf.append(content[i + 1])
+                i += 2
+            elif ch == '{':
+                # Check for escaped brace {{ → literal {
+                if i + 1 < len(content) and content[i + 1] == '{':
+                    text_buf.append('{')
+                    i += 2
+                    continue
+                # Flush accumulated text
+                if text_buf:
+                    parts.append(StringNode(''.join(text_buf)))
+                    text_buf = []
+                # Find matching closing brace
+                depth = 1
+                j = i + 1
+                while j < len(content) and depth > 0:
+                    if content[j] == '{':
+                        depth += 1
+                    elif content[j] == '}':
+                        depth -= 1
+                    j += 1
+                if depth != 0:
+                    raise SyntaxError("Unmatched '{' in f-string")
+                # Extract the expression text and parse it
+                expr_text = content[i + 1:j - 1].strip()
+                if not expr_text:
+                    raise SyntaxError("Empty expression in f-string")
+                # Tokenize and parse the expression
+                expr_code = expr_text + '\n'
+                expr_tokens = list(tokenize(expr_code))
+                expr_parser = Parser(expr_tokens)
+                expr_node = expr_parser.parse_full_expression()
+                parts.append(expr_node)
+                i = j
+            elif ch == '}':
+                # Check for escaped brace }} → literal }
+                if i + 1 < len(content) and content[i + 1] == '}':
+                    text_buf.append('}')
+                    i += 2
+                    continue
+                raise SyntaxError("Unmatched '}' in f-string")
+            else:
+                text_buf.append(ch)
+                i += 1
+        
+        # Flush remaining text
+        if text_buf:
+            parts.append(StringNode(''.join(text_buf)))
+        
+        return FStringNode(parts)
 
     def skip_newlines(self):
         while self.peek()[0] == 'NEWLINE':
@@ -1206,6 +1293,22 @@ class Interpreter:
                 val = self.evaluate(val_expr)
                 result[key] = val
             return result
+        elif isinstance(node, FStringNode):
+            parts = []
+            for part in node.parts:
+                val = self.evaluate(part)
+                # Format the value as a string
+                if isinstance(val, float) and val == int(val):
+                    parts.append(str(int(val)))
+                elif isinstance(val, bool):
+                    parts.append("true" if val else "false")
+                elif isinstance(val, list):
+                    parts.append(_format_list(val))
+                elif isinstance(val, dict):
+                    parts.append(_format_map(val))
+                else:
+                    parts.append(str(val))
+            return ''.join(parts)
         else:
             raise ValueError(f'Unknown node type: {node}')
 
@@ -1324,6 +1427,8 @@ def repl():
             print("Write sauravcode directly at the prompt.")
             print("For multi-line blocks (functions, if, while, for),")
             print("indent with spaces and enter a blank line to execute.")
+            print()
+            print("F-strings: use f\"Hello {name}!\" to embed expressions in strings.")
             print()
             continue
         if stripped == "builtins":
