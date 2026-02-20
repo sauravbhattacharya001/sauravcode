@@ -46,6 +46,9 @@ from saurav import (
     MapNode,
     FStringNode,
     ASTNode,
+    TryCatchNode,
+    ThrowNode,
+    ThrowSignal,
 )
 
 
@@ -1712,3 +1715,437 @@ class TestFStringDemo:
             code = f.read()
         output = run_code(code)
         assert "=== all f-string tests passed ===" in output
+
+
+# ============================================================
+# Try/Catch/Throw Tests
+# ============================================================
+
+class TestTryCatchTokenizer:
+    """Test tokenization of try/catch/throw keywords."""
+
+    def test_try_keyword_token(self):
+        tokens = list(tokenize("try\n"))
+        kw_tokens = [t for t in tokens if t[0] == "KEYWORD"]
+        assert any(t[1] == "try" for t in kw_tokens)
+
+    def test_catch_keyword_token(self):
+        tokens = list(tokenize("catch\n"))
+        kw_tokens = [t for t in tokens if t[0] == "KEYWORD"]
+        assert any(t[1] == "catch" for t in kw_tokens)
+
+    def test_throw_keyword_token(self):
+        tokens = list(tokenize("throw\n"))
+        kw_tokens = [t for t in tokens if t[0] == "KEYWORD"]
+        assert any(t[1] == "throw" for t in kw_tokens)
+
+    def test_try_catch_throw_are_keywords_not_idents(self):
+        for word in ("try", "catch", "throw"):
+            tokens = list(tokenize(f"{word}\n"))
+            kw_tokens = [t for t in tokens if t[0] == "KEYWORD" and t[1] == word]
+            ident_tokens = [t for t in tokens if t[0] == "IDENT" and t[1] == word]
+            assert len(kw_tokens) == 1
+            assert len(ident_tokens) == 0
+
+
+class TestTryCatchParser:
+    """Test parsing of try/catch/throw AST nodes."""
+
+    def test_parse_try_catch_block(self):
+        code = 'try\n    x = 1\ncatch err\n    x = 2\n'
+        tokens = list(tokenize(code))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assert len(ast) == 1
+        node = ast[0]
+        assert isinstance(node, TryCatchNode)
+        assert node.error_var == "err"
+        assert len(node.body) == 1
+        assert len(node.handler) == 1
+
+    def test_parse_throw_string(self):
+        code = 'throw "error"\n'
+        tokens = list(tokenize(code))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assert len(ast) == 1
+        node = ast[0]
+        assert isinstance(node, ThrowNode)
+        assert isinstance(node.expression, StringNode)
+
+    def test_parse_throw_number(self):
+        code = 'throw 42\n'
+        tokens = list(tokenize(code))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assert len(ast) == 1
+        assert isinstance(ast[0], ThrowNode)
+        assert isinstance(ast[0].expression, NumberNode)
+
+    def test_parse_throw_fstring(self):
+        code = 'throw f"error: {x}"\n'
+        tokens = list(tokenize(code))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assert len(ast) == 1
+        assert isinstance(ast[0], ThrowNode)
+        assert isinstance(ast[0].expression, FStringNode)
+
+    def test_parse_throw_expression(self):
+        code = 'throw 1 + 2\n'
+        tokens = list(tokenize(code))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assert len(ast) == 1
+        assert isinstance(ast[0], ThrowNode)
+        assert isinstance(ast[0].expression, BinaryOpNode)
+
+    def test_parse_try_catch_with_multiple_statements(self):
+        code = 'try\n    x = 1\n    y = 2\ncatch e\n    z = 3\n    w = 4\n'
+        tokens = list(tokenize(code))
+        parser = Parser(tokens)
+        ast = parser.parse()
+        assert len(ast) == 1
+        node = ast[0]
+        assert isinstance(node, TryCatchNode)
+        assert len(node.body) == 2
+        assert len(node.handler) == 2
+
+
+class TestTryCatchNodeRepr:
+    """Test AST node string representations."""
+
+    def test_try_catch_repr(self):
+        node = TryCatchNode([AssignmentNode("x", NumberNode(1))], "err",
+                           [PrintNode(IdentifierNode("err"))])
+        r = repr(node)
+        assert "TryCatchNode" in r
+        assert "err" in r
+
+    def test_throw_repr(self):
+        node = ThrowNode(StringNode("bad"))
+        r = repr(node)
+        assert "ThrowNode" in r
+
+
+class TestTryCatchInterpreter:
+    """Test try/catch/throw runtime behavior."""
+
+    def test_try_no_error_runs_body(self):
+        code = 'try\n    x = 42\n    print x\ncatch err\n    print "caught"\n'
+        output = run_code(code)
+        assert output.strip() == "42"
+
+    def test_try_catches_division_by_zero(self):
+        code = 'try\n    x = 10 / 0\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert "Division by zero" in output.strip()
+
+    def test_try_catches_index_out_of_bounds(self):
+        code = 'items = [1, 2, 3]\ntry\n    x = items[10]\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert "out of bounds" in output.strip()
+
+    def test_try_catches_undefined_variable(self):
+        code = 'try\n    print undefined_var\ncatch err\n    print "caught"\n'
+        output = run_code(code)
+        assert "caught" in output.strip()
+
+    def test_throw_string(self):
+        code = 'try\n    throw "boom"\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "boom"
+
+    def test_throw_number(self):
+        code = 'try\n    throw 404\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "404"
+
+    def test_throw_fstring(self):
+        code = 'x = 42\ntry\n    throw f"bad value: {x}"\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "bad value: 42"
+
+    def test_throw_expression(self):
+        code = 'try\n    throw 1 + 2\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "3"
+
+    def test_catch_binds_error_variable(self):
+        code = 'try\n    throw "test error"\ncatch my_err\n    print my_err\n'
+        output = run_code(code)
+        assert output.strip() == "test error"
+
+    def test_execution_continues_after_catch(self):
+        code = 'try\n    throw "oops"\ncatch err\n    print "caught"\nprint "continued"\n'
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines[0] == "caught"
+        assert lines[1] == "continued"
+
+    def test_variable_set_in_catch_persists(self):
+        code = 'status = "init"\ntry\n    throw "fail"\ncatch err\n    status = "recovered"\nprint status\n'
+        output = run_code(code)
+        assert output.strip() == "recovered"
+
+    def test_try_body_stops_at_error(self):
+        code = 'try\n    print "before"\n    throw "stop"\n    print "after"\ncatch err\n    print "caught"\n'
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines == ["before", "caught"]
+
+    def test_throw_from_function(self):
+        code = (
+            'function fail\n'
+            '    throw "function error"\n'
+            'try\n'
+            '    fail\n'
+            'catch err\n'
+            '    print err\n'
+        )
+        output = run_code(code)
+        assert output.strip() == "function error"
+
+    def test_throw_from_nested_function(self):
+        code = (
+            'function inner\n'
+            '    throw "deep error"\n'
+            'function outer\n'
+            '    inner\n'
+            '    return 1\n'
+            'try\n'
+            '    outer\n'
+            'catch err\n'
+            '    print err\n'
+        )
+        output = run_code(code)
+        assert output.strip() == "deep error"
+
+    def test_throw_in_if_branch(self):
+        code = (
+            'x = 0 - 1\n'
+            'try\n'
+            '    if x < 0\n'
+            '        throw "negative"\n'
+            'catch err\n'
+            '    print err\n'
+        )
+        output = run_code(code)
+        assert output.strip() == "negative"
+
+    def test_throw_in_while_loop(self):
+        code = (
+            'i = 0\n'
+            'try\n'
+            '    while i < 10\n'
+            '        if i == 5\n'
+            '            throw "stopped at 5"\n'
+            '        i = i + 1\n'
+            'catch err\n'
+            '    print err\n'
+            'print i\n'
+        )
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines[0] == "stopped at 5"
+        assert lines[1] == "5"
+
+    def test_try_catch_in_loop(self):
+        code = (
+            'for i 0 3\n'
+            '    try\n'
+            '        if i == 1\n'
+            '            throw "skip"\n'
+            '        print i\n'
+            '    catch err\n'
+            '        print f"skipped {i}"\n'
+        )
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines == ["0", "skipped 1", "2"]
+
+    def test_nested_try_catch(self):
+        code = (
+            'try\n'
+            '    try\n'
+            '        throw "inner"\n'
+            '    catch e1\n'
+            '        print f"inner caught: {e1}"\n'
+            '        throw "outer"\n'
+            'catch e2\n'
+            '    print f"outer caught: {e2}"\n'
+        )
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines[0] == "inner caught: inner"
+        assert lines[1] == "outer caught: outer"
+
+    def test_try_catch_no_error_skips_handler(self):
+        code = 'try\n    print "ok"\ncatch err\n    print "should not run"\n'
+        output = run_code(code)
+        assert output.strip() == "ok"
+
+    def test_catch_runtime_error_from_builtin(self):
+        code = 'try\n    x = sqrt (0 - 1)\ncatch err\n    print "caught sqrt error"\n'
+        output = run_code(code)
+        assert "caught sqrt error" in output.strip()
+
+    def test_catch_key_not_found(self):
+        code = 'm = {"a": 1}\ntry\n    x = m["z"]\ncatch err\n    print "missing key"\n'
+        output = run_code(code)
+        assert "missing key" in output.strip()
+
+    def test_throw_bool_value(self):
+        code = 'try\n    throw true\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "True"
+
+    def test_throw_list_value(self):
+        code = 'try\n    throw [1, 2, 3]\ncatch err\n    print err\n'
+        output = run_code(code)
+        # List converted to string via Python str() — contains the values
+        assert "1" in output.strip()
+        assert "2" in output.strip()
+        assert "3" in output.strip()
+
+    def test_uncaught_throw_raises(self):
+        code = 'throw "uncaught"\n'
+        tokens = list(tokenize(code))
+        parser = Parser(tokens)
+        ast_nodes = parser.parse()
+        interpreter = Interpreter()
+        with pytest.raises(ThrowSignal):
+            for node in ast_nodes:
+                interpreter.interpret(node)
+
+    def test_function_scope_restored_after_throw(self):
+        code = (
+            'x = "outer"\n'
+            'function breaker\n'
+            '    x = "inner"\n'
+            '    throw "bang"\n'
+            'try\n'
+            '    breaker\n'
+            'catch err\n'
+            '    print x\n'
+        )
+        output = run_code(code)
+        assert output.strip() == "outer"
+
+    def test_multiple_try_catch_sequential(self):
+        code = (
+            'try\n'
+            '    throw "first"\n'
+            'catch e\n'
+            '    print e\n'
+            'try\n'
+            '    throw "second"\n'
+            'catch e\n'
+            '    print e\n'
+        )
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines == ["first", "second"]
+
+    def test_try_catch_preserves_variables(self):
+        code = (
+            'x = 10\n'
+            'try\n'
+            '    x = 20\n'
+            '    throw "err"\n'
+            'catch e\n'
+            '    print x\n'
+        )
+        output = run_code(code)
+        assert output.strip() == "20"
+
+    def test_throw_empty_string(self):
+        code = 'try\n    throw ""\ncatch err\n    print f"error: [{err}]"\n'
+        output = run_code(code)
+        assert output.strip() == "error: []"
+
+    def test_throw_concatenated_string(self):
+        code = 'try\n    throw "err" + "or"\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "error"
+
+    def test_catch_modulo_by_zero(self):
+        code = 'try\n    x = 10 % 0\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert "Modulo by zero" in output.strip()
+
+    def test_try_catch_with_return_in_function(self):
+        code = (
+            'function safe_op x\n'
+            '    try\n'
+            '        if x == 0\n'
+            '            throw "zero"\n'
+            '        return 100 / x\n'
+            '    catch err\n'
+            '        return 0 - 1\n'
+            'print safe_op 5\n'
+            'print safe_op 0\n'
+        )
+        output = run_code(code)
+        lines = output.strip().split('\n')
+        assert lines[0] == "20"
+        assert lines[1] == "-1"
+
+    def test_error_in_catch_handler_propagates(self):
+        code = (
+            'try\n'
+            '    try\n'
+            '        throw "first"\n'
+            '    catch e\n'
+            '        x = 1 / 0\n'
+            'catch e2\n'
+            '    print f"second: {e2}"\n'
+        )
+        output = run_code(code)
+        assert "second: Division by zero" in output.strip()
+
+    def test_throw_in_for_loop_body(self):
+        code = (
+            'result = 0\n'
+            'for i 1 6\n'
+            '    try\n'
+            '        if i == 3\n'
+            '            throw "skip"\n'
+            '        result = result + i\n'
+            '    catch err\n'
+            '        result = result + 0\n'
+            'print result\n'
+        )
+        output = run_code(code)
+        # 1 + 2 + 0 + 4 + 5 = 12
+        assert output.strip() == "12"
+
+    def test_throw_float_value(self):
+        code = 'try\n    throw 3.14\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "3.14"
+
+    def test_throw_computed_value(self):
+        code = 'x = 10\ntry\n    throw x * 2 + 1\ncatch err\n    print err\n'
+        output = run_code(code)
+        assert output.strip() == "21"
+
+
+class TestTryCatchDemo:
+    """Test that try_catch_demo.srv runs successfully."""
+
+    def test_try_catch_demo_runs(self):
+        test_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "try_catch_demo.srv")
+        if not os.path.isfile(test_file):
+            pytest.skip("try_catch_demo.srv not found")
+        with open(test_file) as f:
+            code = f.read()
+        output = run_code(code)
+        assert "Caught error: Division by zero" in output
+        assert "Validation failed: Age cannot be negative" in output
+        assert "Age: 25" in output
+        assert "Array error:" in output
+        assert "Cannot divide by zero!" in output
+        assert "10 / 5 = 2" in output
+        assert "Status: recovered" in output
+        assert "Error code: 404" in output

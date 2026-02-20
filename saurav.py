@@ -39,7 +39,7 @@ token_specification = [
     ('RBRACE',   r'\}'),  # Right brace (for maps)
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -294,6 +294,34 @@ class IndexedAssignmentNode(ASTNode):
     def __repr__(self):
         return f"IndexedAssignmentNode(name={self.name}, index={self.index}, value={self.value})"
 
+class TryCatchNode(ASTNode):
+    """Try/catch error handling block.
+    
+    try
+        body...
+    catch error_var
+        handler...
+    """
+    def __init__(self, body, error_var, handler):
+        self.body = body         # list of statements in try block
+        self.error_var = error_var  # variable name to bind error message (string)
+        self.handler = handler   # list of statements in catch block
+
+    def __repr__(self):
+        return f"TryCatchNode(body={self.body}, error_var={self.error_var}, handler={self.handler})"
+
+class ThrowNode(ASTNode):
+    """Throw an error with a message expression.
+    
+    throw "something went wrong"
+    throw f"invalid value: {x}"
+    """
+    def __init__(self, expression):
+        self.expression = expression  # expression that evaluates to the error message
+
+    def __repr__(self):
+        return f"ThrowNode(expression={self.expression})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -332,6 +360,10 @@ class Parser:
             return self.parse_while()
         elif token_type == 'KEYWORD' and value == 'for':
             return self.parse_for()
+        elif token_type == 'KEYWORD' and value == 'try':
+            return self.parse_try_catch()
+        elif token_type == 'KEYWORD' and value == 'throw':
+            return self.parse_throw()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'IDENT':
@@ -435,6 +467,37 @@ class Parser:
         body = self.parse_block()
         self.expect('DEDENT')
         return ForNode(var, start, end, body)
+
+    def parse_try_catch(self):
+        """Parse try/catch block:
+        
+        try
+            ... body ...
+        catch error_var
+            ... handler ...
+        """
+        debug("Parsing try/catch statement...")
+        self.expect('KEYWORD', 'try')
+        self.expect('NEWLINE')
+        self.expect('INDENT')
+        body = self.parse_block()
+        self.expect('DEDENT')
+
+        self.expect('KEYWORD', 'catch')
+        error_var = self.expect('IDENT')[1]
+        self.expect('NEWLINE')
+        self.expect('INDENT')
+        handler = self.parse_block()
+        self.expect('DEDENT')
+
+        return TryCatchNode(body, error_var, handler)
+
+    def parse_throw(self):
+        """Parse throw statement: throw expression"""
+        debug("Parsing throw statement...")
+        self.expect('KEYWORD', 'throw')
+        expression = self.parse_full_expression()
+        return ThrowNode(expression)
 
     def parse_append(self):
         self.expect('KEYWORD', 'append')
@@ -729,6 +792,14 @@ class ReturnSignal(Exception):
     """Signal to propagate return values through nested calls."""
     def __init__(self, value):
         self.value = value
+
+class ThrowSignal(Exception):
+    """Signal to propagate thrown errors through execution.
+    
+    Caught by try/catch blocks. If uncaught, becomes a RuntimeError.
+    """
+    def __init__(self, message):
+        self.message = message
 
 class Interpreter:
     def __init__(self):
@@ -1055,6 +1126,10 @@ class Interpreter:
             self.execute_while(ast)
         elif isinstance(ast, ForNode):
             self.execute_for(ast)
+        elif isinstance(ast, TryCatchNode):
+            self.execute_try_catch(ast)
+        elif isinstance(ast, ThrowNode):
+            self.execute_throw(ast)
         elif isinstance(ast, AppendNode):
             lst = self.variables.get(ast.list_name)
             if not isinstance(lst, list):
@@ -1103,6 +1178,33 @@ class Interpreter:
             self.variables[node.var] = float(i)
             self.execute_body(node.body)
 
+    def execute_try_catch(self, node):
+        """Execute try/catch block.
+        
+        Catches ThrowSignal (user-thrown errors) and RuntimeError
+        (built-in errors like division by zero, index out of bounds).
+        Binds the error message string to the catch variable.
+        """
+        try:
+            self.execute_body(node.body)
+        except ThrowSignal as e:
+            # User-thrown error — bind message to catch variable
+            msg = e.message
+            if isinstance(msg, float) and msg == int(msg):
+                self.variables[node.error_var] = str(int(msg))
+            else:
+                self.variables[node.error_var] = str(msg)
+            self.execute_body(node.handler)
+        except RuntimeError as e:
+            # Built-in runtime error — bind message to catch variable
+            self.variables[node.error_var] = str(e)
+            self.execute_body(node.handler)
+
+    def execute_throw(self, node):
+        """Execute throw statement — raises ThrowSignal with the evaluated message."""
+        message = self.evaluate(node.expression)
+        raise ThrowSignal(message)
+
     def execute_body(self, body):
         """Execute a list of statements. Propagates ReturnSignal."""
         for stmt in body:
@@ -1149,8 +1251,7 @@ class Interpreter:
                 result = ret.value
             finally:
                 self._call_depth -= 1
-
-            self.variables = saved_env
+                self.variables = saved_env
             debug(f"Function {call_node.name} returned {result}\n")
             return result
 
@@ -1500,6 +1601,11 @@ def repl():
 
         try:
             _repl_execute(code, interpreter)
+        except ThrowSignal as e:
+            msg = e.message
+            if isinstance(msg, float) and msg == int(msg):
+                msg = int(msg)
+            print(f"Uncaught error: {msg}")
         except SyntaxError as e:
             print(f"SyntaxError: {e}")
         except RuntimeError as e:
@@ -1577,11 +1683,18 @@ def main():
     # Interpret each top-level AST node
     interpreter = Interpreter()
     result = None
-    for node in ast_nodes:
-        if isinstance(node, FunctionCallNode):
-            result = interpreter.execute_function(node)
-        else:
-            interpreter.interpret(node)
+    try:
+        for node in ast_nodes:
+            if isinstance(node, FunctionCallNode):
+                result = interpreter.execute_function(node)
+            else:
+                interpreter.interpret(node)
+    except ThrowSignal as e:
+        msg = e.message
+        if isinstance(msg, float) and msg == int(msg):
+            msg = int(msg)
+        print(f"Uncaught error: {msg}")
+        sys.exit(1)
     
     if result is not None:
         print("\nFinal result:", result)
