@@ -371,6 +371,23 @@ class ImportNode(ASTNode):
     def __repr__(self):
         return f"ImportNode(module_path={self.module_path!r})"
 
+class ListComprehensionNode(ASTNode):
+    """List comprehension: [expr for var in iterable] or
+    [expr for var in iterable if condition]
+
+    Creates a new list by evaluating expr for each element of
+    iterable, optionally filtering with a condition.
+    """
+    def __init__(self, expr, var, iterable, condition=None):
+        self.expr = expr       # expression to evaluate per element
+        self.var = var         # loop variable name (string)
+        self.iterable = iterable  # expression that produces the collection
+        self.condition = condition  # optional filter expression (or None)
+
+    def __repr__(self):
+        cond = f", condition={self.condition}" if self.condition else ""
+        return f"ListComprehensionNode(expr={self.expr}, var={self.var}, iterable={self.iterable}{cond})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -790,13 +807,41 @@ class Parser:
 
     def parse_list_literal(self):
         self.expect('LBRACKET')
-        elements = []
-        while self.peek()[0] != 'RBRACKET':
+        # Empty list
+        if self.peek()[0] == 'RBRACKET':
+            self.expect('RBRACKET')
+            return ListNode([])
+        # Parse first expression
+        first = self.parse_full_expression()
+        # Check for list comprehension: [expr for var in iterable]
+        if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'for':
+            return self._parse_list_comprehension(first)
+        # Regular list literal
+        elements = [first]
+        while self.peek()[0] == 'COMMA':
+            self.advance()
+            if self.peek()[0] == 'RBRACKET':
+                break  # trailing comma
             elements.append(self.parse_full_expression())
-            if self.peek()[0] == 'COMMA':
-                self.advance()
         self.expect('RBRACKET')
         return ListNode(elements)
+
+    def _parse_list_comprehension(self, expr):
+        """Parse the rest of a list comprehension after the initial expression.
+        
+        Syntax: [expr for var in iterable]
+                [expr for var in iterable if condition]
+        """
+        self.expect('KEYWORD', 'for')
+        var = self.expect('IDENT')[1]
+        self.expect('KEYWORD', 'in')
+        iterable = self.parse_full_expression()
+        condition = None
+        if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'if':
+            self.advance()
+            condition = self.parse_full_expression()
+        self.expect('RBRACKET')
+        return ListComprehensionNode(expr, var, iterable, condition)
 
     def parse_map_literal(self):
         """Parse a map literal: { key: value, key2: value2 }"""
@@ -981,6 +1026,7 @@ class Interpreter:
             UnaryOpNode:      self._eval_unary,
             FunctionCallNode: self.execute_function,
             ListNode:         self._eval_list,
+            ListComprehensionNode: self._eval_list_comprehension,
             IndexNode:        self._eval_index,
             LenNode:          self._eval_len,
             MapNode:           self._eval_map,
@@ -1745,6 +1791,43 @@ class Interpreter:
 
     def _eval_list(self, node):
         return [self.evaluate(e) for e in node.elements]
+
+    def _eval_list_comprehension(self, node):
+        """Evaluate list comprehension: [expr for var in iterable if cond]"""
+        collection = self.evaluate(node.iterable)
+        if isinstance(collection, list):
+            items = collection
+        elif isinstance(collection, str):
+            items = list(collection)
+        elif isinstance(collection, dict):
+            items = list(collection.keys())
+        else:
+            raise RuntimeError(
+                f"Cannot iterate over {type(collection).__name__} in "
+                f"list comprehension. Expected list, string, or map."
+            )
+        if len(items) > MAX_LOOP_ITERATIONS:
+            raise RuntimeError(
+                f"List comprehension collection size ({len(items):,}) exceeds "
+                f"maximum iterations ({MAX_LOOP_ITERATIONS:,})"
+            )
+        # Save old variable value to restore after comprehension
+        old_val = self.variables.get(node.var, None)
+        had_var = node.var in self.variables
+        result = []
+        for item in items:
+            self.variables[node.var] = item
+            if node.condition is not None:
+                cond = self.evaluate(node.condition)
+                if not cond:
+                    continue
+            result.append(self.evaluate(node.expr))
+        # Restore variable scope
+        if had_var:
+            self.variables[node.var] = old_val
+        else:
+            self.variables.pop(node.var, None)
+        return result
 
     def _eval_index(self, node):
         obj = self.evaluate(node.obj)
