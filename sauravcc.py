@@ -61,7 +61,8 @@ token_specification = [
     ('MISMATCH', r'.'),
 ]
 
-tok_regex = '|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_specification)
+tok_regex = re.compile('|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_specification))
+_indent_re = re.compile(r'[ \t]*')
 
 
 def tokenize(code):
@@ -70,7 +71,7 @@ def tokenize(code):
     line_start = 0
     indent_levels = [0]
 
-    for match in re.finditer(tok_regex, code):
+    for match in tok_regex.finditer(code):
         typ = match.lastgroup
         value = match.group(typ)
 
@@ -79,7 +80,7 @@ def tokenize(code):
             line_start = match.end()
             tokens.append(('NEWLINE', value, line_num, match.start()))
 
-            indent_match = re.match(r'[ \t]*', code[line_start:])
+            indent_match = _indent_re.match(code, line_start)
             if indent_match:
                 indent_str = indent_match.group(0)
                 indent = len(indent_str.replace('\t', '    '))
