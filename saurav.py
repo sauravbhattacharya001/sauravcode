@@ -807,6 +807,48 @@ class Interpreter:
         self.variables = {}  # Store variable values
         self._call_depth = 0  # Track recursion depth for DoS protection
         self._init_builtins()
+        self._init_dispatch_tables()
+
+    def _init_dispatch_tables(self):
+        """Initialize dispatch tables for O(1) node-type lookup.
+
+        Replaces long isinstance chains in interpret() and evaluate()
+        with dict-based dispatch. This is the hottest code path in the
+        interpreter, so the speedup is meaningful for loops and recursion.
+        """
+        # Dispatch table for interpret() — statement-level nodes
+        self._interpret_dispatch = {
+            FunctionNode:           self._interp_function,
+            ReturnNode:             self._interp_return,
+            PrintNode:              self._interp_print,
+            FunctionCallNode:       self._interp_function_call,
+            AssignmentNode:         self._interp_assignment,
+            IndexedAssignmentNode:  self._interp_indexed_assignment,
+            IfNode:                 self.execute_if,
+            WhileNode:              self.execute_while,
+            ForNode:                self.execute_for,
+            TryCatchNode:           self.execute_try_catch,
+            ThrowNode:              self.execute_throw,
+            AppendNode:             self._interp_append,
+        }
+
+        # Dispatch table for evaluate() — expression-level nodes
+        self._evaluate_dispatch = {
+            NumberNode:       self._eval_number,
+            StringNode:       self._eval_string,
+            BoolNode:         self._eval_bool,
+            IdentifierNode:   self._eval_identifier,
+            BinaryOpNode:     self._eval_binary_op,
+            CompareNode:      self._eval_compare,
+            LogicalNode:      self._eval_logical,
+            UnaryOpNode:      self._eval_unary,
+            FunctionCallNode: self.execute_function,
+            ListNode:         self._eval_list,
+            IndexNode:        self._eval_index,
+            LenNode:          self._eval_len,
+            MapNode:           self._eval_map,
+            FStringNode:      self._eval_fstring,
+        }
 
     def _init_builtins(self):
         """Register built-in standard library functions."""
@@ -1078,67 +1120,68 @@ class Interpreter:
 
     def interpret(self, ast):
         debug("Interpreting AST...")
-        if isinstance(ast, FunctionNode):
-            debug(f"Storing function: {ast.name}\n")
-            self.functions[ast.name] = ast
-        elif isinstance(ast, ReturnNode):
-            result = self.evaluate(ast.expression)
-            debug(f"ReturnNode evaluated with result: {result}\n")
-            raise ReturnSignal(result)
-        elif isinstance(ast, PrintNode):
-            value = self.evaluate(ast.expression)
-            # Format numeric output: show integers without decimal point
-            if isinstance(value, float) and value == int(value):
-                print(int(value))
-            elif isinstance(value, bool):
-                print("true" if value else "false")
-            elif isinstance(value, list):
-                print(_format_list(value))
-            elif isinstance(value, dict):
-                print(_format_map(value))
-            else:
-                print(value)
-            debug(f"Printed: {value}\n")
-        elif isinstance(ast, FunctionCallNode):
-            debug(f"Interpreting function call: {ast.name}")
-            return self.execute_function(ast)
-        elif isinstance(ast, AssignmentNode):
-            value = self.evaluate(ast.expression)
-            self.variables[ast.name] = value
-            debug(f"Assigned {value} to {ast.name}\n")
-        elif isinstance(ast, IndexedAssignmentNode):
-            collection = self.variables.get(ast.name)
-            idx_or_key = self.evaluate(ast.index)
-            value = self.evaluate(ast.value)
-            if isinstance(collection, list):
-                idx = int(idx_or_key)
-                if idx < 0 or idx >= len(collection):
-                    raise RuntimeError(f"Index {idx} out of bounds (size {len(collection)})")
-                collection[idx] = value
-            elif isinstance(collection, dict):
-                collection[idx_or_key] = value
-            else:
-                raise RuntimeError(f"'{ast.name}' is not a list or map")
-            debug(f"Indexed assignment: {ast.name}[{idx_or_key}] = {value}\n")
-        elif isinstance(ast, IfNode):
-            self.execute_if(ast)
-        elif isinstance(ast, WhileNode):
-            self.execute_while(ast)
-        elif isinstance(ast, ForNode):
-            self.execute_for(ast)
-        elif isinstance(ast, TryCatchNode):
-            self.execute_try_catch(ast)
-        elif isinstance(ast, ThrowNode):
-            self.execute_throw(ast)
-        elif isinstance(ast, AppendNode):
-            lst = self.variables.get(ast.list_name)
-            if not isinstance(lst, list):
-                raise RuntimeError(f"'{ast.list_name}' is not a list")
-            value = self.evaluate(ast.value)
-            lst.append(value)
+        handler = self._interpret_dispatch.get(type(ast))
+        if handler is not None:
+            return handler(ast)
         else:
-            debug(f"Unknown AST node: {ast}\n")
-            raise ValueError(f'Unknown AST node type: {ast}')
+            raise ValueError(f'Unknown AST node type: {type(ast).__name__}')
+
+    # ── interpret dispatch handlers ──────────────────────────
+
+    def _interp_function(self, ast):
+        debug(f"Storing function: {ast.name}\n")
+        self.functions[ast.name] = ast
+
+    def _interp_return(self, ast):
+        result = self.evaluate(ast.expression)
+        debug(f"ReturnNode evaluated with result: {result}\n")
+        raise ReturnSignal(result)
+
+    def _interp_print(self, ast):
+        value = self.evaluate(ast.expression)
+        # Format numeric output: show integers without decimal point
+        if isinstance(value, float) and value == int(value):
+            print(int(value))
+        elif isinstance(value, bool):
+            print("true" if value else "false")
+        elif isinstance(value, list):
+            print(_format_list(value))
+        elif isinstance(value, dict):
+            print(_format_map(value))
+        else:
+            print(value)
+        debug(f"Printed: {value}\n")
+
+    def _interp_function_call(self, ast):
+        debug(f"Interpreting function call: {ast.name}")
+        return self.execute_function(ast)
+
+    def _interp_assignment(self, ast):
+        value = self.evaluate(ast.expression)
+        self.variables[ast.name] = value
+        debug(f"Assigned {value} to {ast.name}\n")
+
+    def _interp_indexed_assignment(self, ast):
+        collection = self.variables.get(ast.name)
+        idx_or_key = self.evaluate(ast.index)
+        value = self.evaluate(ast.value)
+        if isinstance(collection, list):
+            idx = int(idx_or_key)
+            if idx < 0 or idx >= len(collection):
+                raise RuntimeError(f"Index {idx} out of bounds (size {len(collection)})")
+            collection[idx] = value
+        elif isinstance(collection, dict):
+            collection[idx_or_key] = value
+        else:
+            raise RuntimeError(f"'{ast.name}' is not a list or map")
+        debug(f"Indexed assignment: {ast.name}[{idx_or_key}] = {value}\n")
+
+    def _interp_append(self, ast):
+        lst = self.variables.get(ast.list_name)
+        if not isinstance(lst, list):
+            raise RuntimeError(f"'{ast.list_name}' is not a list")
+        value = self.evaluate(ast.value)
+        lst.append(value)
 
     def execute_if(self, node):
         """Execute if / else if / else statements."""
@@ -1264,128 +1307,143 @@ class Interpreter:
 
     def evaluate(self, node):
         debug(f"Evaluating node: {node}")
-        if isinstance(node, NumberNode):
-            return node.value
-        elif isinstance(node, StringNode):
-            return node.value
-        elif isinstance(node, BoolNode):
-            return node.value
-        elif isinstance(node, IdentifierNode):
-            if node.name in self.variables:
-                value = self.variables[node.name]
-                debug(f"Identifier '{node.name}' is a variable with value {value}")
-                return value
-            elif node.name in self.functions:
-                debug(f"Identifier '{node.name}' is a function name")
-                return node.name
-            elif node.name in self.builtins:
-                debug(f"Identifier '{node.name}' is a built-in function")
-                return node.name
-            else:
-                raise RuntimeError(f"Name '{node.name}' is not defined.")
-        elif isinstance(node, BinaryOpNode):
-            left = self.evaluate(node.left)
-            right = self.evaluate(node.right)
-            debug(f"Performing operation: {left} {node.operator} {right}")
-            if node.operator == '+':
-                return left + right
-            elif node.operator == '-':
-                return left - right
-            elif node.operator == '*':
-                return left * right
-            elif node.operator == '/':
-                if right == 0:
-                    raise RuntimeError("Division by zero")
-                return left / right
-            elif node.operator == '%':
-                if right == 0:
-                    raise RuntimeError("Modulo by zero")
-                return left % right
-            else:
-                raise ValueError(f'Unknown operator: {node.operator}')
-        elif isinstance(node, CompareNode):
-            left = self.evaluate(node.left)
-            right = self.evaluate(node.right)
-            debug(f"Comparing: {left} {node.operator} {right}")
-            if node.operator == '==':
-                return left == right
-            elif node.operator == '!=':
-                return left != right
-            elif node.operator == '<':
-                return left < right
-            elif node.operator == '>':
-                return left > right
-            elif node.operator == '<=':
-                return left <= right
-            elif node.operator == '>=':
-                return left >= right
-            else:
-                raise ValueError(f'Unknown comparison operator: {node.operator}')
-        elif isinstance(node, LogicalNode):
-            left = self.evaluate(node.left)
-            if node.operator == 'and':
-                return self._is_truthy(left) and self._is_truthy(self.evaluate(node.right))
-            elif node.operator == 'or':
-                return self._is_truthy(left) or self._is_truthy(self.evaluate(node.right))
-            else:
-                raise ValueError(f'Unknown logical operator: {node.operator}')
-        elif isinstance(node, UnaryOpNode):
-            operand = self.evaluate(node.operand)
-            if node.operator == 'not':
-                return not self._is_truthy(operand)
-            elif node.operator == '-':
-                return -operand
-            else:
-                raise ValueError(f'Unknown unary operator: {node.operator}')
-        elif isinstance(node, FunctionCallNode):
-            return self.execute_function(node)
-        elif isinstance(node, ListNode):
-            return [self.evaluate(e) for e in node.elements]
-        elif isinstance(node, IndexNode):
-            obj = self.evaluate(node.obj)
-            idx = self.evaluate(node.index)
-            if isinstance(obj, list):
-                i = int(idx)
-                if i < 0 or i >= len(obj):
-                    raise RuntimeError(f"Index {i} out of bounds (size {len(obj)})")
-                return obj[i]
-            if isinstance(obj, dict):
-                if idx not in obj:
-                    raise RuntimeError(f"Key {idx!r} not found in map")
-                return obj[idx]
-            raise RuntimeError(f"Cannot index into {type(obj).__name__}")
-        elif isinstance(node, LenNode):
-            obj = self.evaluate(node.expression)
-            if isinstance(obj, (list, str)):
-                return float(len(obj))
-            if isinstance(obj, dict):
-                return float(len(obj))
-            raise RuntimeError(f"Cannot get length of {type(obj).__name__}")
-        elif isinstance(node, MapNode):
-            result = {}
-            for key_expr, val_expr in node.pairs:
-                key = self.evaluate(key_expr)
-                val = self.evaluate(val_expr)
-                result[key] = val
-            return result
-        elif isinstance(node, FStringNode):
-            parts = []
-            for part in node.parts:
-                val = self.evaluate(part)
-                # Format the value as a string
-                if isinstance(val, float) and val == int(val):
-                    parts.append(str(int(val)))
-                elif isinstance(val, bool):
-                    parts.append("true" if val else "false")
-                elif isinstance(val, list):
-                    parts.append(_format_list(val))
-                elif isinstance(val, dict):
-                    parts.append(_format_map(val))
-                else:
-                    parts.append(str(val))
-            return ''.join(parts)
+        handler = self._evaluate_dispatch.get(type(node))
+        if handler is not None:
+            return handler(node)
         else:
             raise ValueError(f'Unknown node type: {node}')
+
+    # ── evaluate dispatch handlers ───────────────────────────
+
+    def _eval_number(self, node):
+        return node.value
+
+    def _eval_string(self, node):
+        return node.value
+
+    def _eval_bool(self, node):
+        return node.value
+
+    def _eval_identifier(self, node):
+        if node.name in self.variables:
+            value = self.variables[node.name]
+            debug(f"Identifier '{node.name}' is a variable with value {value}")
+            return value
+        elif node.name in self.functions:
+            debug(f"Identifier '{node.name}' is a function name")
+            return node.name
+        elif node.name in self.builtins:
+            debug(f"Identifier '{node.name}' is a built-in function")
+            return node.name
+        else:
+            raise RuntimeError(f"Name '{node.name}' is not defined.")
+
+    def _eval_binary_op(self, node):
+        left = self.evaluate(node.left)
+        right = self.evaluate(node.right)
+        debug(f"Performing operation: {left} {node.operator} {right}")
+        if node.operator == '+':
+            return left + right
+        elif node.operator == '-':
+            return left - right
+        elif node.operator == '*':
+            return left * right
+        elif node.operator == '/':
+            if right == 0:
+                raise RuntimeError("Division by zero")
+            return left / right
+        elif node.operator == '%':
+            if right == 0:
+                raise RuntimeError("Modulo by zero")
+            return left % right
+        else:
+            raise ValueError(f'Unknown operator: {node.operator}')
+
+    def _eval_compare(self, node):
+        left = self.evaluate(node.left)
+        right = self.evaluate(node.right)
+        debug(f"Comparing: {left} {node.operator} {right}")
+        if node.operator == '==':
+            return left == right
+        elif node.operator == '!=':
+            return left != right
+        elif node.operator == '<':
+            return left < right
+        elif node.operator == '>':
+            return left > right
+        elif node.operator == '<=':
+            return left <= right
+        elif node.operator == '>=':
+            return left >= right
+        else:
+            raise ValueError(f'Unknown comparison operator: {node.operator}')
+
+    def _eval_logical(self, node):
+        left = self.evaluate(node.left)
+        if node.operator == 'and':
+            return self._is_truthy(left) and self._is_truthy(self.evaluate(node.right))
+        elif node.operator == 'or':
+            return self._is_truthy(left) or self._is_truthy(self.evaluate(node.right))
+        else:
+            raise ValueError(f'Unknown logical operator: {node.operator}')
+
+    def _eval_unary(self, node):
+        operand = self.evaluate(node.operand)
+        if node.operator == 'not':
+            return not self._is_truthy(operand)
+        elif node.operator == '-':
+            return -operand
+        else:
+            raise ValueError(f'Unknown unary operator: {node.operator}')
+
+    def _eval_list(self, node):
+        return [self.evaluate(e) for e in node.elements]
+
+    def _eval_index(self, node):
+        obj = self.evaluate(node.obj)
+        idx = self.evaluate(node.index)
+        if isinstance(obj, list):
+            i = int(idx)
+            if i < 0 or i >= len(obj):
+                raise RuntimeError(f"Index {i} out of bounds (size {len(obj)})")
+            return obj[i]
+        if isinstance(obj, dict):
+            if idx not in obj:
+                raise RuntimeError(f"Key {idx!r} not found in map")
+            return obj[idx]
+        raise RuntimeError(f"Cannot index into {type(obj).__name__}")
+
+    def _eval_len(self, node):
+        obj = self.evaluate(node.expression)
+        if isinstance(obj, (list, str)):
+            return float(len(obj))
+        if isinstance(obj, dict):
+            return float(len(obj))
+        raise RuntimeError(f"Cannot get length of {type(obj).__name__}")
+
+    def _eval_map(self, node):
+        result = {}
+        for key_expr, val_expr in node.pairs:
+            key = self.evaluate(key_expr)
+            val = self.evaluate(val_expr)
+            result[key] = val
+        return result
+
+    def _eval_fstring(self, node):
+        parts = []
+        for part in node.parts:
+            val = self.evaluate(part)
+            if isinstance(val, float) and val == int(val):
+                parts.append(str(int(val)))
+            elif isinstance(val, bool):
+                parts.append("true" if val else "false")
+            elif isinstance(val, list):
+                parts.append(_format_list(val))
+            elif isinstance(val, dict):
+                parts.append(_format_map(val))
+            else:
+                parts.append(str(val))
+        return ''.join(parts)
 
 
 def _format_list(lst):
