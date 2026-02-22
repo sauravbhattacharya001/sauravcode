@@ -40,7 +40,7 @@ token_specification = [
     ('RBRACE',   r'\}'),  # Right brace (for maps)
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -357,6 +357,20 @@ class LambdaNode(ASTNode):
     def __repr__(self):
         return f"LambdaNode(params={self.params}, body_expr={self.body_expr})"
 
+class ImportNode(ASTNode):
+    """Import another .srv module: import "math_utils"
+    
+    Loads and executes a .srv file, making all its top-level
+    functions and variables available in the current scope.
+    The .srv extension is added automatically if not present.
+    Circular imports are detected and prevented.
+    """
+    def __init__(self, module_path):
+        self.module_path = module_path  # string path to the module
+
+    def __repr__(self):
+        return f"ImportNode(module_path={self.module_path!r})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -381,6 +395,8 @@ class Parser:
 
         if token_type == 'KEYWORD' and value == 'function':
             return self.parse_function()
+        elif token_type == 'KEYWORD' and value == 'import':
+            return self.parse_import()
         elif token_type == 'KEYWORD' and value == 'return':
             self.expect('KEYWORD', 'return')
             expression = self.parse_full_expression()
@@ -576,6 +592,24 @@ class Parser:
         self.expect('KEYWORD', 'throw')
         expression = self.parse_full_expression()
         return ThrowNode(expression)
+
+    def parse_import(self):
+        """Parse import statement: import "module_name" """
+        debug("Parsing import statement...")
+        self.expect('KEYWORD', 'import')
+        # Accept a string literal as the module path
+        token_type, value, *_ = self.peek()
+        if token_type == 'STRING':
+            self.advance()
+            # Strip quotes
+            module_path = value[1:-1]
+        elif token_type == 'IDENT':
+            # Allow: import math_utils (bare identifier)
+            self.advance()
+            module_path = value
+        else:
+            raise SyntaxError("import expects a module name (string or identifier)")
+        return ImportNode(module_path)
 
     def parse_append(self):
         self.expect('KEYWORD', 'append')
@@ -905,6 +939,8 @@ class Interpreter:
         self.functions = {}  # Store function definitions
         self.variables = {}  # Store variable values
         self._call_depth = 0  # Track recursion depth for DoS protection
+        self._imported_modules = set()  # Track imported modules (circular import prevention)
+        self._source_dir = None  # Directory of the currently executing file (for relative imports)
         self._init_builtins()
         self._init_dispatch_tables()
 
@@ -930,6 +966,7 @@ class Interpreter:
             TryCatchNode:           self.execute_try_catch,
             ThrowNode:              self.execute_throw,
             AppendNode:             self._interp_append,
+            ImportNode:             self.execute_import,
         }
 
         # Dispatch table for evaluate() — expression-level nodes
@@ -1498,6 +1535,66 @@ class Interpreter:
         message = self.evaluate(node.expression)
         raise ThrowSignal(message)
 
+    def execute_import(self, node):
+        """Execute import statement — load and run a .srv module file.
+        
+        Resolves the module path relative to the currently executing file
+        (or cwd if running from REPL). All functions and variables defined
+        in the imported module become available in the current scope.
+        Circular imports are detected and silently skipped.
+        """
+        module_path = node.module_path
+        
+        # Add .srv extension if not present
+        if not module_path.endswith('.srv'):
+            module_path = module_path + '.srv'
+        
+        # Resolve relative to source file directory or cwd
+        if self._source_dir and not os.path.isabs(module_path):
+            full_path = os.path.join(self._source_dir, module_path)
+        else:
+            full_path = module_path
+        
+        # Normalize for circular import detection
+        full_path = os.path.abspath(full_path)
+        
+        # Circular import guard
+        if full_path in self._imported_modules:
+            debug(f"Skipping already-imported module: {full_path}")
+            return
+        
+        if not os.path.isfile(full_path):
+            raise RuntimeError(f"Cannot import '{node.module_path}': file '{full_path}' not found")
+        
+        # Mark as imported before executing (handles mutual imports)
+        self._imported_modules.add(full_path)
+        
+        try:
+            with open(full_path, 'r') as f:
+                code = f.read()
+        except Exception as e:
+            raise RuntimeError(f"Cannot read module '{node.module_path}': {e}")
+        
+        # Save current source dir and set to module's directory
+        prev_source_dir = self._source_dir
+        self._source_dir = os.path.dirname(full_path)
+        
+        try:
+            tokens = list(tokenize(code))
+            parser = Parser(tokens)
+            ast_nodes = parser.parse()
+            
+            for stmt in ast_nodes:
+                if isinstance(stmt, FunctionCallNode):
+                    self.execute_function(stmt)
+                else:
+                    self.interpret(stmt)
+        finally:
+            # Restore source dir
+            self._source_dir = prev_source_dir
+        
+        debug(f"Imported module: {node.module_path}")
+
     def execute_body(self, body):
         """Execute a list of statements. Propagates ReturnSignal."""
         for stmt in body:
@@ -2018,6 +2115,9 @@ def main():
 
     # Interpret each top-level AST node
     interpreter = Interpreter()
+    abs_filename = os.path.abspath(filename)
+    interpreter._source_dir = os.path.dirname(abs_filename)
+    interpreter._imported_modules.add(abs_filename)  # Prevent re-importing entry file
     result = None
     try:
         for node in ast_nodes:
