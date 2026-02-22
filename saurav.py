@@ -39,7 +39,7 @@ token_specification = [
     ('RBRACE',   r'\}'),  # Right brace (for maps)
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -295,6 +295,22 @@ class IndexedAssignmentNode(ASTNode):
     def __repr__(self):
         return f"IndexedAssignmentNode(name={self.name}, index={self.index}, value={self.value})"
 
+class ForEachNode(ASTNode):
+    """For-each iteration over a collection.
+    
+    for item in collection
+        body...
+    
+    Iterates over: lists (elements), strings (characters), maps (keys).
+    """
+    def __init__(self, var, iterable, body):
+        self.var = var          # variable name to bind each element
+        self.iterable = iterable  # expression that evaluates to a collection
+        self.body = body        # list of statements in loop body
+
+    def __repr__(self):
+        return f"ForEachNode(var={self.var}, iterable={self.iterable}, body={self.body})"
+
 class TryCatchNode(ASTNode):
     """Try/catch error handling block.
     
@@ -461,6 +477,16 @@ class Parser:
         debug("Parsing for statement...")
         self.expect('KEYWORD', 'for')
         var = self.expect('IDENT')[1]
+        # Check for for-each syntax: for item in collection
+        if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'in':
+            self.expect('KEYWORD', 'in')
+            iterable = self.parse_full_expression()
+            self.expect('NEWLINE')
+            self.expect('INDENT')
+            body = self.parse_block()
+            self.expect('DEDENT')
+            return ForEachNode(var, iterable, body)
+        # Legacy range-based for loop: for i 0 10
         start = self.parse_atom()
         end = self.parse_atom()
         self.expect('NEWLINE')
@@ -828,6 +854,7 @@ class Interpreter:
             IfNode:                 self.execute_if,
             WhileNode:              self.execute_while,
             ForNode:                self.execute_for,
+            ForEachNode:            self.execute_for_each,
             TryCatchNode:           self.execute_try_catch,
             ThrowNode:              self.execute_throw,
             AppendNode:             self._interp_append,
@@ -886,6 +913,11 @@ class Interpreter:
             'keys':        self._builtin_keys,
             'values':      self._builtin_values,
             'has_key':     self._builtin_has_key,
+            # --- Higher-order functions ---
+            'map':         self._builtin_map,
+            'filter':      self._builtin_filter,
+            'reduce':      self._builtin_reduce,
+            'each':        self._builtin_each,
         }
 
     # --- String built-ins ---
@@ -1115,6 +1147,99 @@ class Interpreter:
             raise RuntimeError("has_key expects a map as first argument")
         return key in m
 
+    # --- Higher-order function built-ins ---
+
+    def _call_function_with_args(self, func_name, evaluated_args):
+        """Call a user-defined or built-in function with pre-evaluated arguments.
+        
+        Used by higher-order functions (map, filter, reduce) to invoke
+        callbacks with already-evaluated Python values.
+        """
+        func = self.functions.get(func_name)
+        if func:
+            self._call_depth += 1
+            if self._call_depth > MAX_RECURSION_DEPTH:
+                self._call_depth -= 1
+                raise RuntimeError(
+                    f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
+                    f"in function '{func_name}'"
+                )
+            saved_env = self.variables.copy()
+            for param, val in zip(func.params, evaluated_args):
+                self.variables[param] = val
+            result = None
+            try:
+                for stmt in func.body:
+                    self.interpret(stmt)
+            except ReturnSignal as ret:
+                result = ret.value
+            finally:
+                self._call_depth -= 1
+                self.variables = saved_env
+            return result
+        if func_name in self.builtins:
+            return self.builtins[func_name](evaluated_args)
+        raise RuntimeError(f"Function '{func_name}' is not defined.")
+
+    def _builtin_map(self, args):
+        """map func_name list → apply function to each element, return new list.
+        
+        Example: map double [1, 2, 3] → [2, 4, 6]
+        """
+        self._expect_args('map', args, 2)
+        func_name, lst = args
+        if not isinstance(func_name, str):
+            raise RuntimeError("map expects a function name as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("map expects a list as second argument")
+        return [self._call_function_with_args(func_name, [item]) for item in lst]
+
+    def _builtin_filter(self, args):
+        """filter func_name list → keep elements where function returns truthy.
+        
+        Example: filter is_positive [3, -1, 4, -5, 2] → [3, 4, 2]
+        """
+        self._expect_args('filter', args, 2)
+        func_name, lst = args
+        if not isinstance(func_name, str):
+            raise RuntimeError("filter expects a function name as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("filter expects a list as second argument")
+        return [item for item in lst
+                if self._is_truthy(self._call_function_with_args(func_name, [item]))]
+
+    def _builtin_reduce(self, args):
+        """reduce func_name list initial → fold list with binary function.
+        
+        Example: reduce add [1, 2, 3, 4] 0 → 10
+        """
+        self._expect_args('reduce', args, 3)
+        func_name, lst, init = args
+        if not isinstance(func_name, str):
+            raise RuntimeError("reduce expects a function name as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("reduce expects a list as second argument")
+        acc = init
+        for item in lst:
+            acc = self._call_function_with_args(func_name, [acc, item])
+        return acc
+
+    def _builtin_each(self, args):
+        """each func_name list → apply function to each element for side effects.
+        
+        Like map, but discards return values. Returns the list unchanged.
+        Example: each print_item [1, 2, 3]
+        """
+        self._expect_args('each', args, 2)
+        func_name, lst = args
+        if not isinstance(func_name, str):
+            raise RuntimeError("each expects a function name as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("each expects a list as second argument")
+        for item in lst:
+            self._call_function_with_args(func_name, [item])
+        return lst
+
     def _expect_args(self, name, args, count):
         if len(args) != count:
             raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
@@ -1220,6 +1345,35 @@ class Interpreter:
             )
         for i in range(start, end):
             self.variables[node.var] = float(i)
+            self.execute_body(node.body)
+
+    def execute_for_each(self, node):
+        """Execute for-each loop: for item in collection.
+        
+        Iterates over:
+        - Lists → elements
+        - Strings → individual characters
+        - Maps → keys
+        """
+        collection = self.evaluate(node.iterable)
+        if isinstance(collection, list):
+            items = collection
+        elif isinstance(collection, str):
+            items = list(collection)
+        elif isinstance(collection, dict):
+            items = list(collection.keys())
+        else:
+            raise RuntimeError(
+                f"Cannot iterate over {type(collection).__name__}. "
+                f"for-each requires a list, string, or map."
+            )
+        if len(items) > MAX_LOOP_ITERATIONS:
+            raise RuntimeError(
+                f"For-each collection size ({len(items):,}) exceeds maximum "
+                f"iterations ({MAX_LOOP_ITERATIONS:,})"
+            )
+        for item in items:
+            self.variables[node.var] = item
             self.execute_body(node.body)
 
     def execute_try_catch(self, node):
@@ -1547,7 +1701,9 @@ def repl():
             print("For multi-line blocks (functions, if, while, for),")
             print("indent with spaces and enter a blank line to execute.")
             print()
+            print("For-each: use 'for item in list' to iterate over collections.")
             print("F-strings: use f\"Hello {name}!\" to embed expressions in strings.")
+            print("Higher-order: map, filter, reduce, each work with function names.")
             print()
             continue
         if stripped == "builtins":
@@ -1580,6 +1736,10 @@ def repl():
                 'keys':        'keys map            — get list of map keys',
                 'values':      'values map          — get list of map values',
                 'has_key':     'has_key map key     — check if map contains key',
+                'map':         'map func list       — apply function to each element',
+                'filter':      'filter func list    — keep elements where func is truthy',
+                'reduce':      'reduce func list init — fold list with binary function',
+                'each':        'each func list      — apply func to each element (side effects)',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):

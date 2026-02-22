@@ -49,6 +49,7 @@ from saurav import (
     TryCatchNode,
     ThrowNode,
     ThrowSignal,
+    ForEachNode,
 )
 
 
@@ -2149,3 +2150,534 @@ class TestTryCatchDemo:
         assert "10 / 5 = 2" in output
         assert "Status: recovered" in output
         assert "Error code: 404" in output
+
+
+# ============================================================
+# For-Each Iteration Tests
+# ============================================================
+
+class TestForEachIteration:
+    """Tests for the for-each loop: for item in collection."""
+
+    def test_foreach_list_basic(self):
+        output = run_code('nums = [10, 20, 30]\nfor x in nums\n    print x\n')
+        assert output.strip() == "10\n20\n30"
+
+    def test_foreach_list_empty(self):
+        output = run_code('items = []\nfor x in items\n    print x\n')
+        assert output.strip() == ""
+
+    def test_foreach_list_single_element(self):
+        output = run_code('items = [42]\nfor x in items\n    print x\n')
+        assert output.strip() == "42"
+
+    def test_foreach_string_chars(self):
+        output = run_code('for ch in "abc"\n    print ch\n')
+        assert output.strip() == "a\nb\nc"
+
+    def test_foreach_string_empty(self):
+        output = run_code('for ch in ""\n    print ch\n')
+        assert output.strip() == ""
+
+    def test_foreach_map_keys(self):
+        output = run_code('m = {"x": 1, "y": 2}\nfor k in m\n    print k\n')
+        lines = output.strip().split("\n")
+        assert set(lines) == {"x", "y"}
+
+    def test_foreach_map_empty(self):
+        output = run_code('m = {}\nfor k in m\n    print k\n')
+        assert output.strip() == ""
+
+    def test_foreach_accumulate_sum(self):
+        output = run_code(
+            'nums = [1, 2, 3, 4, 5]\n'
+            'total = 0\n'
+            'for n in nums\n'
+            '    total = total + n\n'
+            'print total\n'
+        )
+        assert output.strip() == "15"
+
+    def test_foreach_with_if(self):
+        output = run_code(
+            'ages = [15, 22, 17, 30]\n'
+            'for age in ages\n'
+            '    if age >= 18\n'
+            '        print age\n'
+        )
+        assert output.strip() == "22\n30"
+
+    def test_foreach_nested_lists(self):
+        output = run_code(
+            'matrix = [[1, 2], [3, 4]]\n'
+            'for row in matrix\n'
+            '    for val in row\n'
+            '        print val\n'
+        )
+        assert output.strip() == "1\n2\n3\n4"
+
+    def test_foreach_with_function_call(self):
+        output = run_code(
+            'function double x\n'
+            '    return x * 2\n'
+            'nums = [1, 2, 3]\n'
+            'for n in nums\n'
+            '    print double n\n'
+        )
+        assert output.strip() == "2\n4\n6"
+
+    def test_foreach_string_length(self):
+        output = run_code(
+            'count = 0\n'
+            'for ch in "hello"\n'
+            '    count = count + 1\n'
+            'print count\n'
+        )
+        assert output.strip() == "5"
+
+    def test_foreach_modifies_variable(self):
+        output = run_code(
+            'last = 0\n'
+            'for x in [10, 20, 30]\n'
+            '    last = x\n'
+            'print last\n'
+        )
+        assert output.strip() == "30"
+
+    def test_foreach_with_index_access(self):
+        output = run_code(
+            'pairs = [[1, 2], [3, 4], [5, 6]]\n'
+            'for pair in pairs\n'
+            '    print pair[0] + pair[1]\n'
+        )
+        assert output.strip() == "3\n7\n11"
+
+    def test_foreach_invalid_type_raises(self):
+        with pytest.raises(RuntimeError, match="Cannot iterate"):
+            run_code('for x in 42\n    print x\n')
+
+    def test_foreach_invalid_bool_raises(self):
+        with pytest.raises(RuntimeError, match="Cannot iterate"):
+            run_code('for x in true\n    print x\n')
+
+    def test_foreach_preserves_outer_variable(self):
+        output = run_code(
+            'x = 99\n'
+            'for x in [1, 2, 3]\n'
+            '    print x\n'
+            'print x\n'
+        )
+        # x is overwritten by for-each (no new scope)
+        assert output.strip() == "1\n2\n3\n3"
+
+    def test_foreach_list_of_strings(self):
+        output = run_code(
+            'for name in ["Alice", "Bob"]\n'
+            '    print name\n'
+        )
+        assert output.strip() == "Alice\nBob"
+
+    def test_foreach_with_break_via_return(self):
+        output = run_code(
+            'function find_first items\n'
+            '    for x in items\n'
+            '        if x > 5\n'
+            '            return x\n'
+            '    return 0\n'
+            'data = [1, 3, 7, 9]\n'
+            'print find_first data\n'
+        )
+        assert output.strip() == "7"
+
+    def test_foreach_fstring_body(self):
+        output = run_code(
+            'for name in ["Alice", "Bob"]\n'
+            '    print f"Hello {name}"\n'
+        )
+        assert output.strip() == "Hello Alice\nHello Bob"
+
+    def test_legacy_for_range_still_works(self):
+        """Ensure old range-based for loop is backward compatible."""
+        output = run_code('for i 1 4\n    print i\n')
+        assert output.strip() == "1\n2\n3"
+
+    def test_foreach_with_append(self):
+        output = run_code(
+            'result = []\n'
+            'for x in [1, 2, 3]\n'
+            '    append result x * 2\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 4, 6]"
+
+    def test_foreach_try_catch_in_body(self):
+        output = run_code(
+            'for x in [2, 0, 5]\n'
+            '    try\n'
+            '        print 10 / x\n'
+            '    catch e\n'
+            '        print "error"\n'
+        )
+        assert output.strip() == "5\nerror\n2"
+
+    def test_foreach_map_access_values(self):
+        output = run_code(
+            'm = {"a": 10, "b": 20}\n'
+            'total = 0\n'
+            'for k in m\n'
+            '    total = total + m[k]\n'
+            'print total\n'
+        )
+        assert output.strip() == "30"
+
+    def test_foreach_demo_runs(self):
+        """End-to-end: foreach_demo.srv runs without error."""
+        import os
+        demo = os.path.join(os.path.dirname(__file__), '..', 'foreach_demo.srv')
+        if os.path.isfile(demo):
+            with open(demo) as f:
+                code = f.read()
+            output = run_code(code)
+            assert "all for-each tests passed" in output
+
+
+# ============================================================
+# Higher-Order Function Tests (map, filter, reduce, each)
+# ============================================================
+
+class TestHigherOrderFunctions:
+    """Tests for map, filter, reduce, each built-in functions."""
+
+    # --- map ---
+
+    def test_map_basic(self):
+        output = run_code(
+            'function double x\n'
+            '    return x * 2\n'
+            'result = map (double) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 4, 6]"
+
+    def test_map_empty_list(self):
+        output = run_code(
+            'function double x\n'
+            '    return x * 2\n'
+            'result = map (double) []\n'
+            'print result\n'
+        )
+        assert output.strip() == "[]"
+
+    def test_map_single_element(self):
+        output = run_code(
+            'function negate x\n'
+            '    return 0 - x\n'
+            'result = map (negate) [5]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[-5]"
+
+    def test_map_with_builtin(self):
+        output = run_code(
+            'result = map (upper) ["hello", "world"]\n'
+            'print result\n'
+        )
+        assert output.strip() == '["HELLO", "WORLD"]'
+
+    def test_map_squares(self):
+        output = run_code(
+            'function sq x\n'
+            '    return x * x\n'
+            'result = map (sq) [1, 2, 3, 4]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[1, 4, 9, 16]"
+
+    def test_map_not_function_raises(self):
+        with pytest.raises(RuntimeError, match="map expects a function name"):
+            run_code('result = map 42 [1, 2, 3]\n')
+
+    def test_map_not_list_raises(self):
+        with pytest.raises(RuntimeError, match="map expects a list"):
+            run_code(
+                'function f x\n'
+                '    return x\n'
+                'result = map (f) "hello"\n'
+            )
+
+    def test_map_preserves_original(self):
+        output = run_code(
+            'function double x\n'
+            '    return x * 2\n'
+            'nums = [1, 2, 3]\n'
+            'doubled = map (double) (nums)\n'
+            'print nums\n'
+            'print doubled\n'
+        )
+        lines = output.strip().split("\n")
+        assert lines[0] == "[1, 2, 3]"
+        assert lines[1] == "[2, 4, 6]"
+
+    def test_map_chained(self):
+        output = run_code(
+            'function double x\n'
+            '    return x * 2\n'
+            'function add_one x\n'
+            '    return x + 1\n'
+            'step1 = map (double) [1, 2, 3]\n'
+            'step2 = map (add_one) (step1)\n'
+            'print step2\n'
+        )
+        assert output.strip() == "[3, 5, 7]"
+
+    # --- filter ---
+
+    def test_filter_basic(self):
+        output = run_code(
+            'function is_even x\n'
+            '    return x % 2 == 0\n'
+            'result = filter (is_even) [1, 2, 3, 4, 5, 6]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 4, 6]"
+
+    def test_filter_empty_list(self):
+        output = run_code(
+            'function yes x\n'
+            '    return true\n'
+            'result = filter (yes) []\n'
+            'print result\n'
+        )
+        assert output.strip() == "[]"
+
+    def test_filter_none_match(self):
+        output = run_code(
+            'function is_negative x\n'
+            '    return x < 0\n'
+            'result = filter (is_negative) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[]"
+
+    def test_filter_all_match(self):
+        output = run_code(
+            'function is_positive x\n'
+            '    return x > 0\n'
+            'result = filter (is_positive) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[1, 2, 3]"
+
+    def test_filter_strings(self):
+        output = run_code(
+            'function is_long x\n'
+            '    return len x > 3\n'
+            'result = filter (is_long) ["hi", "hello", "yo", "world"]\n'
+            'print result\n'
+        )
+        assert output.strip() == '["hello", "world"]'
+
+    def test_filter_not_function_raises(self):
+        with pytest.raises(RuntimeError, match="filter expects a function name"):
+            run_code('result = filter 42 [1, 2, 3]\n')
+
+    def test_filter_not_list_raises(self):
+        with pytest.raises(RuntimeError, match="filter expects a list"):
+            run_code(
+                'function f x\n'
+                '    return true\n'
+                'result = filter (f) 42\n'
+            )
+
+    # --- reduce ---
+
+    def test_reduce_sum(self):
+        output = run_code(
+            'function add a b\n'
+            '    return a + b\n'
+            'result = reduce (add) [1, 2, 3, 4, 5] 0\n'
+            'print result\n'
+        )
+        assert output.strip() == "15"
+
+    def test_reduce_product(self):
+        output = run_code(
+            'function mul a b\n'
+            '    return a * b\n'
+            'result = reduce (mul) [1, 2, 3, 4] 1\n'
+            'print result\n'
+        )
+        assert output.strip() == "24"
+
+    def test_reduce_empty_list(self):
+        output = run_code(
+            'function add a b\n'
+            '    return a + b\n'
+            'result = reduce (add) [] 0\n'
+            'print result\n'
+        )
+        assert output.strip() == "0"
+
+    def test_reduce_single_element(self):
+        output = run_code(
+            'function add a b\n'
+            '    return a + b\n'
+            'result = reduce (add) [42] 0\n'
+            'print result\n'
+        )
+        assert output.strip() == "42"
+
+    def test_reduce_max(self):
+        output = run_code(
+            'function max_of a b\n'
+            '    if b > a\n'
+            '        return b\n'
+            '    return a\n'
+            'result = reduce (max_of) [3, 7, 2, 9, 1] 0\n'
+            'print result\n'
+        )
+        assert output.strip() == "9"
+
+    def test_reduce_string_concat(self):
+        output = run_code(
+            'function concat a b\n'
+            '    return a + b\n'
+            'result = reduce (concat) ["hello", " ", "world"] ""\n'
+            'print result\n'
+        )
+        assert output.strip() == "hello world"
+
+    def test_reduce_not_function_raises(self):
+        with pytest.raises(RuntimeError, match="reduce expects a function name"):
+            run_code('result = reduce 42 [1, 2] 0\n')
+
+    def test_reduce_not_list_raises(self):
+        with pytest.raises(RuntimeError, match="reduce expects a list"):
+            run_code(
+                'function f a b\n'
+                '    return a + b\n'
+                'result = reduce (f) 42 0\n'
+            )
+
+    # --- each ---
+
+    def test_each_basic(self):
+        output = run_code(
+            'function show x\n'
+            '    print x\n'
+            '_ = each (show) [10, 20, 30]\n'
+        )
+        assert output.strip() == "10\n20\n30"
+
+    def test_each_returns_original_list(self):
+        output = run_code(
+            'function noop x\n'
+            '    x = x\n'
+            'result = each (noop) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[1, 2, 3]"
+
+    def test_each_empty_list(self):
+        output = run_code(
+            'function show x\n'
+            '    print x\n'
+            '_ = each (show) []\n'
+        )
+        assert output.strip() == ""
+
+    def test_each_not_function_raises(self):
+        with pytest.raises(RuntimeError, match="each expects a function name"):
+            run_code('_ = each 42 [1, 2, 3]\n')
+
+    def test_each_not_list_raises(self):
+        with pytest.raises(RuntimeError, match="each expects a list"):
+            run_code(
+                'function f x\n'
+                '    print x\n'
+                '_ = each (f) "hello"\n'
+            )
+
+    # --- Chaining higher-order functions ---
+
+    def test_filter_then_map(self):
+        output = run_code(
+            'function is_even x\n'
+            '    return x % 2 == 0\n'
+            'function double x\n'
+            '    return x * 2\n'
+            'step1 = filter (is_even) [1, 2, 3, 4, 5, 6]\n'
+            'step2 = map (double) (step1)\n'
+            'print step2\n'
+        )
+        assert output.strip() == "[4, 8, 12]"
+
+    def test_map_then_reduce(self):
+        output = run_code(
+            'function square x\n'
+            '    return x * x\n'
+            'function add a b\n'
+            '    return a + b\n'
+            'squares = map (square) [1, 2, 3]\n'
+            'total = reduce (add) (squares) 0\n'
+            'print total\n'
+        )
+        assert output.strip() == "14"
+
+    def test_map_with_closureless_recursion(self):
+        """map should correctly handle functions that use recursion."""
+        output = run_code(
+            'function factorial n\n'
+            '    if n <= 1\n'
+            '        return 1\n'
+            '    return n * factorial (n - 1)\n'
+            'result = map (factorial) [1, 2, 3, 4, 5]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[1, 2, 6, 24, 120]"
+
+    def test_higher_order_with_foreach(self):
+        """Combine for-each with higher-order functions."""
+        output = run_code(
+            'function double x\n'
+            '    return x * 2\n'
+            'nums = [1, 2, 3]\n'
+            'doubled = map (double) (nums)\n'
+            'for x in doubled\n'
+            '    print x\n'
+        )
+        assert output.strip() == "2\n4\n6"
+
+    def test_call_function_with_args_builtin(self):
+        """_call_function_with_args works with builtins too."""
+        output = run_code(
+            'result = map (abs) [-1, -2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[1, 2, 3]"
+
+    def test_foreach_with_inline_list(self):
+        """For-each over inline list literal."""
+        output = run_code(
+            'for x in [10, 20, 30]\n'
+            '    print x\n'
+        )
+        assert output.strip() == "10\n20\n30"
+
+    def test_map_keyword_removed(self):
+        """map is no longer a keyword - it is an identifier (function name)."""
+        output = run_code(
+            'function double x\n'
+            '    return x * 2\n'
+            'result = map (double) [5]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[10]"
+
+    def test_map_literal_still_works(self):
+        """Map/dict literal syntax {key: value} still works after removing map keyword."""
+        output = run_code(
+            'm = {"a": 1, "b": 2}\n'
+            'print m["a"]\n'
+        )
+        assert output.strip() == "1"
