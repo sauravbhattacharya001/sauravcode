@@ -30,6 +30,7 @@ token_specification = [
     ('LT',       r'<'),   # Less-than
     ('GT',       r'>'),   # Greater-than
     ('ASSIGN',   r'='),  # Assignment operator
+    ('ARROW',    r'->'),  # Arrow operator (for lambda expressions)
     ('OP',       r'[+\-*/%]'),  # Arithmetic operators (includes modulo)
     ('LPAREN',   r'\('),  # Left parenthesis
     ('RPAREN',   r'\)'),  # Right parenthesis
@@ -39,7 +40,7 @@ token_specification = [
     ('RBRACE',   r'\}'),  # Right brace (for maps)
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -339,6 +340,23 @@ class ThrowNode(ASTNode):
     def __repr__(self):
         return f"ThrowNode(expression={self.expression})"
 
+class LambdaNode(ASTNode):
+    """Anonymous function expression: lambda x y -> expr.
+    
+    Creates a callable value that can be passed to higher-order
+    functions like map, filter, reduce, each, or stored in variables.
+    
+    lambda x -> x * 2
+    lambda x y -> x + y
+    map (lambda x -> x * 2) [1, 2, 3]
+    """
+    def __init__(self, params, body_expr):
+        self.params = params       # list of parameter names
+        self.body_expr = body_expr  # single expression (not a block)
+
+    def __repr__(self):
+        return f"LambdaNode(params={self.params}, body_expr={self.body_expr})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -433,6 +451,39 @@ class Parser:
         function_node = FunctionNode(name, params, body)
         debug(f"Created {function_node}\n")
         return function_node
+
+    def parse_lambda(self):
+        """Parse a lambda expression: lambda param1 param2 ... -> expr.
+        
+        Lambda syntax:
+            lambda x -> x * 2
+            lambda x y -> x + y
+            lambda -> 42  (no params, returns constant)
+        
+        Can be used anywhere an expression is expected:
+            let double = lambda x -> x * 2
+            map (lambda x -> x * 2) [1, 2, 3]
+            let result = (lambda x y -> x + y) 3 4  -- not yet supported for direct call
+        """
+        debug("Parsing lambda expression...")
+        self.expect('KEYWORD', 'lambda')
+        params = []
+
+        # Collect parameter names until we hit '->'
+        while self.peek()[0] == 'IDENT':
+            params.append(self.expect('IDENT')[1])
+            if self.peek()[0] == 'ARROW':
+                break
+
+        # Expect the arrow
+        self.expect('ARROW')
+
+        # Parse the body expression
+        body_expr = self.parse_full_expression()
+
+        lambda_node = LambdaNode(params, body_expr)
+        debug(f"Created {lambda_node}\n")
+        return lambda_node
 
     def parse_if(self):
         debug("Parsing if statement...")
@@ -549,7 +600,7 @@ class Parser:
         arguments = []
         while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN', 'LBRACKET', 'LBRACE', 'KEYWORD'):
             pk = self.peek()
-            if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len'):
+            if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'lambda'):
                 arguments.append(self.parse_atom())
             elif pk[0] == 'KEYWORD':
                 break  # Don't consume control flow keywords as arguments
@@ -664,6 +715,8 @@ class Parser:
             self.advance()
             arg = self.parse_atom()
             return LenNode(arg)
+        elif token_type == 'KEYWORD' and value == 'lambda':
+            return self.parse_lambda()
         elif token_type == 'LPAREN':
             self.expect('LPAREN')
             expr = self.parse_full_expression()
@@ -828,6 +881,25 @@ class ThrowSignal(Exception):
     def __init__(self, message):
         self.message = message
 
+class LambdaValue:
+    """Runtime representation of a lambda expression.
+    
+    Captures the parameter list, body expression, and the defining
+    scope (closure) so variables from the enclosing environment are
+    accessible inside the lambda body.
+    """
+    def __init__(self, params, body_expr, closure):
+        self.params = params       # parameter names
+        self.body_expr = body_expr  # AST expression node
+        self.closure = closure     # captured variable scope (dict copy)
+
+    def __repr__(self):
+        params_str = " ".join(self.params) if self.params else ""
+        return f"<lambda {params_str} -> ...>"
+
+    def __str__(self):
+        return self.__repr__()
+
 class Interpreter:
     def __init__(self):
         self.functions = {}  # Store function definitions
@@ -876,6 +948,7 @@ class Interpreter:
             LenNode:          self._eval_len,
             MapNode:           self._eval_map,
             FStringNode:      self._eval_fstring,
+            LambdaNode:       self._eval_lambda,
         }
 
     def _init_builtins(self):
@@ -1064,6 +1137,8 @@ class Interpreter:
             return "list"
         if isinstance(val, dict):
             return "map"
+        if isinstance(val, LambdaValue):
+            return "lambda"
         return "unknown"
 
     def _builtin_to_string(self, args):
@@ -1075,6 +1150,8 @@ class Interpreter:
             return "true" if val else "false"
         if isinstance(val, dict):
             return _format_map(val)
+        if isinstance(val, LambdaValue):
+            return str(val)
         return str(val)
 
     def _builtin_to_number(self, args):
@@ -1149,12 +1226,22 @@ class Interpreter:
 
     # --- Higher-order function built-ins ---
 
-    def _call_function_with_args(self, func_name, evaluated_args):
-        """Call a user-defined or built-in function with pre-evaluated arguments.
+    def _call_function_with_args(self, func_ref, evaluated_args):
+        """Call a user-defined function, built-in, or lambda with pre-evaluated args.
         
         Used by higher-order functions (map, filter, reduce) to invoke
         callbacks with already-evaluated Python values.
+        
+        func_ref can be:
+        - A string (function name to look up)
+        - A LambdaValue (anonymous function)
         """
+        # Lambda value — call directly
+        if isinstance(func_ref, LambdaValue):
+            return self._call_lambda(func_ref, evaluated_args)
+        
+        # Named function
+        func_name = func_ref
         func = self.functions.get(func_name)
         if func:
             self._call_depth += 1
@@ -1182,62 +1269,70 @@ class Interpreter:
         raise RuntimeError(f"Function '{func_name}' is not defined.")
 
     def _builtin_map(self, args):
-        """map func_name list → apply function to each element, return new list.
+        """map func list → apply function to each element, return new list.
         
+        func can be a function name (string) or a lambda expression.
         Example: map double [1, 2, 3] → [2, 4, 6]
+        Example: map (lambda x -> x * 2) [1, 2, 3] → [2, 4, 6]
         """
         self._expect_args('map', args, 2)
-        func_name, lst = args
-        if not isinstance(func_name, str):
-            raise RuntimeError("map expects a function name as first argument")
+        func_ref, lst = args
+        if not isinstance(func_ref, (str, LambdaValue)):
+            raise RuntimeError("map expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("map expects a list as second argument")
-        return [self._call_function_with_args(func_name, [item]) for item in lst]
+        return [self._call_function_with_args(func_ref, [item]) for item in lst]
 
     def _builtin_filter(self, args):
-        """filter func_name list → keep elements where function returns truthy.
+        """filter func list → keep elements where function returns truthy.
         
+        func can be a function name (string) or a lambda expression.
         Example: filter is_positive [3, -1, 4, -5, 2] → [3, 4, 2]
+        Example: filter (lambda x -> x > 0) [3, -1, 4] → [3, 4]
         """
         self._expect_args('filter', args, 2)
-        func_name, lst = args
-        if not isinstance(func_name, str):
-            raise RuntimeError("filter expects a function name as first argument")
+        func_ref, lst = args
+        if not isinstance(func_ref, (str, LambdaValue)):
+            raise RuntimeError("filter expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("filter expects a list as second argument")
         return [item for item in lst
-                if self._is_truthy(self._call_function_with_args(func_name, [item]))]
+                if self._is_truthy(self._call_function_with_args(func_ref, [item]))]
 
     def _builtin_reduce(self, args):
-        """reduce func_name list initial → fold list with binary function.
+        """reduce func list initial → fold list with binary function.
         
+        func can be a function name (string) or a lambda expression.
         Example: reduce add [1, 2, 3, 4] 0 → 10
+        Example: reduce (lambda acc x -> acc + x) [1, 2, 3] 0 → 6
         """
         self._expect_args('reduce', args, 3)
-        func_name, lst, init = args
-        if not isinstance(func_name, str):
-            raise RuntimeError("reduce expects a function name as first argument")
+        func_ref, lst, init = args
+        if not isinstance(func_ref, (str, LambdaValue)):
+            raise RuntimeError("reduce expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("reduce expects a list as second argument")
         acc = init
         for item in lst:
-            acc = self._call_function_with_args(func_name, [acc, item])
+            acc = self._call_function_with_args(func_ref, [acc, item])
         return acc
 
     def _builtin_each(self, args):
-        """each func_name list → apply function to each element for side effects.
+        """each func list → apply function to each element for side effects.
         
+        func can be a function name (string) or a lambda expression.
         Like map, but discards return values. Returns the list unchanged.
         Example: each print_item [1, 2, 3]
+        Example: each (lambda x -> print x) [1, 2, 3]
         """
         self._expect_args('each', args, 2)
-        func_name, lst = args
-        if not isinstance(func_name, str):
-            raise RuntimeError("each expects a function name as first argument")
+        func_ref, lst = args
+        if not isinstance(func_ref, (str, LambdaValue)):
+            raise RuntimeError("each expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("each expects a list as second argument")
         for item in lst:
-            self._call_function_with_args(func_name, [item])
+            self._call_function_with_args(func_ref, [item])
         return lst
 
     def _expect_args(self, name, args, count):
@@ -1599,6 +1694,28 @@ class Interpreter:
             else:
                 parts.append(str(val))
         return ''.join(parts)
+
+    def _eval_lambda(self, node):
+        """Evaluate a lambda expression — captures current scope as closure."""
+        return LambdaValue(node.params, node.body_expr, self.variables.copy())
+
+    def _call_lambda(self, lam, args):
+        """Call a LambdaValue with the given arguments."""
+        if len(args) != len(lam.params):
+            raise RuntimeError(
+                f"Lambda expects {len(lam.params)} argument(s), "
+                f"got {len(args)}"
+            )
+        # Set up lambda scope: closure + params
+        saved_env = self.variables.copy()
+        self.variables = lam.closure.copy()
+        for param, val in zip(lam.params, args):
+            self.variables[param] = val
+        try:
+            result = self.evaluate(lam.body_expr)
+        finally:
+            self.variables = saved_env
+        return result
 
 
 def _format_list(lst):

@@ -2681,3 +2681,338 @@ class TestHigherOrderFunctions:
             'print m["a"]\n'
         )
         assert output.strip() == "1"
+
+
+# ==================== Lambda Expression Tests ====================
+
+class TestLambdaBasics:
+    """Test basic lambda expression parsing and evaluation."""
+
+    def test_lambda_assign_and_call_via_map(self):
+        """Lambda stored in variable and used with map."""
+        output = run_code(
+            'double = lambda x -> x * 2\n'
+            'result = map (double) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 4, 6]"
+
+    def test_lambda_inline_with_map(self):
+        """Lambda passed directly inline to map."""
+        output = run_code(
+            'result = map (lambda x -> x * 2) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 4, 6]"
+
+    def test_lambda_inline_with_filter(self):
+        """Lambda passed directly inline to filter."""
+        output = run_code(
+            'result = filter (lambda x -> x > 3) [1, 2, 3, 4, 5]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[4, 5]"
+
+    def test_lambda_inline_with_reduce(self):
+        """Lambda passed directly inline to reduce."""
+        output = run_code(
+            'result = reduce (lambda acc x -> acc + x) [1, 2, 3, 4] 0\n'
+            'print result\n'
+        )
+        assert output.strip() == "10"
+
+    def test_lambda_multiply_reduce(self):
+        """Lambda for multiplication in reduce."""
+        output = run_code(
+            'result = reduce (lambda acc x -> acc * x) [1, 2, 3, 4] 1\n'
+            'print result\n'
+        )
+        assert output.strip() == "24"
+
+    def test_lambda_with_each(self):
+        """Lambda used with each for side effects."""
+        output = run_code(
+            'function show x\n'
+            '    print x\n'
+            '\n'
+            'each (show) [10, 20, 30]\n'
+        )
+        assert output.strip() == "10\n20\n30"
+
+    def test_lambda_no_params_error(self):
+        """Lambda with no parameters errors when map passes an arg."""
+        with pytest.raises(RuntimeError, match="expects 0 argument"):
+            run_code(
+                'answer = lambda -> 42\n'
+                'map (answer) [1, 2, 3]\n'
+            )
+
+        """Lambda with arithmetic expression."""
+        output = run_code(
+            'result = map (lambda x -> x + 10) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[11, 12, 13]"
+
+    def test_lambda_two_params(self):
+        """Lambda with two parameters for reduce."""
+        output = run_code(
+            'result = reduce (lambda a b -> a + b) [5, 10, 15] 0\n'
+            'print result\n'
+        )
+        assert output.strip() == "30"
+
+    def test_lambda_string_operations(self):
+        """Lambda with string operations."""
+        output = run_code(
+            'result = map (lambda s -> upper s) ["hello", "world"]\n'
+            'print result\n'
+        )
+        assert output.strip() == '["HELLO", "WORLD"]'
+
+    def test_lambda_boolean_filter(self):
+        """Lambda returning boolean for filter."""
+        output = run_code(
+            'result = filter (lambda x -> x > 0) [3, -1, 4, -5, 2]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[3, 4, 2]"
+
+    def test_lambda_modulo_filter(self):
+        """Lambda using modulo for even number filter."""
+        output = run_code(
+            'result = filter (lambda x -> x % 2 == 0) [1, 2, 3, 4, 5, 6]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 4, 6]"
+
+    def test_lambda_negate(self):
+        """Lambda for negation."""
+        output = run_code(
+            'result = map (lambda x -> 0 - x) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[-1, -2, -3]"
+
+
+class TestLambdaClosure:
+    """Test lambda closure (capturing variables from enclosing scope)."""
+
+    def test_lambda_captures_variable(self):
+        """Lambda captures a variable from its defining scope."""
+        output = run_code(
+            'factor = 3\n'
+            'result = map (lambda x -> x * factor) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[3, 6, 9]"
+
+    def test_lambda_captures_at_definition_time(self):
+        """Lambda captures value at definition time, not call time."""
+        output = run_code(
+            'n = 10\n'
+            'add_n = lambda x -> x + n\n'
+            'n = 999\n'
+            'result = map (add_n) [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[11, 12, 13]"
+
+    def test_lambda_captures_multiple_variables(self):
+        """Lambda captures multiple variables."""
+        output = run_code(
+            'low = 2\n'
+            'high = 4\n'
+            'result = filter (lambda x -> x >= low and x <= high) [1, 2, 3, 4, 5]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 3, 4]"
+
+    def test_lambda_inside_function(self):
+        """Lambda defined inside a function captures function locals."""
+        output = run_code(
+            'function make_adder n\n'
+            '    return map (lambda x -> x + n) [1, 2, 3]\n'
+            '\n'
+            'result = make_adder 10\n'
+            'print result\n'
+        )
+        assert output.strip() == "[11, 12, 13]"
+
+
+class TestLambdaTypeOf:
+    """Test type_of and to_string with lambda values."""
+
+    def test_type_of_lambda(self):
+        """type_of returns 'lambda' for lambda values."""
+        output = run_code(
+            'f = lambda x -> x\n'
+            'print type_of f\n'
+        )
+        assert output.strip() == "lambda"
+
+    def test_to_string_lambda(self):
+        """to_string returns readable representation."""
+        output = run_code(
+            'f = lambda x y -> x + y\n'
+            'print to_string f\n'
+        )
+        assert "<lambda" in output.strip()
+
+    def test_print_lambda(self):
+        """Printing a lambda value shows its representation."""
+        output = run_code(
+            'f = lambda x -> x * 2\n'
+            'print f\n'
+        )
+        assert "<lambda" in output.strip()
+
+
+class TestLambdaEdgeCases:
+    """Test lambda edge cases and error handling."""
+
+    def test_lambda_empty_list(self):
+        """Lambda with empty list produces empty result."""
+        output = run_code(
+            'result = map (lambda x -> x * 2) []\n'
+            'print result\n'
+        )
+        assert output.strip() == "[]"
+
+    def test_lambda_single_element(self):
+        """Lambda with single-element list."""
+        output = run_code(
+            'result = map (lambda x -> x * 10) [7]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[70]"
+
+    def test_lambda_with_string_concat(self):
+        """Lambda that concatenates strings."""
+        output = run_code(
+            'result = map (lambda s -> s + "!") ["hi", "bye"]\n'
+            'print result\n'
+        )
+        assert output.strip() == '["hi!", "bye!"]'
+
+    def test_lambda_wrong_arg_count(self):
+        """Lambda called with wrong number of arguments raises error."""
+        with pytest.raises(RuntimeError, match="expects 2 argument"):
+            run_code(
+                'add = lambda x y -> x + y\n'
+                'map (add) [1, 2, 3]\n'
+            )
+
+    def test_lambda_chained_map_filter(self):
+        """Chain map and filter with lambdas."""
+        output = run_code(
+            'doubled = map (lambda x -> x * 2) [1, 2, 3, 4, 5]\n'
+            'big = filter (lambda x -> x > 5) doubled\n'
+            'print big\n'
+        )
+        assert output.strip() == "[6, 8, 10]"
+
+    def test_lambda_in_variable_reassignment(self):
+        """Lambda stored in a variable can be reassigned."""
+        output = run_code(
+            'f = lambda x -> x + 1\n'
+            'r1 = map (f) [1, 2]\n'
+            'f = lambda x -> x * 10\n'
+            'r2 = map (f) [1, 2]\n'
+            'print r1\n'
+            'print r2\n'
+        )
+        lines = output.strip().split('\n')
+        assert lines[0] == "[2, 3]"
+        assert lines[1] == "[10, 20]"
+
+    def test_lambda_with_conditional(self):
+        """Lambda body with comparison expression."""
+        output = run_code(
+            'result = filter (lambda x -> x != 3) [1, 2, 3, 4, 5]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[1, 2, 4, 5]"
+
+    def test_lambda_with_len(self):
+        """Lambda that uses len builtin."""
+        output = run_code(
+            'result = map (lambda s -> len s) ["hi", "hello", "hey"]\n'
+            'print result\n'
+        )
+        assert output.strip() == "[2, 5, 3]"
+
+    def test_lambda_preserve_named_function(self):
+        """Named functions still work alongside lambdas."""
+        output = run_code(
+            'function triple x\n'
+            '    return x * 3\n'
+            '\n'
+            'r1 = map (triple) [1, 2, 3]\n'
+            'r2 = map (lambda x -> x * 3) [1, 2, 3]\n'
+            'print r1\n'
+            'print r2\n'
+        )
+        lines = output.strip().split('\n')
+        assert lines[0] == "[3, 6, 9]"
+        assert lines[1] == "[3, 6, 9]"
+
+    def test_lambda_reduce_max(self):
+        """Lambda to find maximum via reduce."""
+        output = run_code(
+            'function bigger a b\n'
+            '    if a > b\n'
+            '        return a\n'
+            '    else\n'
+            '        return b\n'
+            '\n'
+            'result = reduce (bigger) [3, 7, 2, 9, 1] 0\n'
+            'print result\n'
+        )
+        assert output.strip() == "9"
+
+    def test_lambda_fstring_body(self):
+        """Lambda that returns an f-string."""
+        output = run_code(
+            'result = map (lambda x -> f"num:{x}") [1, 2, 3]\n'
+            'print result\n'
+        )
+        assert output.strip() == '["num:1", "num:2", "num:3"]'
+
+    def test_lambda_complex_expression(self):
+        """Lambda with complex arithmetic expression."""
+        output = run_code(
+            'result = map (lambda x -> x * x + 2 * x + 1) [0, 1, 2, 3]\n'
+            'print result\n'
+        )
+        # (0+1)=1, (1+2+1)=4, (4+4+1)=9, (9+6+1)=16
+        assert output.strip() == "[1, 4, 9, 16]"
+
+    def test_lambda_filter_strings(self):
+        """Lambda filtering strings by length."""
+        output = run_code(
+            'result = filter (lambda s -> len s > 3) ["hi", "hello", "yo", "world"]\n'
+            'print result\n'
+        )
+        assert output.strip() == '["hello", "world"]'
+
+    def test_lambda_reduce_string_concat(self):
+        """Lambda to concatenate strings via reduce."""
+        output = run_code(
+            'result = reduce (lambda acc s -> acc + s) ["a", "b", "c"] ""\n'
+            'print result\n'
+        )
+        assert output.strip() == "abc"
+
+    def test_lambda_mixed_named_and_lambda(self):
+        """Mix named functions and lambdas in same program."""
+        output = run_code(
+            'function square x\n'
+            '    return x * x\n'
+            '\n'
+            'nums = map (square) [1, 2, 3, 4]\n'
+            'result = filter (lambda x -> x % 2 == 0) nums\n'
+            'print result\n'
+        )
+        # squares = [1, 4, 9, 16], evens = [4, 16]
+        assert output.strip() == "[4, 16]"
