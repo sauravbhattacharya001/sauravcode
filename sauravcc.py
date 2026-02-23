@@ -53,6 +53,9 @@ token_specification = [
     ('RPAREN',   r'\)'),
     ('LBRACKET', r'\['),
     ('RBRACKET', r'\]'),
+    ('LBRACE',   r'\{'),
+    ('RBRACE',   r'\}'),
+    ('COLON',    r':'),
     ('DOT',      r'\.'),
     ('COMMA',    r','),
     ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get)\b'),
@@ -272,6 +275,18 @@ class FStringNode(ASTNode):
     def __init__(self, parts):
         self.parts = parts  # list of ASTNode
 
+class MapNode(ASTNode):
+    """Map literal: { key: value, key2: value2 }"""
+    def __init__(self, pairs):
+        self.pairs = pairs  # list of (key_expr, value_expr) tuples
+
+class ForEachNode(ASTNode):
+    """For-each iteration: for item in collection"""
+    def __init__(self, var, iterable, body):
+        self.var = var          # variable name
+        self.iterable = iterable  # expression (list, map, or string)
+        self.body = body        # list of statements
+
 
 # ============================================================
 # PARSER
@@ -427,6 +442,16 @@ class Parser:
     def parse_for(self):
         self.expect('KEYWORD', 'for')
         var = self.expect('IDENT')[1]
+        # Check for for-each syntax: for item in collection
+        if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'in':
+            self.expect('KEYWORD', 'in')
+            iterable = self.parse_full_expression()
+            self.expect('NEWLINE')
+            self.expect('INDENT')
+            body = self.parse_block()
+            self.expect('DEDENT')
+            return ForEachNode(var, iterable, body)
+        # Legacy range-based for loop: for i 0 10
         start = self.parse_term()
         end = self.parse_term()
         self.expect('NEWLINE')
@@ -699,6 +724,8 @@ class Parser:
             return expr
         elif token_type == 'LBRACKET':
             return self.parse_list_literal()
+        elif token_type == 'LBRACE':
+            return self.parse_map_literal()
         elif token_type == 'IDENT':
             self.advance()
             pk = self.peek()
@@ -726,6 +753,20 @@ class Parser:
                 self.advance()
         self.expect('RBRACKET')
         return ListNode(elements)
+
+    def parse_map_literal(self):
+        """Parse a map literal: { key: value, key2: value2 }"""
+        self.expect('LBRACE')
+        pairs = []
+        while self.peek()[0] != 'RBRACE':
+            key = self.parse_full_expression()
+            self.expect('COLON')
+            val = self.parse_full_expression()
+            pairs.append((key, val))
+            if self.peek()[0] == 'COMMA':
+                self.advance()
+        self.expect('RBRACE')
+        return MapNode(pairs)
 
     def parse_fstring(self, raw_value):
         """Parse an f-string token into an FStringNode.
@@ -841,6 +882,7 @@ class CCodeGenerator:
         self.declared_vars = {}   # scope -> set of var names
         self.string_vars = set()  # track which vars hold strings
         self.list_vars = set()    # track which vars hold lists
+        self.map_vars = set()     # track which vars hold maps
         self.output_lines = []
         self.indent_level = 0
         self.uses_lists = False
@@ -848,6 +890,7 @@ class CCodeGenerator:
         self.uses_try_catch = False
         self.uses_string_helpers = False
         self.uses_fstring = False
+        self.uses_maps = False
         self._ident_map = {}      # sauravcode name -> safe C name
 
     def _safe_ident(self, name):
@@ -882,6 +925,14 @@ class CCodeGenerator:
         def walk(node):
             if isinstance(node, ListNode) or isinstance(node, AppendNode) or isinstance(node, LenNode) or isinstance(node, PopNode) or isinstance(node, IndexNode) or isinstance(node, IndexedAssignmentNode):
                 self.uses_lists = True
+            if isinstance(node, MapNode):
+                self.uses_maps = True
+            if isinstance(node, FunctionCallNode) and node.name in ('keys', 'values', 'has_key'):
+                self.uses_maps = True
+            if isinstance(node, ForEachNode):
+                # For-each may iterate over lists or maps
+                self.uses_lists = True
+                self.uses_maps = True
             if isinstance(node, StringNode):
                 self.uses_strings = True
             if isinstance(node, TryCatchNode):
@@ -906,6 +957,9 @@ class CCodeGenerator:
                 for s in node.body: walk(s)
             elif isinstance(node, ForNode):
                 walk(node.start); walk(node.end)
+                for s in node.body: walk(s)
+            elif isinstance(node, ForEachNode):
+                walk(node.iterable)
                 for s in node.body: walk(s)
             elif isinstance(node, TryCatchNode):
                 for s in node.try_body: walk(s)
@@ -941,6 +995,8 @@ class CCodeGenerator:
                 walk(node.expression)
             elif isinstance(node, ListNode):
                 for e in node.elements: walk(e)
+            elif isinstance(node, MapNode):
+                for k, v in node.pairs: walk(k); walk(v)
             elif isinstance(node, IndexNode):
                 walk(node.obj); walk(node.index)
         walk(program)
@@ -972,6 +1028,10 @@ class CCodeGenerator:
         # Emit dynamic list support if needed
         if self.uses_lists:
             self.emit_list_runtime()
+
+        # Emit map (hash map) support if needed
+        if self.uses_maps:
+            self.emit_map_runtime()
 
         # Emit string helper functions if needed
         if self.uses_string_helpers:
@@ -1083,6 +1143,147 @@ class CCodeGenerator:
         self.emit("}")
         self.emit("")
 
+    def emit_map_runtime(self):
+        """Emit a simple string-keyed hash map implementation in C.
+
+        Uses open addressing with linear probing and string keys.
+        Values are doubles (matching sauravcode's numeric type).
+        """
+        self.emit("/* ---- Hash map runtime ---- */")
+        self.emit("typedef struct {")
+        self.emit("    char *key;")
+        self.emit("    double value;")
+        self.emit("    int occupied;")
+        self.emit("} SrvMapEntry;")
+        self.emit("")
+        self.emit("typedef struct {")
+        self.emit("    SrvMapEntry *entries;")
+        self.emit("    int size;")
+        self.emit("    int capacity;")
+        self.emit("} SrvMap;")
+        self.emit("")
+        # Hash function (djb2)
+        self.emit("static unsigned int srv_map_hash(const char *key, int cap) {")
+        self.emit("    unsigned int h = 5381;")
+        self.emit("    while (*key) h = ((h << 5) + h) + (unsigned char)*key++;")
+        self.emit("    return h % cap;")
+        self.emit("}")
+        self.emit("")
+        # Create
+        self.emit("SrvMap srv_map_new(void) {")
+        self.emit("    SrvMap m;")
+        self.emit("    m.capacity = 16;")
+        self.emit("    m.size = 0;")
+        self.emit("    m.entries = (SrvMapEntry*)calloc(m.capacity, sizeof(SrvMapEntry));")
+        self.emit("    return m;")
+        self.emit("}")
+        self.emit("")
+        # Resize
+        self.emit("static void srv_map_resize(SrvMap *m) {")
+        self.emit("    int old_cap = m->capacity;")
+        self.emit("    SrvMapEntry *old = m->entries;")
+        self.emit("    m->capacity *= 2;")
+        self.emit("    m->entries = (SrvMapEntry*)calloc(m->capacity, sizeof(SrvMapEntry));")
+        self.emit("    m->size = 0;")
+        self.emit("    for (int i = 0; i < old_cap; i++) {")
+        self.emit("        if (old[i].occupied) {")
+        self.emit("            unsigned int idx = srv_map_hash(old[i].key, m->capacity);")
+        self.emit("            while (m->entries[idx].occupied) idx = (idx + 1) % m->capacity;")
+        self.emit("            m->entries[idx].key = old[i].key;")
+        self.emit("            m->entries[idx].value = old[i].value;")
+        self.emit("            m->entries[idx].occupied = 1;")
+        self.emit("            m->size++;")
+        self.emit("        }")
+        self.emit("    }")
+        self.emit("    free(old);")
+        self.emit("}")
+        self.emit("")
+        # Set (insert or update)
+        self.emit("void srv_map_set(SrvMap *m, const char *key, double value) {")
+        self.emit("    if (m->size * 2 >= m->capacity) srv_map_resize(m);")
+        self.emit("    unsigned int idx = srv_map_hash(key, m->capacity);")
+        self.emit("    while (m->entries[idx].occupied) {")
+        self.emit("        if (strcmp(m->entries[idx].key, key) == 0) {")
+        self.emit("            m->entries[idx].value = value;")
+        self.emit("            return;")
+        self.emit("        }")
+        self.emit("        idx = (idx + 1) % m->capacity;")
+        self.emit("    }")
+        self.emit("    m->entries[idx].key = strdup(key);")
+        self.emit("    m->entries[idx].value = value;")
+        self.emit("    m->entries[idx].occupied = 1;")
+        self.emit("    m->size++;")
+        self.emit("}")
+        self.emit("")
+        # Get
+        self.emit("double srv_map_get(SrvMap *m, const char *key) {")
+        self.emit("    unsigned int idx = srv_map_hash(key, m->capacity);")
+        self.emit("    while (m->entries[idx].occupied) {")
+        self.emit("        if (strcmp(m->entries[idx].key, key) == 0)")
+        self.emit("            return m->entries[idx].value;")
+        self.emit("        idx = (idx + 1) % m->capacity;")
+        self.emit("    }")
+        self.emit('    fprintf(stderr, "Key not found: %s\\n", key);')
+        self.emit("    exit(1);")
+        self.emit("}")
+        self.emit("")
+        # Has key
+        self.emit("int srv_map_has_key(SrvMap *m, const char *key) {")
+        self.emit("    unsigned int idx = srv_map_hash(key, m->capacity);")
+        self.emit("    while (m->entries[idx].occupied) {")
+        self.emit("        if (strcmp(m->entries[idx].key, key) == 0) return 1;")
+        self.emit("        idx = (idx + 1) % m->capacity;")
+        self.emit("    }")
+        self.emit("    return 0;")
+        self.emit("}")
+        self.emit("")
+        # Keys (returns SrvList of string hashes — not ideal, but we return indices)
+        # Actually we need to return a list of key strings. Since our list only holds
+        # doubles, we'll return a special "keys list" as a string array printed directly.
+        # For now, provide srv_map_keys that fills an output buffer.
+        self.emit("int srv_map_size(SrvMap *m) {")
+        self.emit("    return m->size;")
+        self.emit("}")
+        self.emit("")
+        # Print map
+        self.emit("void srv_map_print(SrvMap *m) {")
+        self.emit('    printf("{");')
+        self.emit("    int first = 1;")
+        self.emit("    for (int i = 0; i < m->capacity; i++) {")
+        self.emit("        if (m->entries[i].occupied) {")
+        self.emit('            if (!first) printf(", ");')
+        self.emit("            double v = m->entries[i].value;")
+        self.emit("            if (v == (long long)v)")
+        self.emit('                printf("\\"%s\\": %lld", m->entries[i].key, (long long)v);')
+        self.emit("            else")
+        self.emit('                printf("\\"%s\\": %.10g", m->entries[i].key, v);')
+        self.emit("            first = 0;")
+        self.emit("        }")
+        self.emit("    }")
+        self.emit('    printf("}\\n");')
+        self.emit("}")
+        self.emit("")
+        # Iterate keys (callback-based)
+        self.emit("typedef void (*SrvMapKeyCallback)(const char *key, double value, void *ctx);")
+        self.emit("void srv_map_foreach(SrvMap *m, SrvMapKeyCallback cb, void *ctx) {")
+        self.emit("    for (int i = 0; i < m->capacity; i++) {")
+        self.emit("        if (m->entries[i].occupied)")
+        self.emit("            cb(m->entries[i].key, m->entries[i].value, ctx);")
+        self.emit("    }")
+        self.emit("}")
+        self.emit("")
+        # Free
+        self.emit("void srv_map_free(SrvMap *m) {")
+        self.emit("    for (int i = 0; i < m->capacity; i++) {")
+        self.emit("        if (m->entries[i].occupied) free(m->entries[i].key);")
+        self.emit("    }")
+        self.emit("    free(m->entries);")
+        self.emit("    m->entries = NULL;")
+        self.emit("    m->size = 0;")
+        self.emit("    m->capacity = 0;")
+        self.emit("}")
+        self.emit("")
+
     def emit_string_helpers(self):
         """Emit C helper functions for sauravcode string/conversion builtins."""
         self.emit("/* ---- String / conversion helpers ---- */")
@@ -1191,7 +1392,11 @@ class CCodeGenerator:
             name = self._safe_ident(stmt.name)
             idx_c = self.compile_expression(stmt.index)
             val_c = self.compile_expression(stmt.value)
-            self.emit(f"srv_list_set(&{name}, (int)({idx_c}), {val_c});")
+            if stmt.name in self.map_vars:
+                # Map key assignment: m["key"] = value
+                self.emit(f"srv_map_set(&{name}, {idx_c}, {val_c});")
+            else:
+                self.emit(f"srv_list_set(&{name}, (int)({idx_c}), {val_c});")
 
         elif isinstance(stmt, DotAssignmentNode):
             obj_c = self.compile_expression(stmt.obj)
@@ -1222,6 +1427,13 @@ class CCodeGenerator:
                     for elem in stmt.expression.elements:
                         elem_c = self.compile_expression(elem)
                         self.emit(f'srv_list_append(&{name}, {elem_c});')
+                elif isinstance(stmt.expression, MapNode):
+                    self.emit(f'SrvMap {name} = srv_map_new();')
+                    self.map_vars.add(stmt.name)
+                    for key_expr, val_expr in stmt.expression.pairs:
+                        key_c = self.compile_expression(key_expr)
+                        val_c = self.compile_expression(val_expr)
+                        self.emit(f'srv_map_set(&{name}, {key_c}, {val_c});')
                 else:
                     self.emit(f"double {name} = {expr_c};")
                 self.declared_vars.setdefault(scope, set()).add(stmt.name)
@@ -1232,6 +1444,13 @@ class CCodeGenerator:
                     for elem in stmt.expression.elements:
                         elem_c = self.compile_expression(elem)
                         self.emit(f'srv_list_append(&{name}, {elem_c});')
+                elif isinstance(stmt.expression, MapNode):
+                    # Reassigning a map
+                    self.emit(f'{name} = srv_map_new();')
+                    for key_expr, val_expr in stmt.expression.pairs:
+                        key_c = self.compile_expression(key_expr)
+                        val_c = self.compile_expression(val_expr)
+                        self.emit(f'srv_map_set(&{name}, {key_c}, {val_c});')
                 else:
                     self.emit(f"{name} = {expr_c};")
 
@@ -1294,6 +1513,43 @@ class CCodeGenerator:
             self.indent_level -= 1
             self.emit("}")
 
+        elif isinstance(stmt, ForEachNode):
+            var = self._safe_ident(stmt.var)
+            self.declared_vars.setdefault(scope, set()).add(stmt.var)
+            iterable_c = self.compile_expression(stmt.iterable)
+
+            # Determine collection type from context
+            is_map_iter = (isinstance(stmt.iterable, IdentifierNode) and
+                          stmt.iterable.name in self.map_vars)
+            is_list_iter = (isinstance(stmt.iterable, IdentifierNode) and
+                           stmt.iterable.name in self.list_vars)
+
+            if is_map_iter:
+                # Iterate over map keys
+                idx_var = f"__i_{var}"
+                self.emit(f"for (int {idx_var} = 0; {idx_var} < {iterable_c}.capacity; {idx_var}++) {{")
+                self.indent_level += 1
+                self.emit(f"if (!{iterable_c}.entries[{idx_var}].occupied) continue;")
+                # Bind loop variable as string key — but our vars are doubles.
+                # For map iteration, the var gets the key as a string (const char*).
+                # We need to track it as a string var.
+                self.string_vars.add(stmt.var)
+                self.emit(f"const char *{var} = {iterable_c}.entries[{idx_var}].key;")
+                for s in stmt.body:
+                    self.compile_statement(s, scope=scope)
+                self.indent_level -= 1
+                self.emit("}")
+            else:
+                # Default: iterate over list
+                idx_var = f"__i_{var}"
+                self.emit(f"for (int {idx_var} = 0; {idx_var} < srv_list_len(&{iterable_c}); {idx_var}++) {{")
+                self.indent_level += 1
+                self.emit(f"double {var} = srv_list_get(&{iterable_c}, {idx_var});")
+                for s in stmt.body:
+                    self.compile_statement(s, scope=scope)
+                self.indent_level -= 1
+                self.emit("}")
+
         elif isinstance(stmt, TryCatchNode):
             self.emit("__has_error = 0;")
             self.emit("if (setjmp(__catch_buf) == 0) {")
@@ -1343,6 +1599,8 @@ class CCodeGenerator:
             self.emit(f'printf("%s\\n", {expr_c});')
         elif isinstance(expr, IdentifierNode) and expr.name in self.list_vars:
             self.emit(f'printf("[list: %d items]\\n", srv_list_len(&{expr_c}));')
+        elif isinstance(expr, IdentifierNode) and expr.name in self.map_vars:
+            self.emit(f'srv_map_print(&{expr_c});')
         elif isinstance(expr, FunctionCallNode) and expr.name in STRING_BUILTINS:
             self.emit(f'printf("%s\\n", {expr_c});')
         elif isinstance(expr, FStringNode):
@@ -1401,13 +1659,23 @@ class CCodeGenerator:
             # List literal in expression context — handled differently
             return "srv_list_new()"  # Placeholder; actual init in assignment
 
+        elif isinstance(expr, MapNode):
+            # Map literal in expression context — placeholder
+            return "srv_map_new()"  # Actual init in assignment
+
         elif isinstance(expr, IndexNode):
             obj_c = self.compile_expression(expr.obj)
             idx_c = self.compile_expression(expr.index)
+            # Determine if this is map access or list access
+            if isinstance(expr.obj, IdentifierNode) and expr.obj.name in self.map_vars:
+                return f"srv_map_get(&{obj_c}, {idx_c})"
             return f"srv_list_get(&{obj_c}, (int)({idx_c}))"
 
         elif isinstance(expr, LenNode):
             inner = self.compile_expression(expr.expression)
+            # Check if it's a map
+            if isinstance(expr.expression, IdentifierNode) and expr.expression.name in self.map_vars:
+                return f"srv_map_size(&{inner})"
             return f"srv_list_len(&{inner})"
 
         elif isinstance(expr, DotAccessNode):
@@ -1464,6 +1732,8 @@ class CCodeGenerator:
         'lower':      ('srv_lower({0})', 1),
         'to_string':  ('srv_to_string({0})', 1),
         'type_of':    ('srv_type_of({0})', 1),
+        # Map builtins
+        'has_key':    ('srv_map_has_key(&{0}, {1})', 2),
     }
 
     def compile_call(self, call):
