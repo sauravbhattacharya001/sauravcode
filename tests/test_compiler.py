@@ -543,3 +543,182 @@ class TestFStringCodeGen:
         c_code = compile_to_c(code)
         assert "snprintf" in c_code
         assert "Hello %s" in c_code
+
+
+# ============================================================
+# String builtin compilation (Phase 4: split, join, replace, etc.)
+# ============================================================
+
+class TestStringBuiltinCodeGen:
+    """Tests for compiler-supported string manipulation builtins."""
+
+    # --- trim ---
+
+    def test_trim_compiles(self):
+        c_code = compile_to_c('s = "  hello  "\nprint trim s\n')
+        assert "srv_trim" in c_code
+        assert "%s" in c_code
+
+    def test_trim_assign(self):
+        c_code = compile_to_c('s = "  hello  "\nresult = trim s\nprint result\n')
+        assert "srv_trim" in c_code
+        assert 'char *' in c_code  # result should be declared as char*
+
+    # --- replace ---
+
+    def test_replace_compiles(self):
+        c_code = compile_to_c('s = "hello world"\nprint replace s "world" "earth"\n')
+        assert "srv_replace" in c_code
+        assert "%s" in c_code
+
+    def test_replace_assign(self):
+        c_code = compile_to_c('s = "aabbcc"\nr = replace s "bb" "XX"\nprint r\n')
+        assert "srv_replace" in c_code
+        assert 'char *' in c_code
+
+    # --- contains ---
+
+    def test_contains_compiles(self):
+        c_code = compile_to_c('s = "hello world"\nprint contains s "world"\n')
+        assert "srv_contains" in c_code
+
+    def test_contains_returns_number(self):
+        c_code = compile_to_c('s = "hello"\nx = contains s "ell"\nprint x\n')
+        assert "srv_contains" in c_code
+        # x is a double, so printf should use %g
+        assert "%.10g" in c_code
+
+    def test_contains_in_condition(self):
+        c_code = compile_to_c('s = "hello"\nif contains s "ell"\n    print 1\n')
+        assert "srv_contains" in c_code
+
+    # --- index_of ---
+
+    def test_index_of_compiles(self):
+        c_code = compile_to_c('s = "hello world"\nprint index_of s "world"\n')
+        assert "srv_index_of" in c_code
+
+    def test_index_of_assign(self):
+        c_code = compile_to_c('s = "hello"\ni = index_of s "ell"\nprint i\n')
+        assert "srv_index_of" in c_code
+
+    # --- char_at ---
+
+    def test_char_at_compiles(self):
+        c_code = compile_to_c('s = "hello"\nprint char_at s 0\n')
+        assert "srv_char_at" in c_code
+        assert "%s" in c_code
+
+    def test_char_at_assign(self):
+        c_code = compile_to_c('s = "hello"\nc = char_at s 1\nprint c\n')
+        assert "srv_char_at" in c_code
+        assert 'char *' in c_code
+
+    # --- substring ---
+
+    def test_substring_compiles(self):
+        c_code = compile_to_c('s = "hello world"\nprint substring s 0 5\n')
+        assert "srv_substring" in c_code
+        assert "%s" in c_code
+
+    def test_substring_assign(self):
+        c_code = compile_to_c('s = "hello"\nsub = substring s 1 4\nprint sub\n')
+        assert "srv_substring" in c_code
+        assert 'char *' in c_code
+
+    # --- reverse ---
+
+    def test_reverse_compiles(self):
+        c_code = compile_to_c('s = "hello"\nprint reverse s\n')
+        assert "srv_reverse" in c_code
+        assert "%s" in c_code
+
+    def test_reverse_assign(self):
+        c_code = compile_to_c('s = "hello"\nr = reverse s\nprint r\n')
+        assert "srv_reverse" in c_code
+        assert 'char *' in c_code
+
+    # --- split ---
+
+    def test_split_compiles(self):
+        c_code = compile_to_c('s = "a,b,c"\nparts = split s ","\nprint parts\n')
+        assert "srv_split" in c_code
+        assert "SrvList" in c_code
+
+    def test_split_emits_list_type(self):
+        c_code = compile_to_c('s = "x y z"\nresult = split s " "\n')
+        assert "SrvList result" in c_code or "SrvList __" in c_code
+
+    # --- join ---
+
+    def test_join_compiles(self):
+        c_code = compile_to_c('items = [1 2 3]\nprint join ", " items\n')
+        assert "srv_join" in c_code
+        assert "%s" in c_code
+
+    def test_join_assign(self):
+        c_code = compile_to_c('items = [1 2 3]\nr = join "-" items\nprint r\n')
+        assert "srv_join" in c_code
+        assert 'char *' in c_code
+
+    # --- Runtime helpers emitted ---
+
+    def test_string_builtins_emit_helpers(self):
+        c_code = compile_to_c('s = "test"\nprint trim s\n')
+        assert "static char* srv_trim" in c_code
+        assert "#include <ctype.h>" in c_code
+
+    def test_contains_emits_helper(self):
+        c_code = compile_to_c('s = "test"\nprint contains s "es"\n')
+        assert "static double srv_contains" in c_code
+
+    def test_index_of_emits_helper(self):
+        c_code = compile_to_c('s = "test"\nprint index_of s "es"\n')
+        assert "static double srv_index_of" in c_code
+
+    def test_replace_emits_helper(self):
+        c_code = compile_to_c('s = "test"\nprint replace s "e" "a"\n')
+        assert "static char* srv_replace" in c_code
+
+    def test_reverse_emits_helper(self):
+        c_code = compile_to_c('s = "test"\nprint reverse s\n')
+        assert "static char* srv_reverse" in c_code
+
+    def test_split_emits_helper(self):
+        c_code = compile_to_c('s = "a,b"\nparts = split s ","\n')
+        assert "static SrvList srv_split" in c_code
+
+    def test_join_emits_helper(self):
+        c_code = compile_to_c('items = [1]\nprint join "," items\n')
+        assert "static char* srv_join" in c_code
+
+    # --- Builtins not emitted when unused ---
+
+    def test_no_trim_when_unused(self):
+        c_code = compile_to_c("x = 5\nprint x\n")
+        assert "srv_trim" not in c_code
+        assert "srv_replace" not in c_code
+        assert "srv_split" not in c_code
+
+    # --- In f-strings ---
+
+    def test_trim_in_fstring(self):
+        c_code = compile_to_c('s = "  hi  "\nprint f"Result: {trim s}"\n')
+        assert "srv_trim" in c_code
+        assert "snprintf" in c_code
+
+    def test_reverse_in_fstring(self):
+        c_code = compile_to_c('s = "abc"\nprint f"Reversed: {reverse s}"\n')
+        assert "srv_reverse" in c_code
+
+    # --- Combined usage ---
+
+    def test_replace_then_trim(self):
+        c_code = compile_to_c('s = "  hello world  "\nr = replace s "world" "earth"\nt = trim r\nprint t\n')
+        assert "srv_replace" in c_code
+        assert "srv_trim" in c_code
+
+    def test_split_and_join(self):
+        c_code = compile_to_c('s = "a,b,c"\nparts = split s ","\nresult = join " - " parts\nprint result\n')
+        assert "srv_split" in c_code
+        assert "srv_join" in c_code

@@ -983,7 +983,7 @@ class CCodeGenerator:
             elif isinstance(node, LogicalNode):
                 walk(node.left); walk(node.right)
             elif isinstance(node, FunctionCallNode):
-                if node.name in ('upper', 'lower', 'to_string', 'type_of'):
+                if node.name in self.STRING_RETURNING_BUILTINS or node.name in ('contains', 'index_of', 'split'):
                     self.uses_string_helpers = True
                 for a in node.arguments: walk(a)
             elif isinstance(node, FStringNode):
@@ -1321,6 +1321,139 @@ class CCodeGenerator:
         self.emit('    return "number";  /* compiled mode only has doubles */')
         self.emit("}")
         self.emit("")
+        # srv_trim: returns a malloc'd trimmed copy (strips leading/trailing whitespace)
+        self.emit("static char* srv_trim(const char* s) {")
+        self.emit("    while (*s && isspace((unsigned char)*s)) s++;")
+        self.emit("    if (*s == '\\0') { char* out = (char*)malloc(1); out[0] = '\\0'; return out; }")
+        self.emit("    const char* end = s + strlen(s) - 1;")
+        self.emit("    while (end > s && isspace((unsigned char)*end)) end--;")
+        self.emit("    size_t len = (size_t)(end - s + 1);")
+        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    memcpy(out, s, len);")
+        self.emit("    out[len] = '\\0';")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
+        # srv_replace: returns a malloc'd string with all occurrences of old replaced by new
+        self.emit("static char* srv_replace(const char* s, const char* old, const char* neww) {")
+        self.emit("    size_t slen = strlen(s), olen = strlen(old), nlen = strlen(neww);")
+        self.emit("    if (olen == 0) { char* out = (char*)malloc(slen + 1); memcpy(out, s, slen + 1); return out; }")
+        self.emit("    size_t count = 0;")
+        self.emit("    const char* p = s;")
+        self.emit("    while ((p = strstr(p, old)) != NULL) { count++; p += olen; }")
+        self.emit("    size_t rlen = slen + count * (nlen - olen);")
+        self.emit("    char* out = (char*)malloc(rlen + 1);")
+        self.emit("    char* w = out;")
+        self.emit("    p = s;")
+        self.emit("    while (*p) {")
+        self.emit("        if (strncmp(p, old, olen) == 0) { memcpy(w, neww, nlen); w += nlen; p += olen; }")
+        self.emit("        else { *w++ = *p++; }")
+        self.emit("    }")
+        self.emit("    *w = '\\0';")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
+        # srv_contains: returns 1.0 if substring found, 0.0 otherwise
+        self.emit("static double srv_contains(const char* s, const char* sub) {")
+        self.emit("    return strstr(s, sub) != NULL ? 1.0 : 0.0;")
+        self.emit("}")
+        self.emit("")
+        # srv_index_of: returns index of first occurrence, or -1
+        self.emit("static double srv_index_of(const char* s, const char* sub) {")
+        self.emit("    const char* p = strstr(s, sub);")
+        self.emit("    if (p == NULL) return -1.0;")
+        self.emit("    return (double)(p - s);")
+        self.emit("}")
+        self.emit("")
+        # srv_char_at: returns single-char string at index
+        self.emit("static char* srv_char_at(const char* s, double idx) {")
+        self.emit("    int i = (int)idx;")
+        self.emit("    size_t len = strlen(s);")
+        self.emit('    if (i < 0 || (size_t)i >= len) { char* out = (char*)malloc(1); out[0] = \'\\0\'; return out; }')
+        self.emit("    char* out = (char*)malloc(2);")
+        self.emit("    out[0] = s[i]; out[1] = '\\0';")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
+        # srv_substring: returns substring from start to end (exclusive)
+        self.emit("static char* srv_substring(const char* s, double start, double end) {")
+        self.emit("    int st = (int)start, en = (int)end;")
+        self.emit("    size_t len = strlen(s);")
+        self.emit("    if (st < 0) st = 0;")
+        self.emit("    if ((size_t)en > len) en = (int)len;")
+        self.emit("    if (st >= en) { char* out = (char*)malloc(1); out[0] = '\\0'; return out; }")
+        self.emit("    size_t rlen = (size_t)(en - st);")
+        self.emit("    char* out = (char*)malloc(rlen + 1);")
+        self.emit("    memcpy(out, s + st, rlen);")
+        self.emit("    out[rlen] = '\\0';")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
+        # srv_reverse: returns a malloc'd reversed copy
+        self.emit("static char* srv_reverse(const char* s) {")
+        self.emit("    size_t len = strlen(s);")
+        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    for (size_t i = 0; i < len; i++) out[i] = s[len - 1 - i];")
+        self.emit("    out[len] = '\\0';")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
+        # srv_split: splits string by delimiter, returns SrvList of string pointers stored as doubles
+        self.emit("static SrvList srv_split(const char* s, const char* delim) {")
+        self.emit("    SrvList list; srv_list_init(&list);")
+        self.emit("    size_t dlen = strlen(delim);")
+        self.emit("    if (dlen == 0) {")
+        self.emit("        /* Split into individual characters */")
+        self.emit("        size_t slen = strlen(s);")
+        self.emit("        for (size_t i = 0; i < slen; i++) {")
+        self.emit("            char* ch = (char*)malloc(2); ch[0] = s[i]; ch[1] = '\\0';")
+        self.emit("            union { char* p; double d; } u; u.p = ch;")
+        self.emit("            srv_list_append(&list, u.d);")
+        self.emit("        }")
+        self.emit("        return list;")
+        self.emit("    }")
+        self.emit("    const char* p = s;")
+        self.emit("    while (*p) {")
+        self.emit("        const char* found = strstr(p, delim);")
+        self.emit("        size_t partlen = found ? (size_t)(found - p) : strlen(p);")
+        self.emit("        char* part = (char*)malloc(partlen + 1);")
+        self.emit("        memcpy(part, p, partlen); part[partlen] = '\\0';")
+        self.emit("        union { char* ptr; double d; } u; u.ptr = part;")
+        self.emit("        srv_list_append(&list, u.d);")
+        self.emit("        if (!found) break;")
+        self.emit("        p = found + dlen;")
+        self.emit("        if (*p == '\\0') {")
+        self.emit("            char* empty = (char*)malloc(1); empty[0] = '\\0';")
+        self.emit("            union { char* ptr; double d; } u2; u2.ptr = empty;")
+        self.emit("            srv_list_append(&list, u2.d);")
+        self.emit("            break;")
+        self.emit("        }")
+        self.emit("    }")
+        self.emit("    return list;")
+        self.emit("}")
+        self.emit("")
+        # srv_join: joins a SrvList of strings with a delimiter
+        self.emit("static char* srv_join(const char* delim, SrvList* list) {")
+        self.emit("    if (list->size == 0) { char* out = (char*)malloc(1); out[0] = '\\0'; return out; }")
+        self.emit("    size_t dlen = strlen(delim);")
+        self.emit("    size_t total = 0;")
+        self.emit("    for (int i = 0; i < list->size; i++) {")
+        self.emit("        union { double d; char* p; } u; u.d = list->data[i];")
+        self.emit("        total += strlen(u.p);")
+        self.emit("        if (i > 0) total += dlen;")
+        self.emit("    }")
+        self.emit("    char* out = (char*)malloc(total + 1);")
+        self.emit("    char* w = out;")
+        self.emit("    for (int i = 0; i < list->size; i++) {")
+        self.emit("        if (i > 0) { memcpy(w, delim, dlen); w += dlen; }")
+        self.emit("        union { double d; char* p; } u; u.d = list->data[i];")
+        self.emit("        size_t slen = strlen(u.p);")
+        self.emit("        memcpy(w, u.p, slen); w += slen;")
+        self.emit("    }")
+        self.emit("    *w = '\\0';")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
 
     def emit_class_struct(self, cls):
         """Emit a C struct for a sauravcode class."""
@@ -1434,6 +1567,12 @@ class CCodeGenerator:
                         key_c = self.compile_expression(key_expr)
                         val_c = self.compile_expression(val_expr)
                         self.emit(f'srv_map_set(&{name}, {key_c}, {val_c});')
+                elif isinstance(stmt.expression, FunctionCallNode) and stmt.expression.name in self.STRING_RETURNING_BUILTINS:
+                    self.emit(f'char *{name} = {expr_c};')
+                    self.string_vars.add(stmt.name)
+                elif isinstance(stmt.expression, FunctionCallNode) and stmt.expression.name == 'split':
+                    self.emit(f'SrvList {name} = {expr_c};')
+                    self.list_vars.add(stmt.name)
                 else:
                     self.emit(f"double {name} = {expr_c};")
                 self.declared_vars.setdefault(scope, set()).add(stmt.name)
@@ -1451,6 +1590,8 @@ class CCodeGenerator:
                         key_c = self.compile_expression(key_expr)
                         val_c = self.compile_expression(val_expr)
                         self.emit(f'srv_map_set(&{name}, {key_c}, {val_c});')
+                elif isinstance(stmt.expression, FunctionCallNode) and stmt.expression.name == 'split':
+                    self.emit(f'{name} = {expr_c};')
                 else:
                     self.emit(f"{name} = {expr_c};")
 
@@ -1589,7 +1730,7 @@ class CCodeGenerator:
         expr_c = self.compile_expression(expr)
 
         # Set of builtins that return strings (char*)
-        STRING_BUILTINS = {'upper', 'lower', 'to_string', 'type_of'}
+        STRING_BUILTINS = self.STRING_RETURNING_BUILTINS
 
         if isinstance(expr, StringNode):
             self.emit(f'printf("%s\\n", {expr_c});')
@@ -1603,6 +1744,10 @@ class CCodeGenerator:
             self.emit(f'srv_map_print(&{expr_c});')
         elif isinstance(expr, FunctionCallNode) and expr.name in STRING_BUILTINS:
             self.emit(f'printf("%s\\n", {expr_c});')
+        elif isinstance(expr, FunctionCallNode) and expr.name == 'split':
+            self.emit(f'{{ SrvList __tmp = {expr_c}; printf("[list: %d items]\\n", srv_list_len(&__tmp)); }}')
+        elif isinstance(expr, FunctionCallNode) and expr.name == 'contains':
+            self.emit(f'printf("%s\\n", {expr_c} ? "true" : "false");')
         elif isinstance(expr, FStringNode):
             self.emit(f'printf("%s\\n", {expr_c});')
         else:
@@ -1732,8 +1877,23 @@ class CCodeGenerator:
         'lower':      ('srv_lower({0})', 1),
         'to_string':  ('srv_to_string({0})', 1),
         'type_of':    ('srv_type_of({0})', 1),
+        'trim':       ('srv_trim({0})', 1),
+        'replace':    ('srv_replace({0}, {1}, {2})', 3),
+        'contains':   ('srv_contains({0}, {1})', 2),
+        'index_of':   ('srv_index_of({0}, {1})', 2),
+        'char_at':    ('srv_char_at({0}, {1})', 2),
+        'substring':  ('srv_substring({0}, {1}, {2})', 3),
+        'reverse':    ('srv_reverse({0})', 1),
+        'split':      ('srv_split({0}, {1})', 2),
+        'join':       ('srv_join({0}, &{1})', 2),
         # Map builtins
         'has_key':    ('srv_map_has_key(&{0}, {1})', 2),
+    }
+
+    # Builtins that return char* (used for printf formatting and type tracking)
+    STRING_RETURNING_BUILTINS = {
+        'upper', 'lower', 'to_string', 'type_of', 'trim', 'replace',
+        'char_at', 'substring', 'reverse', 'join',
     }
 
     def compile_call(self, call):
@@ -1744,7 +1904,7 @@ class CCodeGenerator:
                 raise ValueError(f"Builtin '{call.name}' expects {arity} argument(s), got {len(call.arguments)}")
             args_c = [self.compile_expression(a) for a in call.arguments]
             # Track that we need string helper runtime
-            if call.name in ('upper', 'lower', 'to_string', 'type_of'):
+            if call.name in self.STRING_RETURNING_BUILTINS or call.name in ('contains', 'index_of', 'split'):
                 self.uses_string_helpers = True
             return template.format(*args_c)
 
@@ -1774,7 +1934,7 @@ class CCodeGenerator:
             elif isinstance(part, IdentifierNode) and part.name in self.string_vars:
                 fmt_parts.append('%s')
                 args.append(self.compile_expression(part))
-            elif isinstance(part, FunctionCallNode) and part.name in ('upper', 'lower', 'to_string', 'type_of'):
+            elif isinstance(part, FunctionCallNode) and part.name in self.STRING_RETURNING_BUILTINS:
                 fmt_parts.append('%s')
                 args.append(self.compile_expression(part))
             elif isinstance(part, NumberNode):
