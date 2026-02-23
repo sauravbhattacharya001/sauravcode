@@ -471,3 +471,75 @@ class TestBuiltinCodeGen:
         assert "srv_to_string" in c_code
         assert "srv_upper" in c_code
         assert "srv_lower" in c_code
+
+
+# ============================================================
+# F-string compilation
+# ============================================================
+
+class TestFStringCodeGen:
+    """Tests for f-string compiler support."""
+
+    def test_fstring_simple_variable(self):
+        c_code = compile_to_c('name = "World"\nprint f"Hello {name}"\n')
+        assert "snprintf" in c_code
+        assert "%s" in c_code
+
+    def test_fstring_numeric_variable(self):
+        c_code = compile_to_c('x = 42\nprint f"Value: {x}"\n')
+        assert "snprintf" in c_code
+        assert "%.10g" in c_code
+
+    def test_fstring_expression(self):
+        c_code = compile_to_c('x = 5\nprint f"Sum: {x + 3}"\n')
+        assert "snprintf" in c_code
+
+    def test_fstring_multiple_parts(self):
+        c_code = compile_to_c('name = "Alice"\nx = 30\nprint f"{name} is {x}"\n')
+        assert "snprintf" in c_code
+        assert c_code.count("snprintf") >= 2  # size calc + format
+
+    def test_fstring_assignment_tracks_string(self):
+        c_code = compile_to_c('name = "World"\nmsg = f"Hello {name}"\nprint msg\n')
+        assert "char *msg" in c_code
+        assert 'printf("%s\\n", msg)' in c_code
+
+    def test_fstring_prints_as_string(self):
+        c_code = compile_to_c('x = 42\nprint f"Answer: {x}"\n')
+        # f-string result should be printed with %s, not %.10g
+        assert '"%s\\n"' in c_code
+
+    def test_fstring_literal_only(self):
+        c_code = compile_to_c('print f"No interpolation here"\n')
+        assert "snprintf" in c_code
+        assert "No interpolation here" in c_code
+
+    def test_fstring_escaped_braces(self):
+        c_code = compile_to_c('print f"Use {{braces}}"\n')
+        assert "snprintf" in c_code
+
+    def test_fstring_no_snprintf_without_fstrings(self):
+        c_code = compile_to_c('x = 5\nprint x\n')
+        assert "snprintf" not in c_code
+
+    def test_fstring_in_assignment_then_print(self):
+        code = 'name = "Test"\nresult = f"Hello {name}!"\nprint result\n'
+        c_code = compile_to_c(code)
+        assert "char *result" in c_code or "char* result" in c_code
+        assert "snprintf" in c_code
+        assert 'printf("%s\\n", result)' in c_code
+
+    def test_fstring_with_arithmetic(self):
+        c_code = compile_to_c('a = 10\nb = 20\nprint f"Sum is {a + b}"\n')
+        assert "snprintf" in c_code
+        assert "%.10g" in c_code
+
+    def test_fstring_test_file_compiles(self):
+        test_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test_fstring.srv")
+        if not os.path.isfile(test_file):
+            pytest.skip("test_fstring.srv not found")
+        with open(test_file) as f:
+            code = f.read()
+        c_code = compile_to_c(code)
+        assert "snprintf" in c_code
+        assert "Hello %s" in c_code

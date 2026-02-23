@@ -39,7 +39,8 @@ import argparse
 token_specification = [
     ('COMMENT',  r'#.*'),
     ('NUMBER',   r'\d+(\.\d*)?'),
-    ('STRING',   r'\"(?:[^\"\\]|\\.)*\"'),    # String with escape support
+    ('FSTRING',  r'f\"(?:[^\"\\]|\\.)*\"'),   # f-string: f"..." (must come before STRING)
+    ('STRING',   r'\"(?:[^\"\\]|\\.)*\"'),     # String with escape support
     ('EQ',       r'=='),
     ('NEQ',      r'!='),
     ('LTE',      r'<='),
@@ -264,6 +265,13 @@ class PopNode(ASTNode):
     def __init__(self, list_name):
         self.list_name = list_name
 
+class FStringNode(ASTNode):
+    """Interpolated string: f"Hello {name}, you are {age} years old"
+    parts is a list of ASTNode — StringNode for literal text, others for expressions.
+    """
+    def __init__(self, parts):
+        self.parts = parts  # list of ASTNode
+
 
 # ============================================================
 # PARSER
@@ -471,13 +479,13 @@ class Parser:
             self.expect('DOT')
             field = self.expect('IDENT')[1]
             # Check if it's a method call (next token is arg-like)
-            if self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN', 'KEYWORD'):
+            if self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN', 'KEYWORD'):
                 pk = self.peek()
                 if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false'):
                     args = [self.parse_term()]
-                elif pk[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN'):
+                elif pk[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN'):
                     args = []
-                    while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN'):
+                    while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN'):
                         args.append(self.parse_term())
                 else:
                     args = []
@@ -506,7 +514,7 @@ class Parser:
 
     def parse_function_call(self, name):
         arguments = []
-        while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN', 'LBRACKET', 'KEYWORD'):
+        while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN', 'LBRACKET', 'KEYWORD'):
             pk = self.peek()
             if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'new', 'pop', 'self'):
                 arguments.append(self.parse_simple_arg())
@@ -657,6 +665,9 @@ class Parser:
         elif token_type == 'STRING':
             self.advance()
             return StringNode(value[1:-1])
+        elif token_type == 'FSTRING':
+            self.advance()
+            return self.parse_fstring(value)
         elif token_type == 'KEYWORD' and value == 'true':
             self.advance()
             return BoolNode(True)
@@ -671,7 +682,7 @@ class Parser:
             self.advance()
             class_name = self.expect('IDENT')[1]
             args = []
-            while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'LPAREN'):
+            while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN'):
                 args.append(self.parse_atom())
             return NewNode(class_name, args)
         elif token_type == 'KEYWORD' and value == 'pop':
@@ -695,7 +706,7 @@ class Parser:
             if pk[0] in ('LBRACKET', 'DOT'):
                 return IdentifierNode(value)
             # Check if function call (next is arg-like)
-            if pk[0] in ('NUMBER', 'STRING', 'LPAREN'):
+            if pk[0] in ('NUMBER', 'STRING', 'FSTRING', 'LPAREN'):
                 return self.parse_function_call(value)
             elif pk[0] == 'IDENT':
                 return self.parse_function_call(value)
@@ -715,6 +726,67 @@ class Parser:
                 self.advance()
         self.expect('RBRACKET')
         return ListNode(elements)
+
+    def parse_fstring(self, raw_value):
+        """Parse an f-string token into an FStringNode.
+
+        raw_value is the full token text like: f"Hello {name}, age {age + 1}"
+        We strip the f" prefix and " suffix, then split on { } delimiters,
+        parsing the expressions inside { } as sauravcode expressions.
+        """
+        # Strip the f" prefix and " suffix
+        content = raw_value[2:-1]
+
+        parts = []
+        i = 0
+        text_buf = []
+
+        while i < len(content):
+            ch = content[i]
+            if ch == '\\' and i + 1 < len(content):
+                text_buf.append(content[i + 1])
+                i += 2
+            elif ch == '{':
+                if i + 1 < len(content) and content[i + 1] == '{':
+                    text_buf.append('{')
+                    i += 2
+                    continue
+                if text_buf:
+                    parts.append(StringNode(''.join(text_buf)))
+                    text_buf = []
+                depth = 1
+                j = i + 1
+                while j < len(content) and depth > 0:
+                    if content[j] == '{':
+                        depth += 1
+                    elif content[j] == '}':
+                        depth -= 1
+                    j += 1
+                if depth != 0:
+                    raise SyntaxError("Unmatched '{' in f-string")
+                expr_text = content[i + 1:j - 1].strip()
+                if not expr_text:
+                    raise SyntaxError("Empty expression in f-string")
+                expr_code = expr_text + '\n'
+                expr_tokens = list(tokenize(expr_code))
+                expr_parser = Parser(expr_tokens)
+                expr_node = expr_parser.parse_full_expression()
+                parts.append(expr_node)
+                i = j
+            elif ch == '}':
+                if i + 1 < len(content) and content[i + 1] == '}':
+                    text_buf.append('}')
+                    i += 2
+                    continue
+                raise SyntaxError("Unmatched '}' in f-string")
+            else:
+                text_buf.append(ch)
+                i += 1
+
+        if text_buf:
+            parts.append(StringNode(''.join(text_buf)))
+
+        return FStringNode(parts)
 
     def parse_term(self):
         """Legacy parse_term for function args — delegates to atom."""
@@ -775,6 +847,7 @@ class CCodeGenerator:
         self.uses_strings = False
         self.uses_try_catch = False
         self.uses_string_helpers = False
+        self.uses_fstring = False
         self._ident_map = {}      # sauravcode name -> safe C name
 
     def _safe_ident(self, name):
@@ -859,6 +932,9 @@ class CCodeGenerator:
                 if node.name in ('upper', 'lower', 'to_string', 'type_of'):
                     self.uses_string_helpers = True
                 for a in node.arguments: walk(a)
+            elif isinstance(node, FStringNode):
+                self.uses_fstring = True
+                for p in node.parts: walk(p)
             elif isinstance(node, AppendNode):
                 walk(node.value)
             elif isinstance(node, LenNode):
@@ -1135,6 +1211,9 @@ class CCodeGenerator:
                 if isinstance(stmt.expression, StringNode):
                     self.emit(f'const char *{name} = {expr_c};')
                     self.string_vars.add(stmt.name)
+                elif isinstance(stmt.expression, FStringNode):
+                    self.emit(f'char *{name} = {expr_c};')
+                    self.string_vars.add(stmt.name)
                 elif isinstance(stmt.expression, BoolNode):
                     self.emit(f'int {name} = {expr_c};')
                 elif isinstance(stmt.expression, ListNode):
@@ -1266,6 +1345,8 @@ class CCodeGenerator:
             self.emit(f'printf("[list: %d items]\\n", srv_list_len(&{expr_c}));')
         elif isinstance(expr, FunctionCallNode) and expr.name in STRING_BUILTINS:
             self.emit(f'printf("%s\\n", {expr_c});')
+        elif isinstance(expr, FStringNode):
+            self.emit(f'printf("%s\\n", {expr_c});')
         else:
             self.emit(f'printf("%.10g\\n", (double)({expr_c}));')
 
@@ -1355,6 +1436,9 @@ class CCodeGenerator:
             safe_list = self._safe_ident(expr.list_name)
             return f"srv_list_pop(&{safe_list})"
 
+        elif isinstance(expr, FStringNode):
+            return self.compile_fstring(expr)
+
         elif isinstance(expr, MethodCallNode):
             obj_c = self.compile_expression(expr.obj)
             args_c = ", ".join(self.compile_expression(a) for a in expr.arguments)
@@ -1397,6 +1481,60 @@ class CCodeGenerator:
         safe_name = self._safe_ident(call.name)
         args_c = ", ".join(self.compile_expression(a) for a in call.arguments)
         return f"{safe_name}({args_c})"
+
+    def compile_fstring(self, node):
+        """Compile an f-string to C using snprintf into a malloc'd buffer.
+
+        Generates a GCC statement-expression ({ ... }) that:
+        1. Calculates the required buffer size via snprintf(NULL, 0, ...)
+        2. Allocates a buffer with malloc
+        3. Writes the formatted string into it
+        """
+        self.uses_fstring = True
+
+        # Build format string and args list
+        fmt_parts = []
+        args = []
+        for part in node.parts:
+            if isinstance(part, StringNode):
+                # Literal text — escape % for printf
+                escaped = part.value.replace('\\', '\\\\').replace('"', '\\"')
+                escaped = escaped.replace('%', '%%').replace('\n', '\\n')
+                fmt_parts.append(escaped)
+            elif isinstance(part, IdentifierNode) and part.name in self.string_vars:
+                fmt_parts.append('%s')
+                args.append(self.compile_expression(part))
+            elif isinstance(part, FunctionCallNode) and part.name in ('upper', 'lower', 'to_string', 'type_of'):
+                fmt_parts.append('%s')
+                args.append(self.compile_expression(part))
+            elif isinstance(part, NumberNode):
+                # Number literal — format as int if possible
+                if part.value == int(part.value):
+                    fmt_parts.append('%d')
+                    args.append(str(int(part.value)))
+                else:
+                    fmt_parts.append('%.10g')
+                    args.append(str(part.value))
+            elif isinstance(part, StringNode):
+                # Already handled above
+                pass
+            else:
+                # Expression — assume numeric, use %.10g
+                fmt_parts.append('%.10g')
+                args.append(f"(double)({self.compile_expression(part)})")
+
+        fmt_str = ''.join(fmt_parts)
+        if args:
+            args_str = ', ' + ', '.join(args)
+        else:
+            args_str = ''
+
+        # Use a statement-expression to allocate and format
+        return (
+            f'({{ int __n = snprintf(NULL, 0, "{fmt_str}"{args_str}); '
+            f'char* __s = (char*)malloc(__n + 1); '
+            f'snprintf(__s, __n + 1, "{fmt_str}"{args_str}); __s; }})'
+        )
 
 
 # ============================================================
