@@ -359,3 +359,115 @@ class TestSrvFilesCompiler:
             code = f.read()
         c_code = compile_to_c(code)
         assert "#include <stdio.h>" in c_code
+
+
+# ============================================================
+# Builtin functions: math, string, conversion
+# ============================================================
+
+class TestBuiltinCodeGen:
+    """Tests for compiler-supported builtin functions."""
+
+    # --- Math builtins ---
+
+    def test_abs_compiles_to_fabs(self):
+        c_code = compile_to_c("x = -5\nprint abs x\n")
+        assert "fabs" in c_code
+
+    def test_sqrt_compiles(self):
+        c_code = compile_to_c("print sqrt 144\n")
+        assert "sqrt(144)" in c_code
+
+    def test_floor_compiles(self):
+        c_code = compile_to_c("print floor 3.7\n")
+        assert "floor(3.7)" in c_code
+
+    def test_ceil_compiles(self):
+        c_code = compile_to_c("print ceil 3.2\n")
+        assert "ceil(3.2)" in c_code
+
+    def test_round_compiles(self):
+        c_code = compile_to_c("print round 3.5\n")
+        assert "round(3.5)" in c_code
+
+    def test_power_compiles_to_pow(self):
+        c_code = compile_to_c("print power 2 10\n")
+        assert "pow(2, 10)" in c_code
+
+    # --- String builtins ---
+
+    def test_upper_compiles(self):
+        c_code = compile_to_c('print upper "hello"\n')
+        assert "srv_upper" in c_code
+        assert "%s" in c_code  # should print as string
+
+    def test_lower_compiles(self):
+        c_code = compile_to_c('print lower "HELLO"\n')
+        assert "srv_lower" in c_code
+        assert "%s" in c_code
+
+    def test_upper_emits_string_helpers(self):
+        c_code = compile_to_c('print upper "test"\n')
+        assert "static char* srv_upper" in c_code
+        assert "#include <ctype.h>" in c_code
+
+    def test_lower_emits_string_helpers(self):
+        c_code = compile_to_c('print lower "test"\n')
+        assert "static char* srv_lower" in c_code
+
+    # --- Conversion builtins ---
+
+    def test_to_string_compiles(self):
+        c_code = compile_to_c("n = 42\nprint to_string n\n")
+        assert "srv_to_string" in c_code
+        assert "%s" in c_code  # should print as string
+
+    def test_to_number_compiles(self):
+        c_code = compile_to_c('s = "42"\nprint to_number s\n')
+        assert "atof" in c_code
+
+    def test_type_of_compiles(self):
+        c_code = compile_to_c("x = 5\nprint type_of x\n")
+        assert "srv_type_of" in c_code
+        assert "%s" in c_code
+
+    # --- No helper emission when not needed ---
+
+    def test_no_string_helpers_when_unused(self):
+        c_code = compile_to_c("x = 5\nprint x\n")
+        assert "srv_upper" not in c_code
+        assert "ctype.h" not in c_code
+
+    def test_math_builtins_no_string_helpers(self):
+        c_code = compile_to_c("print abs -5\nprint sqrt 9\n")
+        assert "srv_upper" not in c_code
+        assert "ctype.h" not in c_code
+
+    # --- In expressions ---
+
+    def test_abs_in_expression(self):
+        c_code = compile_to_c("x = -5\ny = abs x + 1\n")
+        assert "fabs" in c_code
+
+    def test_power_in_expression(self):
+        c_code = compile_to_c("result = power 2 10\nprint result\n")
+        assert "pow(2, 10)" in c_code
+
+    # --- Builtin test file compiles ---
+
+    def test_builtins_srv_compiles(self):
+        test_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test_builtins.srv")
+        if not os.path.isfile(test_file):
+            pytest.skip("test_builtins.srv not found")
+        with open(test_file) as f:
+            code = f.read()
+        c_code = compile_to_c(code)
+        assert "fabs" in c_code
+        assert "floor" in c_code
+        assert "ceil" in c_code
+        assert "sqrt" in c_code
+        assert "pow" in c_code
+        assert "round" in c_code
+        assert "srv_to_string" in c_code
+        assert "srv_upper" in c_code
+        assert "srv_lower" in c_code

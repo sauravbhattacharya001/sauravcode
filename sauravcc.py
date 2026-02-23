@@ -757,7 +757,7 @@ class CCodeGenerator:
         'free', 'realloc', 'exit', 'fprintf', 'stderr', 'stdout', 'stdin',
         'NULL', 'sizeof', 'memcpy', 'memset', 'strlen', 'strcmp', 'strcat',
         'strcpy', 'setjmp', 'longjmp', 'jmp_buf', 'fmod', 'sqrt', 'floor',
-        'ceil', 'abs',
+        'ceil', 'abs', 'round', 'pow', 'atof', 'toupper', 'tolower',
     ])
 
     # Valid C identifier pattern
@@ -774,6 +774,7 @@ class CCodeGenerator:
         self.uses_lists = False
         self.uses_strings = False
         self.uses_try_catch = False
+        self.uses_string_helpers = False
         self._ident_map = {}      # sauravcode name -> safe C name
 
     def _safe_ident(self, name):
@@ -855,6 +856,8 @@ class CCodeGenerator:
             elif isinstance(node, LogicalNode):
                 walk(node.left); walk(node.right)
             elif isinstance(node, FunctionCallNode):
+                if node.name in ('upper', 'lower', 'to_string', 'type_of'):
+                    self.uses_string_helpers = True
                 for a in node.arguments: walk(a)
             elif isinstance(node, AppendNode):
                 walk(node.value)
@@ -893,6 +896,10 @@ class CCodeGenerator:
         # Emit dynamic list support if needed
         if self.uses_lists:
             self.emit_list_runtime()
+
+        # Emit string helper functions if needed
+        if self.uses_string_helpers:
+            self.emit_string_helpers()
 
         # Emit try/catch support if needed
         if self.uses_try_catch:
@@ -997,6 +1004,44 @@ class CCodeGenerator:
         self.emit("    l->data = NULL;")
         self.emit("    l->size = 0;")
         self.emit("    l->capacity = 0;")
+        self.emit("}")
+        self.emit("")
+
+    def emit_string_helpers(self):
+        """Emit C helper functions for sauravcode string/conversion builtins."""
+        self.emit("/* ---- String / conversion helpers ---- */")
+        self.emit("#include <ctype.h>")
+        self.emit("")
+        # srv_upper: returns a malloc'd uppercase copy
+        self.emit("static char* srv_upper(const char* s) {")
+        self.emit("    size_t len = strlen(s);")
+        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    for (size_t i = 0; i <= len; i++) out[i] = toupper((unsigned char)s[i]);")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
+        # srv_lower: returns a malloc'd lowercase copy
+        self.emit("static char* srv_lower(const char* s) {")
+        self.emit("    size_t len = strlen(s);")
+        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    for (size_t i = 0; i <= len; i++) out[i] = tolower((unsigned char)s[i]);")
+        self.emit("    return out;")
+        self.emit("}")
+        self.emit("")
+        # srv_to_string: converts a double to a string
+        self.emit("static char* srv_to_string(double val) {")
+        self.emit("    char* buf = (char*)malloc(64);")
+        self.emit("    if (val == (long long)val)")
+        self.emit('        snprintf(buf, 64, "%lld", (long long)val);')
+        self.emit("    else")
+        self.emit('        snprintf(buf, 64, "%.10g", val);')
+        self.emit("    return buf;")
+        self.emit("}")
+        self.emit("")
+        # srv_type_of: returns the type name (simplified — only works for doubles in compiled mode)
+        self.emit('static const char* srv_type_of(double val) {')
+        self.emit('    if (val == (long long)val) return "number";')
+        self.emit('    return "number";  /* compiled mode only has doubles */')
         self.emit("}")
         self.emit("")
 
@@ -1208,6 +1253,9 @@ class CCodeGenerator:
         expr = stmt.expression
         expr_c = self.compile_expression(expr)
 
+        # Set of builtins that return strings (char*)
+        STRING_BUILTINS = {'upper', 'lower', 'to_string', 'type_of'}
+
         if isinstance(expr, StringNode):
             self.emit(f'printf("%s\\n", {expr_c});')
         elif isinstance(expr, BoolNode):
@@ -1216,6 +1264,8 @@ class CCodeGenerator:
             self.emit(f'printf("%s\\n", {expr_c});')
         elif isinstance(expr, IdentifierNode) and expr.name in self.list_vars:
             self.emit(f'printf("[list: %d items]\\n", srv_list_len(&{expr_c}));')
+        elif isinstance(expr, FunctionCallNode) and expr.name in STRING_BUILTINS:
+            self.emit(f'printf("%s\\n", {expr_c});')
         else:
             self.emit(f'printf("%.10g\\n", (double)({expr_c}));')
 
@@ -1313,8 +1363,37 @@ class CCodeGenerator:
         else:
             raise ValueError(f"Unknown expression type: {type(expr).__name__}")
 
+    # Builtin functions: sauravcode name -> C expression template.
+    # {0}, {1}, ... are replaced with compiled argument expressions.
+    BUILTIN_MAP = {
+        # Math builtins (math.h)
+        'abs':        ('fabs({0})', 1),
+        'sqrt':       ('sqrt({0})', 1),
+        'floor':      ('floor({0})', 1),
+        'ceil':       ('ceil({0})', 1),
+        'round':      ('round({0})', 1),
+        'power':      ('pow({0}, {1})', 2),
+        # Conversion builtins
+        'to_number':  ('atof({0})', 1),
+        # String builtins (need runtime helpers emitted once)
+        'upper':      ('srv_upper({0})', 1),
+        'lower':      ('srv_lower({0})', 1),
+        'to_string':  ('srv_to_string({0})', 1),
+        'type_of':    ('srv_type_of({0})', 1),
+    }
+
     def compile_call(self, call):
-        """Compile a function call to C."""
+        """Compile a function call to C, with builtin support."""
+        if call.name in self.BUILTIN_MAP:
+            template, arity = self.BUILTIN_MAP[call.name]
+            if len(call.arguments) < arity:
+                raise ValueError(f"Builtin '{call.name}' expects {arity} argument(s), got {len(call.arguments)}")
+            args_c = [self.compile_expression(a) for a in call.arguments]
+            # Track that we need string helper runtime
+            if call.name in ('upper', 'lower', 'to_string', 'type_of'):
+                self.uses_string_helpers = True
+            return template.format(*args_c)
+
         safe_name = self._safe_ident(call.name)
         args_c = ", ".join(self.compile_expression(a) for a in call.arguments)
         return f"{safe_name}({args_c})"
