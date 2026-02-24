@@ -102,7 +102,7 @@ def tokenize(code):
 
 # AST Node Classes with __repr__ for Debugging
 class ASTNode:
-    pass
+    line_num = None  # Source line number (optionally set by debugger/tooling)
 
 class AssignmentNode(ASTNode):
     def __init__(self, name, expression):
