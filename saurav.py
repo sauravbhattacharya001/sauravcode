@@ -1819,7 +1819,7 @@ class Interpreter:
             self.variables[node.var] = item
             if node.condition is not None:
                 cond = self.evaluate(node.condition)
-                if not cond:
+                if not self._is_truthy(cond):
                     continue
             result.append(self.evaluate(node.expr))
         # Restore variable scope
