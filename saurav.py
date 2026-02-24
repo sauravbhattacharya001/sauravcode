@@ -31,6 +31,7 @@ token_specification = [
     ('GT',       r'>'),   # Greater-than
     ('ASSIGN',   r'='),  # Assignment operator
     ('ARROW',    r'->'),  # Arrow operator (for lambda expressions)
+    ('PIPE',     r'\|>'),  # Pipe operator (must precede any | token)
     ('OP',       r'[+\-*/%]'),  # Arithmetic operators (includes modulo)
     ('LPAREN',   r'\('),  # Left parenthesis
     ('RPAREN',   r'\)'),  # Right parenthesis
@@ -357,6 +358,19 @@ class LambdaNode(ASTNode):
     def __repr__(self):
         return f"LambdaNode(params={self.params}, body_expr={self.body_expr})"
 
+class PipeNode(ASTNode):
+    """Pipe operator: value |> function.
+    
+    Evaluates value, then passes it as the last argument to function.
+    Enables functional composition: x |> f |> g is equivalent to g(f(x)).
+    """
+    def __init__(self, value, function):
+        self.value = value       # Left side: expression to pipe
+        self.function = function # Right side: function/lambda to apply
+    
+    def __repr__(self):
+        return f"PipeNode(value={self.value}, function={self.function})"
+
 class ImportNode(ASTNode):
     """Import another .srv module: import "math_utils"
     
@@ -511,8 +525,10 @@ class Parser:
         # Expect the arrow
         self.expect('ARROW')
 
-        # Parse the body expression
-        body_expr = self.parse_full_expression()
+        # Parse the body expression (use parse_logical_or so |> is not consumed
+        # inside lambda bodies — this allows pipes to chain through lambdas:
+        # 5 |> lambda x -> x + 1 |> lambda y -> y * 2  parses as (5 |> λ) |> λ2
+        body_expr = self.parse_logical_or()
 
         lambda_node = LambdaNode(params, body_expr)
         debug(f"Created {lambda_node}\n")
@@ -662,7 +678,8 @@ class Parser:
         return function_call_node
 
     # Expression parsing with proper precedence:
-    # full_expression -> logical_or
+    # full_expression -> pipe
+    # pipe -> logical_or ('|>' logical_or)*
     # logical_or -> logical_and ('or' logical_and)*
     # logical_and -> comparison ('and' comparison)*
     # comparison -> expression (comp_op expression)?
@@ -672,7 +689,21 @@ class Parser:
     # atom -> NUMBER | STRING | BOOL | IDENT | '(' full_expression ')' | list | func_call
 
     def parse_full_expression(self):
-        return self.parse_logical_or()
+        return self.parse_pipe()
+
+    def parse_pipe(self):
+        """Parse pipe expressions: expr (|> expr)*
+        
+        Left-associative. Lowest precedence operator.
+        The right side is parsed as a logical_or expression (which includes
+        function calls, lambdas, etc.)
+        """
+        left = self.parse_logical_or()
+        while self.peek()[0] == 'PIPE':
+            self.advance()  # consume |>
+            right = self.parse_logical_or()
+            left = PipeNode(left, right)
+        return left
 
     def parse_logical_or(self):
         left = self.parse_logical_and()
@@ -1032,6 +1063,7 @@ class Interpreter:
             MapNode:           self._eval_map,
             FStringNode:      self._eval_fstring,
             LambdaNode:       self._eval_lambda,
+            PipeNode:         self._eval_pipe,
         }
 
     def _init_builtins(self):
@@ -1896,6 +1928,100 @@ class Interpreter:
         finally:
             self.variables = saved_env
         return result
+
+    def _eval_pipe(self, node):
+        """Evaluate a pipe expression: value |> function.
+        
+        The piped value is passed as the LAST argument to the function.
+        - If right side is a function call (e.g., map (lambda x -> x*2)),
+          evaluate its explicit args and append the piped value.
+        - If right side is a function name (IdentifierNode), call with piped value.
+        - If right side is a lambda, call with piped value.
+        """
+        piped_value = self.evaluate(node.value)
+        func_node = node.function
+        
+        # Case 1: Right side is a function call with explicit arguments
+        # e.g., [1,2,3] |> map (lambda x -> x * 2) → map(lambda, [1,2,3])
+        if isinstance(func_node, FunctionCallNode):
+            evaluated_args = [self.evaluate(arg) for arg in func_node.arguments]
+            evaluated_args.append(piped_value)
+            func_name = func_node.name
+            # Check user-defined functions first
+            func = self.functions.get(func_name)
+            if func:
+                self._call_depth += 1
+                if self._call_depth > MAX_RECURSION_DEPTH:
+                    self._call_depth -= 1
+                    raise RuntimeError(
+                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded")
+                saved_env = self.variables.copy()
+                for param, val in zip(func.params, evaluated_args):
+                    self.variables[param] = val
+                result = None
+                try:
+                    for stmt in func.body:
+                        self.interpret(stmt)
+                except ReturnSignal as ret:
+                    result = ret.value
+                finally:
+                    self._call_depth -= 1
+                    self.variables = saved_env
+                return result
+            if func_name in self.builtins:
+                return self.builtins[func_name](evaluated_args)
+            raise RuntimeError(f"Function '{func_name}' is not defined.")
+        
+        # Case 2: Right side is an identifier (function name, no extra args)
+        # e.g., "hello" |> upper → upper("hello")
+        if isinstance(func_node, IdentifierNode):
+            func_name = func_node.name
+            # Check if it's a variable holding a lambda
+            if func_name in self.variables:
+                val = self.variables[func_name]
+                if isinstance(val, LambdaValue):
+                    return self._call_lambda(val, [piped_value])
+            # Check user-defined functions
+            func = self.functions.get(func_name)
+            if func:
+                self._call_depth += 1
+                if self._call_depth > MAX_RECURSION_DEPTH:
+                    self._call_depth -= 1
+                    raise RuntimeError(
+                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded")
+                saved_env = self.variables.copy()
+                for param, val in zip(func.params, [piped_value]):
+                    self.variables[param] = val
+                result = None
+                try:
+                    for stmt in func.body:
+                        self.interpret(stmt)
+                except ReturnSignal as ret:
+                    result = ret.value
+                finally:
+                    self._call_depth -= 1
+                    self.variables = saved_env
+                return result
+            # Check builtins
+            if func_name in self.builtins:
+                return self.builtins[func_name]([piped_value])
+            raise RuntimeError(f"Function '{func_name}' is not defined.")
+        
+        # Case 3: Right side is a lambda expression
+        # e.g., 5 |> lambda x -> x * 2
+        if isinstance(func_node, LambdaNode):
+            lam = self._eval_lambda(func_node)
+            return self._call_lambda(lam, [piped_value])
+        
+        # Case 4: Right side evaluated to a callable value
+        func_val = self.evaluate(func_node)
+        if isinstance(func_val, LambdaValue):
+            return self._call_lambda(func_val, [piped_value])
+        
+        raise RuntimeError(
+            f"Pipe operator requires a function on the right side, "
+            f"got {type(func_val).__name__}"
+        )
 
 
 def _format_list(lst):
