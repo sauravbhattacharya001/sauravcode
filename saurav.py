@@ -32,6 +32,7 @@ token_specification = [
     ('ASSIGN',   r'='),  # Assignment operator
     ('ARROW',    r'->'),  # Arrow operator (for lambda expressions)
     ('PIPE',     r'\|>'),  # Pipe operator (must precede any | token)
+    ('BAR',      r'\|'),   # Bar (for match case alternatives)
     ('OP',       r'[+\-*/%]'),  # Arithmetic operators (includes modulo)
     ('LPAREN',   r'\('),  # Left parenthesis
     ('RPAREN',   r'\)'),  # Right parenthesis
@@ -41,7 +42,7 @@ token_specification = [
     ('RBRACE',   r'\}'),  # Right brace (for maps)
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -402,6 +403,27 @@ class ListComprehensionNode(ASTNode):
         cond = f", condition={self.condition}" if self.condition else ""
         return f"ListComprehensionNode(expr={self.expr}, var={self.var}, iterable={self.iterable}{cond})"
 
+class MatchNode(ASTNode):
+    """Pattern matching: match expression with case clauses."""
+    def __init__(self, expression, cases):
+        self.expression = expression
+        self.cases = cases
+
+    def __repr__(self):
+        return f"MatchNode(expression={self.expression}, cases={self.cases})"
+
+class CaseNode(ASTNode):
+    """A single case in a match expression."""
+    def __init__(self, patterns, guard, body, is_wildcard=False, binding_name=None):
+        self.patterns = patterns
+        self.guard = guard
+        self.body = body
+        self.is_wildcard = is_wildcard
+        self.binding_name = binding_name
+
+    def __repr__(self):
+        return f"CaseNode(patterns={self.patterns}, guard={self.guard}, is_wildcard={self.is_wildcard}, binding_name={self.binding_name})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -446,6 +468,8 @@ class Parser:
             return self.parse_try_catch()
         elif token_type == 'KEYWORD' and value == 'throw':
             return self.parse_throw()
+        elif token_type == 'KEYWORD' and value == 'match':
+            return self.parse_match()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'IDENT':
@@ -625,6 +649,74 @@ class Parser:
         self.expect('KEYWORD', 'throw')
         expression = self.parse_full_expression()
         return ThrowNode(expression)
+
+    def parse_match(self):
+        """Parse match/case statement:
+        match expression
+            case pattern1
+                body1
+            case pattern2 | pattern3
+                body2
+            case x if x > 10
+                body3
+            case _
+                default_body
+        """
+        debug("Parsing match statement...")
+        self.expect('KEYWORD', 'match')
+        expression = self.parse_full_expression()
+        self.expect('NEWLINE')
+        self.expect('INDENT')
+
+        cases = []
+        while self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'case':
+            self.expect('KEYWORD', 'case')
+            # Parse first pattern
+            is_wildcard = False
+            binding_name = None
+            patterns = []
+
+            pk = self.peek()
+            if pk[0] == 'IDENT' and pk[1] == '_':
+                # Wildcard
+                self.advance()
+                is_wildcard = True
+            elif pk[0] == 'IDENT':
+                # Could be variable binding - check if followed by 'if', NEWLINE, or '|'
+                name = pk[1]
+                next_pk = self.peek_ahead(1) if hasattr(self, 'peek_ahead') else None
+                # We need to determine: is this a binding or a literal?
+                # Rule: true/false are bool keywords, numbers/strings are literals, 
+                # other identifiers are bindings
+                # But identifiers are IDENT tokens, true/false are KEYWORD tokens
+                # So any IDENT here is a binding
+                self.advance()
+                binding_name = name
+                patterns.append(IdentifierNode(name))
+            else:
+                patterns.append(self.parse_atom())
+
+            # Parse additional patterns with |
+            if not is_wildcard and not binding_name:
+                while self.peek()[0] == 'BAR':
+                    self.advance()  # consume |
+                    patterns.append(self.parse_atom())
+
+            # Parse optional guard: if condition
+            guard = None
+            if not is_wildcard and self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'if':
+                self.advance()  # consume 'if'
+                guard = self.parse_full_expression()
+
+            self.expect('NEWLINE')
+            self.expect('INDENT')
+            body = self.parse_block()
+            self.expect('DEDENT')
+
+            cases.append(CaseNode(patterns, guard, body, is_wildcard, binding_name))
+
+        self.expect('DEDENT')
+        return MatchNode(expression, cases)
 
     def parse_import(self):
         """Parse import statement: import "module_name" """
@@ -1043,6 +1135,7 @@ class Interpreter:
             ThrowNode:              self.execute_throw,
             AppendNode:             self._interp_append,
             ImportNode:             self.execute_import,
+            MatchNode:              self.execute_match,
         }
 
         # Dispatch table for evaluate() — expression-level nodes
@@ -1612,6 +1705,40 @@ class Interpreter:
         """Execute throw statement — raises ThrowSignal with the evaluated message."""
         message = self.evaluate(node.expression)
         raise ThrowSignal(message)
+
+    def execute_match(self, node):
+        """Execute match/case pattern matching."""
+        value = self.evaluate(node.expression)
+        for case in node.cases:
+            if case.is_wildcard:
+                if case.binding_name:
+                    self.variables[case.binding_name] = value
+                self.execute_body(case.body)
+                return
+            for pattern in case.patterns:
+                matched = False
+                if case.binding_name:
+                    # Variable binding - always matches the pattern
+                    matched = True
+                else:
+                    # Literal match
+                    pattern_val = self.evaluate(pattern)
+                    matched = (value == pattern_val)
+                if matched:
+                    if case.guard:
+                        if case.binding_name:
+                            self.variables[case.binding_name] = value
+                        if self._is_truthy(self.evaluate(case.guard)):
+                            self.execute_body(case.body)
+                            return
+                        if case.binding_name:
+                            if case.binding_name in self.variables:
+                                del self.variables[case.binding_name]
+                    else:
+                        if case.binding_name:
+                            self.variables[case.binding_name] = value
+                        self.execute_body(case.body)
+                        return
 
     def execute_import(self, node):
         """Execute import statement — load and run a .srv module file.
