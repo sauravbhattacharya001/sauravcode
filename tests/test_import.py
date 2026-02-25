@@ -153,6 +153,27 @@ class TestImportExecution:
         )
         assert output == "42\nhello"
 
+    def test_import_does_not_shadow_existing_variables(self, temp_dir):
+        """Issue #13: imported variables must not overwrite caller's."""
+        write_module(temp_dir, "vars", 'X = 42\nY = "imported"\n')
+        output = run_code_with_dir(
+            'X = 100\nimport "vars"\nprint X\nprint Y\n',
+            temp_dir
+        )
+        # X should still be 100 (caller's value preserved), Y is new
+        assert output == "100\nimported"
+
+    def test_import_multiple_modules_no_cross_shadow(self, temp_dir):
+        """Second import should not overwrite variables from first import."""
+        write_module(temp_dir, "mod_a", 'SHARED = "from_a"\nA_ONLY = 1\n')
+        write_module(temp_dir, "mod_b", 'SHARED = "from_b"\nB_ONLY = 2\n')
+        output = run_code_with_dir(
+            'import "mod_a"\nimport "mod_b"\nprint SHARED\nprint A_ONLY\nprint B_ONLY\n',
+            temp_dir
+        )
+        # SHARED should keep mod_a's value (first import wins)
+        assert output == "from_a\n1\n2"
+
     def test_import_functions(self, temp_dir):
         write_module(temp_dir, "math_lib",
             'function square n\n    return n * n\n\nfunction add a b\n    return a + b\n')

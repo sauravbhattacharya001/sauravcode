@@ -1617,8 +1617,12 @@ class Interpreter:
         """Execute import statement — load and run a .srv module file.
         
         Resolves the module path relative to the currently executing file
-        (or cwd if running from REPL). All functions and variables defined
-        in the imported module become available in the current scope.
+        (or cwd if running from REPL). The imported module is executed in
+        an isolated scope; its function definitions are merged into the
+        caller's scope, and new variables are added without overwriting
+        any existing variables in the caller's scope (fixes issue #13:
+        silent variable shadowing). Side-effect statements (print, loops)
+        still execute during import but cannot modify the caller's state.
         Circular imports are detected and silently skipped.
         """
         module_path = node.module_path
@@ -1662,11 +1666,33 @@ class Interpreter:
             parser = Parser(tokens)
             ast_nodes = parser.parse()
             
+            # Execute module in an isolated scope (issue #13).
+            # Save the caller's variables, run the module in a clean
+            # environment, then merge back: functions always overwrite
+            # (latest definition wins), but variables only merge if
+            # they don't already exist in the caller's scope.
+            saved_vars = self.variables.copy()
+            saved_funcs = self.functions.copy()
+
             for stmt in ast_nodes:
-                if isinstance(stmt, FunctionCallNode):
-                    self.execute_function(stmt)
-                else:
-                    self.interpret(stmt)
+                self.interpret(stmt)
+
+            # Collect all functions defined/overwritten by the module
+            module_functions = dict(self.functions)
+            # Collect all variables defined by the module
+            module_vars = dict(self.variables)
+
+            # Restore caller's state
+            self.variables = saved_vars
+            self.functions = saved_funcs
+
+            # Merge functions (always: latest definition wins)
+            self.functions.update(module_functions)
+
+            # Merge variables (only new ones — never overwrite caller's)
+            for name, value in module_vars.items():
+                if name not in self.variables:
+                    self.variables[name] = value
         finally:
             # Restore source dir
             self._source_dir = prev_source_dir
