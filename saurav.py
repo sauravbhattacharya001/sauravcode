@@ -448,6 +448,15 @@ class EnumAccessNode(ASTNode):
     def __repr__(self):
         return f"EnumAccessNode(enum_name={self.enum_name}, variant_name={self.variant_name})"
 
+class SliceNode(ASTNode):
+    """Slice access: obj[start:end], obj[start:], obj[:end], obj[:]"""
+    def __init__(self, obj, start, end):
+        self.obj = obj
+        self.start = start
+        self.end = end
+    def __repr__(self):
+        return f"SliceNode(obj={self.obj}, start={self.start}, end={self.end})"
+
 class AssertNode(ASTNode):
     """Assert that a condition is true, with optional error message."""
     def __init__(self, condition, message=None):
@@ -957,13 +966,33 @@ class Parser:
         return self.parse_postfix()
 
     def parse_postfix(self):
-        """Parse atom followed by optional [index] chains."""
+        """Parse atom followed by optional [index] or [start:end] slice chains."""
         node = self.parse_atom()
+        return self._parse_postfix_chain(node)
+
+    def _parse_postfix_chain(self, node):
+        """Parse [index] or [start:end] chains on an already-parsed node."""
         while self.peek()[0] == 'LBRACKET':
             self.expect('LBRACKET')
-            idx = self.parse_full_expression()
-            self.expect('RBRACKET')
-            node = IndexNode(node, idx)
+            if self.peek()[0] == 'COLON':
+                self.advance()
+                end_expr = None
+                if self.peek()[0] != 'RBRACKET':
+                    end_expr = self.parse_full_expression()
+                self.expect('RBRACKET')
+                node = SliceNode(node, None, end_expr)
+            else:
+                start_expr = self.parse_full_expression()
+                if self.peek()[0] == 'COLON':
+                    self.advance()
+                    end_expr = None
+                    if self.peek()[0] != 'RBRACKET':
+                        end_expr = self.parse_full_expression()
+                    self.expect('RBRACKET')
+                    node = SliceNode(node, start_expr, end_expr)
+                else:
+                    self.expect('RBRACKET')
+                    node = IndexNode(node, start_expr)
         return node
 
     def parse_atom(self):
@@ -1276,6 +1305,7 @@ class Interpreter:
             ListNode:         self._eval_list,
             ListComprehensionNode: self._eval_list_comprehension,
             IndexNode:        self._eval_index,
+            SliceNode:        self._eval_slice,
             LenNode:          self._eval_len,
             MapNode:           self._eval_map,
             FStringNode:      self._eval_fstring,
@@ -2203,6 +2233,14 @@ class Interpreter:
                 raise RuntimeError(f"Key {idx!r} not found in map")
             return obj[idx]
         raise RuntimeError(f"Cannot index into {type(obj).__name__}")
+
+    def _eval_slice(self, node):
+        obj = self.evaluate(node.obj)
+        start = int(self.evaluate(node.start)) if node.start is not None else None
+        end = int(self.evaluate(node.end)) if node.end is not None else None
+        if isinstance(obj, (list, str)):
+            return obj[start:end]
+        raise RuntimeError(f"Cannot slice {type(obj).__name__}; expected list or string")
 
     def _eval_len(self, node):
         obj = self.evaluate(node.expression)
