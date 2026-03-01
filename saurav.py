@@ -43,7 +43,7 @@ token_specification = [
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
     ('DOT',      r'\.'),  # Dot accessor (for enum variants)
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum|break|continue)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum|break|continue|assert)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -448,6 +448,15 @@ class EnumAccessNode(ASTNode):
     def __repr__(self):
         return f"EnumAccessNode(enum_name={self.enum_name}, variant_name={self.variant_name})"
 
+class AssertNode(ASTNode):
+    """Assert that a condition is true, with optional error message."""
+    def __init__(self, condition, message=None):
+        self.condition = condition
+        self.message = message
+
+    def __repr__(self):
+        return f"AssertNode(condition={self.condition}, message={self.message})"
+
 class BreakNode(ASTNode):
     """Break out of the nearest enclosing loop."""
     def __repr__(self):
@@ -512,6 +521,8 @@ class Parser:
         elif token_type == 'KEYWORD' and value == 'continue':
             self.advance()
             return ContinueNode()
+        elif token_type == 'KEYWORD' and value == 'assert':
+            return self.parse_assert()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'IDENT':
@@ -691,6 +702,26 @@ class Parser:
         self.expect('KEYWORD', 'throw')
         expression = self.parse_full_expression()
         return ThrowNode(expression)
+
+    def parse_assert(self):
+        """Parse assert statement: assert condition [message]
+        
+        Examples:
+            assert x == 5
+            assert len(items) > 0 "list must not be empty"
+        """
+        debug("Parsing assert statement...")
+        self.expect('KEYWORD', 'assert')
+        condition = self.parse_full_expression()
+        # Check for optional string message
+        message = None
+        if self.pos < len(self.tokens):
+            next_tok = self.peek()
+            if next_tok[0] == 'STRING':
+                message = StringNode(self.advance()[1][1:-1])
+            elif next_tok[0] == 'FSTRING':
+                message = self.parse_fstring(self.advance()[1])
+        return AssertNode(condition, message)
 
     def parse_match(self):
         """Parse match/case statement:
@@ -1228,6 +1259,7 @@ class Interpreter:
             EnumNode:               self._interp_enum,
             BreakNode:              self._interp_break,
             ContinueNode:           self._interp_continue,
+            AssertNode:             self._interp_assert,
         }
 
         # Dispatch table for evaluate() — expression-level nodes
@@ -1718,6 +1750,16 @@ class Interpreter:
 
     def _interp_continue(self, ast):
         raise ContinueSignal()
+
+    def _interp_assert(self, ast):
+        """Execute assert statement — raise RuntimeError if condition is falsy."""
+        value = self.evaluate(ast.condition)
+        if not value:
+            if ast.message is not None:
+                msg = self.evaluate(ast.message)
+            else:
+                msg = "Assertion failed"
+            raise RuntimeError(f"AssertionError: {msg}")
 
     def _eval_enum_access(self, node):
         """Evaluate enum variant access: EnumName.VARIANT"""
@@ -2626,6 +2668,9 @@ def main():
         if isinstance(msg, float) and msg == int(msg):
             msg = int(msg)
         print(f"Uncaught error: {msg}")
+        sys.exit(1)
+    except RuntimeError as e:
+        print(f"Error: {e}")
         sys.exit(1)
     
     if result is not None:

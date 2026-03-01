@@ -1,0 +1,14 @@
+# Assert demo for sauravcode
+
+x = 10
+assert x == 10
+print "Basic assert passed"
+
+assert x > 5 "x should be greater than 5"
+print "Assert with message passed"
+
+y = "hello"
+assert len(y) == 5
+print "Assert with len passed"
+
+print "All assertions passed!"
