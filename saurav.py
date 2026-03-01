@@ -42,7 +42,8 @@ token_specification = [
     ('RBRACE',   r'\}'),  # Right brace (for maps)
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case)\b'),  # All keywords
+    ('DOT',      r'\.'),  # Dot accessor (for enum variants)
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -424,6 +425,29 @@ class CaseNode(ASTNode):
     def __repr__(self):
         return f"CaseNode(patterns={self.patterns}, guard={self.guard}, is_wildcard={self.is_wildcard}, binding_name={self.binding_name})"
 
+class EnumNode(ASTNode):
+    """Enum type definition: enum Color\n    RED\n    GREEN\n    BLUE
+    
+    Defines a named enumeration. Each variant gets an auto-incrementing
+    integer value starting from 0. Access variants via dot notation:
+    Color.RED (== 0), Color.GREEN (== 1), etc.
+    """
+    def __init__(self, name, variants):
+        self.name = name
+        self.variants = variants
+
+    def __repr__(self):
+        return f"EnumNode(name={self.name}, variants={self.variants})"
+
+class EnumAccessNode(ASTNode):
+    """Access an enum variant: Color.RED"""
+    def __init__(self, enum_name, variant_name):
+        self.enum_name = enum_name
+        self.variant_name = variant_name
+
+    def __repr__(self):
+        return f"EnumAccessNode(enum_name={self.enum_name}, variant_name={self.variant_name})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -470,6 +494,8 @@ class Parser:
             return self.parse_throw()
         elif token_type == 'KEYWORD' and value == 'match':
             return self.parse_match()
+        elif token_type == 'KEYWORD' and value == 'enum':
+            return self.parse_enum()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'IDENT':
@@ -718,6 +744,39 @@ class Parser:
         self.expect('DEDENT')
         return MatchNode(expression, cases)
 
+    def parse_enum(self):
+        """Parse enum definition:
+        enum Color
+            RED
+            GREEN
+            BLUE
+        """
+        debug("Parsing enum definition...")
+        self.expect('KEYWORD', 'enum')
+        name = self.expect('IDENT')[1]
+        self.expect('NEWLINE')
+        self.expect('INDENT')
+
+        variants = []
+        while self.pos < len(self.tokens):
+            self.skip_newlines()
+            if self.pos >= len(self.tokens):
+                break
+            pk = self.peek()
+            if pk[0] == 'DEDENT':
+                break
+            if pk[0] == 'IDENT':
+                variants.append(self.expect('IDENT')[1])
+            else:
+                break
+
+        if not variants:
+            raise SyntaxError(f"Enum '{name}' must have at least one variant")
+
+        self.expect('DEDENT')
+        debug(f"Parsed enum: {name} with variants {variants}")
+        return EnumNode(name, variants)
+
     def parse_import(self):
         """Parse import statement: import "module_name" """
         debug("Parsing import statement...")
@@ -903,6 +962,11 @@ class Parser:
         elif token_type == 'IDENT':
             self.advance()
             pk = self.peek()
+            # Dot notation for enum access: EnumName.VARIANT
+            if pk[0] == 'DOT':
+                self.advance()  # consume DOT
+                variant = self.expect('IDENT')[1]
+                return EnumAccessNode(value, variant)
             # Don't treat as function call if next is [ (indexing handled in parse_postfix)
             if pk[0] == 'LBRACKET':
                 return IdentifierNode(value)
@@ -1106,6 +1170,7 @@ class Interpreter:
     def __init__(self):
         self.functions = {}  # Store function definitions
         self.variables = {}  # Store variable values
+        self.enums = {}      # Store enum definitions: {name: {VARIANT: value, ...}}
         self._call_depth = 0  # Track recursion depth for DoS protection
         self._imported_modules = set()  # Track imported modules (circular import prevention)
         self._source_dir = None  # Directory of the currently executing file (for relative imports)
@@ -1136,6 +1201,7 @@ class Interpreter:
             AppendNode:             self._interp_append,
             ImportNode:             self.execute_import,
             MatchNode:              self.execute_match,
+            EnumNode:               self._interp_enum,
         }
 
         # Dispatch table for evaluate() — expression-level nodes
@@ -1157,6 +1223,7 @@ class Interpreter:
             FStringNode:      self._eval_fstring,
             LambdaNode:       self._eval_lambda,
             PipeNode:         self._eval_pipe,
+            EnumAccessNode:   self._eval_enum_access,
         }
 
     def _init_builtins(self):
@@ -1611,6 +1678,26 @@ class Interpreter:
             raise RuntimeError(f"'{ast.list_name}' is not a list")
         value = self.evaluate(ast.value)
         lst.append(value)
+
+    def _interp_enum(self, ast):
+        """Register an enum type with auto-incrementing integer values."""
+        enum_map = {}
+        for i, variant in enumerate(ast.variants):
+            enum_map[variant] = float(i)
+        self.enums[ast.name] = enum_map
+        debug(f"Registered enum: {ast.name} = {enum_map}")
+
+    def _eval_enum_access(self, node):
+        """Evaluate enum variant access: EnumName.VARIANT"""
+        enum_map = self.enums.get(node.enum_name)
+        if enum_map is None:
+            raise RuntimeError(f"Unknown enum '{node.enum_name}'")
+        if node.variant_name not in enum_map:
+            raise RuntimeError(
+                f"Enum '{node.enum_name}' has no variant '{node.variant_name}'. "
+                f"Available: {', '.join(enum_map.keys())}"
+            )
+        return enum_map[node.variant_name]
 
     def execute_if(self, node):
         """Execute if / else if / else statements."""

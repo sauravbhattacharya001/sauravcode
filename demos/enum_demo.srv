@@ -1,0 +1,39 @@
+# Enum Demo - SauravCode enum types
+# Enums assign auto-incrementing integer values to named variants
+
+enum Color
+    RED
+    GREEN
+    BLUE
+
+enum Direction
+    NORTH
+    SOUTH
+    EAST
+    WEST
+
+# Access enum values with dot notation
+print Color.RED
+print Color.GREEN
+print Color.BLUE
+
+# Use enums in variables
+myColor = Color.GREEN
+print myColor
+
+# Compare enum values
+if myColor == Color.GREEN
+    print "The color is green!"
+
+# Use enums with match
+match myColor
+    case 0
+        print "It's red"
+    case 1
+        print "It's green"
+    case 2
+        print "It's blue"
+
+# Enum values in expressions
+offset = Direction.EAST + 10
+print offset
