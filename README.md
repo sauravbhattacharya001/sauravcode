@@ -49,7 +49,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Interactive REPL** — experiment with sauravcode in real-time
 - **Functions & recursion** — with clean call syntax
 - **Dynamic typing** — integers, floats, booleans, strings, lists, maps
-- **Control flow** — if/else if/else, while loops, range-based for loops
+- **Control flow** — if/else if/else, while loops, range-based for loops, break/continue
 - **Classes** — with fields, methods, and `self`
 - **Error handling** — try/catch blocks
 - **Lists** — dynamic arrays with append, len, indexing
@@ -171,6 +171,14 @@ while i < 5
 # For (range-based)
 for i 1 6
     print i        # prints 1 through 5
+
+# Break and Continue
+for i 0 10
+    if i == 5
+        break          # exit loop early
+    if i % 2 == 0
+        continue       # skip even numbers
+    print i            # prints 1, 3
 ```
 
 ### Recursion
@@ -352,6 +360,7 @@ python sauravcc.py program.srv -v
 | If / else if / else | ✅ | ✅ |
 | While loops | ✅ | ✅ |
 | For loops (range-based) | ✅ | ✅ |
+| Break & continue | ✅ | — |
 | Strings | ✅ | ✅ |
 | Lists (dynamic arrays) | ✅ | ✅ |
 | Maps (dictionaries) | ✅ | — |

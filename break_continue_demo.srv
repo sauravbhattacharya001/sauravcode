@@ -1,0 +1,44 @@
+# Break and Continue Demo
+# Demonstrates loop control flow with break and continue statements
+
+# --- break in while loop: find first even number > 5 ---
+print "=== Break in while loop ==="
+x = 1
+while x < 20
+    if x > 5 and x % 2 == 0
+        print f"First even number > 5: {x}"
+        break
+    x = x + 1
+
+# --- continue in for loop: skip odd numbers ---
+print "=== Continue in for loop ==="
+print "Even numbers from 0 to 9:"
+for i 0 10
+    if i % 2 != 0
+        continue
+    print i
+
+# --- break in for-each: find first negative ---
+print "=== Break in for-each ==="
+nums = [3, 7, 2, -1, 5, -3]
+for n in nums
+    if n < 0
+        print f"First negative: {n}"
+        break
+
+# --- continue in for-each: skip short words ---
+print "=== Continue in for-each ==="
+words = ["hi", "hello", "ok", "world", "no", "sauravcode"]
+print "Words with 3+ characters:"
+for w in words
+    if len w < 3
+        continue
+    print f"  {w}"
+
+# --- nested loops with break ---
+print "=== Nested loops with break ==="
+for i 0 5
+    for j 0 5
+        if j == 3
+            break
+        print f"  i={i}, j={j}"

@@ -43,7 +43,7 @@ token_specification = [
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
     ('DOT',      r'\.'),  # Dot accessor (for enum variants)
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum|break|continue)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -448,6 +448,16 @@ class EnumAccessNode(ASTNode):
     def __repr__(self):
         return f"EnumAccessNode(enum_name={self.enum_name}, variant_name={self.variant_name})"
 
+class BreakNode(ASTNode):
+    """Break out of the nearest enclosing loop."""
+    def __repr__(self):
+        return "BreakNode()"
+
+class ContinueNode(ASTNode):
+    """Skip to the next iteration of the nearest enclosing loop."""
+    def __repr__(self):
+        return "ContinueNode()"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -496,6 +506,12 @@ class Parser:
             return self.parse_match()
         elif token_type == 'KEYWORD' and value == 'enum':
             return self.parse_enum()
+        elif token_type == 'KEYWORD' and value == 'break':
+            self.advance()
+            return BreakNode()
+        elif token_type == 'KEYWORD' and value == 'continue':
+            self.advance()
+            return ContinueNode()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'IDENT':
@@ -1147,6 +1163,14 @@ class ThrowSignal(Exception):
     def __init__(self, message):
         self.message = message
 
+class BreakSignal(Exception):
+    """Signal to break out of the nearest enclosing loop."""
+    pass
+
+class ContinueSignal(Exception):
+    """Signal to skip to the next iteration of the nearest enclosing loop."""
+    pass
+
 class LambdaValue:
     """Runtime representation of a lambda expression.
     
@@ -1202,6 +1226,8 @@ class Interpreter:
             ImportNode:             self.execute_import,
             MatchNode:              self.execute_match,
             EnumNode:               self._interp_enum,
+            BreakNode:              self._interp_break,
+            ContinueNode:           self._interp_continue,
         }
 
         # Dispatch table for evaluate() — expression-level nodes
@@ -1687,6 +1713,12 @@ class Interpreter:
         self.enums[ast.name] = enum_map
         debug(f"Registered enum: {ast.name} = {enum_map}")
 
+    def _interp_break(self, ast):
+        raise BreakSignal()
+
+    def _interp_continue(self, ast):
+        raise ContinueSignal()
+
     def _eval_enum_access(self, node):
         """Evaluate enum variant access: EnumName.VARIANT"""
         enum_map = self.enums.get(node.enum_name)
@@ -1722,7 +1754,12 @@ class Interpreter:
                     f"Maximum loop iterations ({MAX_LOOP_ITERATIONS:,}) exceeded "
                     f"in while loop"
                 )
-            self.execute_body(node.body)
+            try:
+                self.execute_body(node.body)
+            except BreakSignal:
+                break
+            except ContinueSignal:
+                continue
 
     def execute_for(self, node):
         """Execute for loop (range-based) with iteration limit for DoS protection."""
@@ -1735,7 +1772,12 @@ class Interpreter:
             )
         for i in range(start, end):
             self.variables[node.var] = float(i)
-            self.execute_body(node.body)
+            try:
+                self.execute_body(node.body)
+            except BreakSignal:
+                break
+            except ContinueSignal:
+                continue
 
     def execute_for_each(self, node):
         """Execute for-each loop: for item in collection.
@@ -1764,7 +1806,12 @@ class Interpreter:
             )
         for item in items:
             self.variables[node.var] = item
-            self.execute_body(node.body)
+            try:
+                self.execute_body(node.body)
+            except BreakSignal:
+                break
+            except ContinueSignal:
+                continue
 
     def execute_try_catch(self, node):
         """Execute try/catch block.
