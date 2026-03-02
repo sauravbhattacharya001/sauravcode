@@ -360,7 +360,7 @@ python sauravcc.py program.srv -v
 | If / else if / else | ✅ | ✅ |
 | While loops | ✅ | ✅ |
 | For loops (range-based) | ✅ | ✅ |
-| Break & continue | ✅ | — |
+| Break & continue | ✅ | ✅ |
 | Strings | ✅ | ✅ |
 | Lists (dynamic arrays) | ✅ | ✅ |
 | Maps (dictionaries) | ✅ | — |

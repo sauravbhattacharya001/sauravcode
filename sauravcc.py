@@ -58,7 +58,7 @@ token_specification = [
     ('COLON',    r':'),
     ('DOT',      r'\.'),
     ('COMMA',    r','),
-    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get)\b'),
+    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue)\b'),
     ('IDENT',    r'[a-zA-Z_]\w*'),
     ('NEWLINE',  r'\n'),
     ('SKIP',     r'[ \t]+'),
@@ -288,6 +288,12 @@ class ForEachNode(ASTNode):
         self.body = body        # list of statements
 
 
+class BreakNode(ASTNode):
+    pass
+
+class ContinueNode(ASTNode):
+    pass
+
 class TernaryNode(ASTNode):
     def __init__(self, condition, true_expr, false_expr):
         self.condition = condition
@@ -338,6 +344,12 @@ class Parser:
             return self.parse_while()
         elif token_type == 'KEYWORD' and value == 'for':
             return self.parse_for()
+        elif token_type == 'KEYWORD' and value == 'break':
+            self.expect('KEYWORD', 'break')
+            return BreakNode()
+        elif token_type == 'KEYWORD' and value == 'continue':
+            self.expect('KEYWORD', 'continue')
+            return ContinueNode()
         elif token_type == 'KEYWORD' and value == 'try':
             return self.parse_try()
         elif token_type == 'KEYWORD' and value == 'append':
@@ -1756,6 +1768,12 @@ class CCodeGenerator:
         elif isinstance(stmt, PopNode):
             safe_list = self._safe_ident(stmt.list_name)
             self.emit(f"srv_list_pop(&{safe_list});")
+
+        elif isinstance(stmt, BreakNode):
+            self.emit('break;')
+
+        elif isinstance(stmt, ContinueNode):
+            self.emit('continue;')
 
         elif isinstance(stmt, ClassNode):
             pass  # Already handled in first pass
