@@ -504,6 +504,8 @@ class Parser:
         'read_file', 'write_file', 'append_file', 'file_exists', 'read_lines',
         'now', 'timestamp', 'date_format', 'date_part', 'sleep',
         'pi', 'euler', 'sin', 'cos', 'tan', 'log', 'log10', 'min', 'max',
+        'zip', 'enumerate', 'flatten', 'unique', 'count', 'sum', 'any', 'all',
+        'slice', 'chunk', 'find', 'find_index',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1433,6 +1435,19 @@ class Interpreter:
             'log10':          self._builtin_log10,
             'min':            self._builtin_min,
             'max':            self._builtin_max,
+            # --- Collection functions ---
+            'zip':            self._builtin_zip,
+            'enumerate':      self._builtin_enumerate,
+            'flatten':        self._builtin_flatten,
+            'unique':         self._builtin_unique,
+            'count':          self._builtin_count,
+            'sum':            self._builtin_sum,
+            'any':            self._builtin_any,
+            'all':            self._builtin_all,
+            'slice':          self._builtin_slice,
+            'chunk':          self._builtin_chunk,
+            'find':           self._builtin_find,
+            'find_index':     self._builtin_find_index,
         }
 
     # --- String built-ins ---
@@ -2028,6 +2043,140 @@ class Interpreter:
             return max(args[0], args[1])
         else:
             raise RuntimeError("max expects 1 or 2 arguments: max list | max a b")
+
+    # --- Collection built-ins ---
+
+    def _builtin_zip(self, args):
+        """zip(list1, list2, ...) -> list of lists, pairing elements by index."""
+        if len(args) < 2:
+            raise RuntimeError("zip expects at least 2 list arguments")
+        for i, a in enumerate(args):
+            if not isinstance(a, list):
+                raise RuntimeError(f"zip argument {i+1} must be a list")
+        return [list(t) for t in zip(*args)]
+
+    def _builtin_enumerate(self, args):
+        """enumerate(list) -> list of [index, value] pairs."""
+        if len(args) < 1 or len(args) > 2:
+            raise RuntimeError("enumerate expects 1-2 arguments: enumerate list [start]")
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("enumerate expects a list argument")
+        start = 0
+        if len(args) == 2:
+            start = int(args[1])
+        return [[i + start, v] for i, v in enumerate(lst)]
+
+    def _builtin_flatten(self, args):
+        """flatten(list) -> flatten nested lists one level deep."""
+        self._expect_args('flatten', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("flatten expects a list argument")
+        result = []
+        for item in lst:
+            if isinstance(item, list):
+                result.extend(item)
+            else:
+                result.append(item)
+        return result
+
+    def _builtin_unique(self, args):
+        """unique(list) -> list with duplicates removed, preserving order."""
+        self._expect_args('unique', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("unique expects a list argument")
+        seen = []
+        result = []
+        for item in lst:
+            key = repr(item)
+            if key not in seen:
+                seen.append(key)
+                result.append(item)
+        return result
+
+    def _builtin_count(self, args):
+        """count(list, value) -> number of occurrences of value in list."""
+        self._expect_args('count', args, 2)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("count expects a list as first argument")
+        return lst.count(args[1])
+
+    def _builtin_sum(self, args):
+        """sum(list) -> sum of all numeric elements."""
+        self._expect_args('sum', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("sum expects a list argument")
+        return sum(lst)
+
+    def _builtin_any(self, args):
+        """any(list) -> true if any element is truthy."""
+        self._expect_args('any', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("any expects a list argument")
+        return any(lst)
+
+    def _builtin_all(self, args):
+        """all(list) -> true if all elements are truthy."""
+        self._expect_args('all', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("all expects a list argument")
+        return all(lst)
+
+    def _builtin_slice(self, args):
+        """slice(list, start, end) -> sub-list from start to end (exclusive)."""
+        if len(args) < 2 or len(args) > 3:
+            raise RuntimeError("slice expects 2-3 arguments: slice list start [end]")
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("slice expects a list as first argument")
+        start = int(args[1])
+        end = len(lst) if len(args) < 3 else int(args[2])
+        return lst[start:end]
+
+    def _builtin_chunk(self, args):
+        """chunk(list, size) -> split list into sub-lists of given size."""
+        self._expect_args('chunk', args, 2)
+        lst = args[0]
+        size = int(args[1])
+        if not isinstance(lst, list):
+            raise RuntimeError("chunk expects a list as first argument")
+        if size <= 0:
+            raise RuntimeError("chunk size must be positive")
+        return [lst[i:i+size] for i in range(0, len(lst), size)]
+
+    def _builtin_find(self, args):
+        """find(fn, list) -> first element where fn returns true, or null."""
+        self._expect_args('find', args, 2)
+        fn, lst = args[0], args[1]
+        if not isinstance(fn, (str, LambdaValue)):
+            raise RuntimeError("find expects a function name or lambda as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("find expects a list as second argument")
+        for item in lst:
+            result = self._call_function_with_args(fn, [item])
+            if result:
+                return item
+        return None
+
+    def _builtin_find_index(self, args):
+        """find_index(fn, list) -> index of first element where fn returns true, or -1."""
+        self._expect_args('find_index', args, 2)
+        fn, lst = args[0], args[1]
+        if not isinstance(fn, (str, LambdaValue)):
+            raise RuntimeError("find_index expects a function name or lambda as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("find_index expects a list as second argument")
+        for i, item in enumerate(lst):
+            result = self._call_function_with_args(fn, [item])
+            if result:
+                return i
+        return -1
 
     def _expect_args(self, name, args, count):
         if len(args) != count:

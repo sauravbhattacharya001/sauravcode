@@ -1,0 +1,35 @@
+# Collection Builtins Demo
+print "=== zip ==="
+print zip [1, 2, 3] [4, 5, 6]
+
+print "=== enumerate ==="
+print enumerate ["apple", "banana", "cherry"]
+print enumerate ["a", "b", "c"] 1
+
+print "=== flatten ==="
+print flatten [[1, 2], [3, 4], [5, 6]]
+
+print "=== unique ==="
+print unique [1, 2, 3, 2, 1, 4, 3, 5]
+
+print "=== count ==="
+print count [1, 2, 2, 3, 2, 4] 2
+
+print "=== sum ==="
+print sum [10, 20, 30, 40]
+
+print "=== any / all ==="
+print any [false, false, true, false]
+print all [true, true, true]
+
+print "=== slice ==="
+print slice [10, 20, 30, 40, 50] 1 3
+
+print "=== chunk ==="
+print chunk [1, 2, 3, 4, 5, 6, 7, 8, 9] 3
+
+print "=== find / find_index ==="
+print find (lambda x -> x > 10) [3, 7, 12, 5, 18, 2]
+print find_index (lambda x -> x > 10) [3, 7, 12, 5, 18, 2]
+
+print "--- All collection builtins working! ---"
