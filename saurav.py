@@ -1118,11 +1118,14 @@ class Parser:
         self.expect('KEYWORD', 'for')
         var = self.expect('IDENT')[1]
         self.expect('KEYWORD', 'in')
-        iterable = self.parse_full_expression()
+        # Use parse_logical_or instead of parse_full_expression so that
+        # `if` is not consumed as a ternary operator — it belongs to the
+        # comprehension filter clause.
+        iterable = self.parse_logical_or()
         condition = None
         if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'if':
             self.advance()
-            condition = self.parse_full_expression()
+            condition = self.parse_logical_or()
         self.expect('RBRACKET')
         return ListComprehensionNode(expr, var, iterable, condition)
 
