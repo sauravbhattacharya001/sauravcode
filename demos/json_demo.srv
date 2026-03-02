@@ -1,0 +1,59 @@
+# JSON builtins demo
+# json_parse, json_stringify, json_pretty
+
+# Build a map and convert to compact JSON string
+data = {"name": "Alice", "age": 30, "skills": ["python", "rust"]}
+print "=== Original map ==="
+print data
+
+print ""
+print "=== json_stringify (compact) ==="
+compact = json_stringify data
+print compact
+
+print ""
+print "=== json_pretty (formatted) ==="
+pretty = json_pretty data
+print pretty
+
+print ""
+print "=== json_parse (round-trip) ==="
+restored = json_parse compact
+print restored
+
+# Verify round-trip preserves data
+print ""
+print "=== Access restored data ==="
+print restored["name"]
+print restored["age"]
+print restored["skills"]
+
+# Nested structures
+print ""
+print "=== Nested JSON ==="
+nested = {"server": {"host": "localhost", "port": 8080}, "debug": true}
+print json_pretty nested
+
+# Parse and access
+s = json_stringify nested
+obj = json_parse s
+print obj["server"]["host"]
+print obj["debug"]
+
+# Arrays
+print ""
+print "=== Array JSON ==="
+items = [1, "hello", true, {"key": "val"}]
+print json_stringify items
+
+arr_str = json_stringify items
+arr = json_parse arr_str
+print arr[3]["key"]
+
+# Empty structures
+print ""
+print "=== Edge cases ==="
+print json_stringify {}
+print json_stringify []
+print json_parse "{}"
+print json_parse "[]"

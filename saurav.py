@@ -507,6 +507,7 @@ class Parser:
         'zip', 'enumerate', 'flatten', 'unique', 'count', 'sum', 'any', 'all',
         'slice', 'chunk', 'find', 'find_index',
         'regex_match', 'regex_find', 'regex_find_all', 'regex_replace', 'regex_split',
+        'json_parse', 'json_stringify', 'json_pretty',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1455,6 +1456,10 @@ class Interpreter:
             'regex_find_all': self._builtin_regex_find_all,
             'regex_replace':  self._builtin_regex_replace,
             'regex_split':    self._builtin_regex_split,
+            # --- JSON functions ---
+            'json_parse':     self._builtin_json_parse,
+            'json_stringify': self._builtin_json_stringify,
+            'json_pretty':    self._builtin_json_pretty,
         }
 
     # --- String built-ins ---
@@ -2265,6 +2270,74 @@ class Interpreter:
             return re.split(pattern, string)
         except re.error as e:
             raise RuntimeError(f"regex_split: invalid regex pattern: {e}")
+
+    # --- JSON built-ins ---
+    def _builtin_json_parse(self, args):
+        """json_parse(string) -> parse JSON string into a map/list/value."""
+        self._expect_args('json_parse', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            raise RuntimeError("json_parse expects a string argument")
+        import json as _json
+        try:
+            result = _json.loads(s)
+            return self._json_to_srv(result)
+        except _json.JSONDecodeError as e:
+            raise RuntimeError(f"json_parse: invalid JSON: {e}")
+
+    def _builtin_json_stringify(self, args):
+        """json_stringify(value) -> convert a value to a compact JSON string."""
+        self._expect_args('json_stringify', args, 1)
+        import json as _json
+        try:
+            return _json.dumps(self._srv_to_json(args[0]), separators=(',', ':'))
+        except (TypeError, ValueError) as e:
+            raise RuntimeError(f"json_stringify: cannot serialize: {e}")
+
+    def _builtin_json_pretty(self, args):
+        """json_pretty(value) -> convert a value to a pretty-printed JSON string."""
+        self._expect_args('json_pretty', args, 1)
+        import json as _json
+        try:
+            return _json.dumps(self._srv_to_json(args[0]), indent=2)
+        except (TypeError, ValueError) as e:
+            raise RuntimeError(f"json_pretty: cannot serialize: {e}")
+
+    def _json_to_srv(self, value):
+        """Convert a Python JSON value to sauravcode types."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return float(value)
+        if isinstance(value, float):
+            return value
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return [self._json_to_srv(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): self._json_to_srv(v) for k, v in value.items()}
+        return str(value)
+
+    def _srv_to_json(self, value):
+        """Convert a sauravcode value to JSON-compatible Python types."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, float):
+            if value == int(value):
+                return int(value)
+            return value
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return [self._srv_to_json(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): self._srv_to_json(v) for k, v in value.items()}
+        return str(value)
 
     def _expect_args(self, name, args, count):
         if len(args) != count:
@@ -3143,6 +3216,9 @@ def repl():
                 'regex_find_all': 'regex_find_all pat str — list of all regex matches',
                 'regex_replace':  'regex_replace pat rep str — replace regex matches in string',
                 'regex_split':    'regex_split pat str    — split string by regex pattern',
+                'json_parse':     'json_parse str         — parse JSON string into value',
+                'json_stringify': 'json_stringify val     — convert value to compact JSON string',
+                'json_pretty':    'json_pretty val        — convert value to pretty JSON string',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):
