@@ -11,12 +11,18 @@
 - [Variables](#variables)
 - [Operators](#operators)
 - [Control Flow](#control-flow)
+  - [Break and Continue](#break-and-continue)
+  - [Match / Case](#match--case-pattern-matching)
 - [Functions](#functions)
+  - [Lambda Expressions](#lambda-expressions)
 - [Imports](#imports)
 - [Classes](#classes)
 - [Lists](#lists)
+  - [Slicing](#slicing)
 - [Maps (Dictionaries)](#maps-dictionaries)
+- [Enums](#enums)
 - [Error Handling](#error-handling)
+- [Assertions](#assertions)
 - [Built-in Functions](#built-in-functions)
 - [Grammar (EBNF)](#grammar-ebnf)
 
@@ -278,6 +284,58 @@ for key in config
 
 Syntax: `for <variable> in <iterable>`
 
+### Break and Continue
+
+`break` exits the current loop early. `continue` skips to the next iteration.
+
+```
+# Break — exit early
+for i 0 10
+    if i == 5
+        break
+    print i    # prints 0, 1, 2, 3, 4
+
+# Continue — skip iterations
+for i 0 10
+    if i % 2 == 0
+        continue
+    print i    # prints 1, 3, 5, 7, 9
+```
+
+Both work in `while` loops and `for`/`for-in` loops.
+
+> **Note:** Break and continue are supported in the interpreter only; the compiler does not support them yet.
+
+### Match / Case (Pattern Matching)
+
+Match a value against multiple patterns:
+
+```
+x = 2
+match x
+    case 1
+        print "one"
+    case 2
+        print "two"
+    case 3
+        print "three"
+```
+
+Each `case` compares the match expression to the case value using equality. The first matching case body executes, then control flows past the match block. If no case matches, nothing happens.
+
+Cases can match numbers, strings, booleans, and variables:
+
+```
+status = "error"
+match status
+    case "ok"
+        print "All good"
+    case "error"
+        print "Something went wrong"
+    case "pending"
+        print "Still waiting"
+```
+
 ## Functions
 
 ### Definition
@@ -325,6 +383,41 @@ function sum_of_squares a b
     return square a + square b
 
 print sum_of_squares 3 4    # 25
+```
+
+### Lambda Expressions
+
+Anonymous functions with arrow syntax:
+
+```
+lambda x -> x * 2
+lambda x y -> x + y
+lambda -> 42               # no params, returns constant
+```
+
+Lambdas capture their enclosing scope as a closure. They are commonly used with higher-order functions:
+
+```
+nums = [1, 2, 3, 4, 5]
+
+# Map — transform each element
+doubled = map (lambda x -> x * 2) nums
+print doubled    # [2, 4, 6, 8, 10]
+
+# Filter — keep elements matching a predicate
+evens = filter (lambda x -> x % 2 == 0) nums
+print evens      # [2, 4]
+
+# Reduce — fold elements into a single value
+total = reduce (lambda acc x -> acc + x) nums 0
+print total      # 15
+```
+
+Lambdas can also be used with the pipe operator:
+
+```
+result = 5 |> lambda x -> x + 1 |> lambda y -> y * 2
+print result    # 12
 ```
 
 ## Imports
@@ -429,6 +522,22 @@ print evens    # [2, 4, 6, 8, 10]
 
 Syntax: `[expression for variable in iterable]` or `[expression for variable in iterable if condition]`
 
+### Slicing
+
+Extract sub-lists or substrings with `[start:end]` syntax:
+
+```
+nums = [10, 20, 30, 40, 50]
+print nums[1:3]     # [20, 30]
+print nums[0:2]     # [10, 20]
+
+s = "hello world"
+print s[0:5]        # hello
+print s[6:11]       # world
+```
+
+Indices are zero-based. The `start` index is inclusive, `end` is exclusive (same as Python).
+
 ## Maps (Dictionaries)
 
 Key-value data structures for associative storage.
@@ -457,6 +566,37 @@ person["email"] = "a@b"  # add new key
 | Contains      | `contains map key`  | Check if key exists      |
 | Length        | `len map`           | Number of key-value pairs|
 | Iteration     | `for key in map`    | Iterate over keys        |
+
+## Enums
+
+Define named integer constants:
+
+```
+enum Color
+    RED
+    GREEN
+    BLUE
+
+print Color.RED      # 0
+print Color.GREEN    # 1
+print Color.BLUE     # 2
+```
+
+Enum members are assigned integer values starting from 0, incrementing by 1. Access members with dot notation (`EnumName.MEMBER`).
+
+Enums are useful for representing a fixed set of options:
+
+```
+enum Direction
+    NORTH
+    SOUTH
+    EAST
+    WEST
+
+heading = Direction.EAST
+if heading == Direction.EAST
+    print "Going east"
+```
 
 ## Error Handling
 
@@ -491,6 +631,28 @@ catch err
 ```
 
 **Compiler note:** Try/catch compiles to `setjmp`/`longjmp` in the generated C code.
+
+## Assertions
+
+The `assert` statement checks that a condition is true at runtime. If the condition is false, it raises an `AssertionError` and terminates execution:
+
+```
+assert 1 == 1        # passes silently
+assert len [1,2,3] == 3
+
+x = 10
+assert x > 0         # passes
+assert x < 0         # AssertionError: Assertion failed
+```
+
+Assertions are useful for validating invariants, preconditions, and test expectations. They can be caught with try/catch:
+
+```
+try
+    assert 1 == 2
+catch err
+    print err        # AssertionError: Assertion failed
+```
 
 ## Built-in Functions
 
@@ -550,9 +712,10 @@ User-defined functions override builtins, so you can customize any built-in func
 
 ```ebnf
 program        = { statement } ;
-statement      = function_def | class_def | if_stmt | while_stmt
-               | for_stmt | foreach_stmt | try_stmt | return_stmt
-               | print_stmt | import_stmt | throw_stmt
+statement      = function_def | class_def | enum_def | if_stmt | while_stmt
+               | for_stmt | foreach_stmt | match_stmt | try_stmt
+               | return_stmt | print_stmt | import_stmt | throw_stmt
+               | assert_stmt | break_stmt | continue_stmt
                | assignment | append_stmt | expression_stmt ;
 
 function_def   = "function" IDENT { IDENT } NEWLINE INDENT block DEDENT ;
@@ -568,6 +731,13 @@ try_stmt       = "try" NEWLINE INDENT block DEDENT
                  "catch" [ IDENT ] NEWLINE INDENT block DEDENT ;
 import_stmt    = "import" ( STRING | IDENT ) ;
 throw_stmt     = "throw" expression ;
+assert_stmt    = "assert" expression ;
+break_stmt     = "break" ;
+continue_stmt  = "continue" ;
+
+enum_def       = "enum" IDENT NEWLINE INDENT { IDENT NEWLINE } DEDENT ;
+match_stmt     = "match" expression NEWLINE INDENT
+                 { "case" expression NEWLINE INDENT block DEDENT } DEDENT ;
 
 return_stmt    = "return" expression ;
 print_stmt     = "print" expression ;
@@ -586,13 +756,17 @@ mul_expr       = unary { ("*" | "/" | "%") unary } ;
 unary          = "not" unary | "-" atom | atom ;
 atom           = NUMBER | STRING | f_string | "true" | "false"
                | IDENT [ "[" expression "]" ]
+               | IDENT [ "[" expression ":" expression "]" ]
                | IDENT { arg }
+               | lambda_expr
                | "len" atom
                | "new" IDENT
                | "(" expression ")"
                | list_literal
                | list_comprehension
                | map_literal ;
+
+lambda_expr    = "lambda" { IDENT } "->" expression ;
 
 f_string       = "f" '"' { char | "{" expression "}" } '"' ;
 list_literal   = "[" [ expression { "," expression } ] "]" ;
