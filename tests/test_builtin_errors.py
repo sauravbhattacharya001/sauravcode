@@ -415,3 +415,70 @@ class TestBuiltinEdgeCases:
     def test_ends_with_false(self):
         output = run_code('print ends_with "hello" "xyz"\n')
         assert output.strip() == "false"
+
+
+# ================================================================
+# Comparison type mismatch errors (fixes #19)
+# ================================================================
+
+class TestComparisonTypeMismatch:
+    """Ordering comparisons (<, >, <=, >=) on incompatible types should
+    raise a clean RuntimeError instead of leaking a Python TypeError."""
+
+    def test_string_lt_number(self):
+        with pytest.raises(RuntimeError, match="Cannot compare string and number"):
+            run_code('x = "hello"\ny = 5\nif x < y\n    print "bad"\n')
+
+    def test_string_gt_number(self):
+        with pytest.raises(RuntimeError, match="Cannot compare string and number"):
+            run_code('if "a" > 1\n    print "bad"\n')
+
+    def test_string_lte_number(self):
+        with pytest.raises(RuntimeError, match="Cannot compare string and number"):
+            run_code('if "a" <= 1\n    print "bad"\n')
+
+    def test_string_gte_number(self):
+        with pytest.raises(RuntimeError, match="Cannot compare string and number"):
+            run_code('if "a" >= 1\n    print "bad"\n')
+
+    def test_list_gt_number(self):
+        with pytest.raises(RuntimeError, match="Cannot compare list and number"):
+            run_code('x = [1, 2]\nif x > 3\n    print "bad"\n')
+
+    def test_number_lt_list(self):
+        with pytest.raises(RuntimeError, match="Cannot compare number and list"):
+            run_code('if 3 < [1, 2]\n    print "bad"\n')
+
+    def test_map_lte_string(self):
+        with pytest.raises(RuntimeError, match="Cannot compare map and string"):
+            run_code('x = {"a": 1}\nif x <= "test"\n    print "bad"\n')
+
+    def test_bool_gt_string(self):
+        with pytest.raises(RuntimeError, match="Cannot compare bool and string"):
+            run_code('if true > "abc"\n    print "bad"\n')
+
+    def test_list_gte_string(self):
+        with pytest.raises(RuntimeError, match="Cannot compare list and string"):
+            run_code('if [1] >= "x"\n    print "bad"\n')
+
+    def test_number_lt_map(self):
+        with pytest.raises(RuntimeError, match="Cannot compare number and map"):
+            run_code('x = {"k": 1}\nif 5 < x\n    print "bad"\n')
+
+    # Equality operators should still work across types (no crash)
+    def test_equality_cross_type_works(self):
+        output = run_code('if "hello" == 5\n    print "equal"\nelse\n    print "not equal"\n')
+        assert output.strip() == "not equal"
+
+    def test_inequality_cross_type_works(self):
+        output = run_code('if "hello" != 5\n    print "different"\n')
+        assert output.strip() == "different"
+
+    # Same-type comparisons should still work correctly
+    def test_number_comparison_still_works(self):
+        output = run_code('if 3 < 5\n    print "yes"\n')
+        assert output.strip() == "yes"
+
+    def test_string_comparison_still_works(self):
+        output = run_code('if "apple" < "banana"\n    print "yes"\n')
+        assert output.strip() == "yes"

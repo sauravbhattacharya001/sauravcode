@@ -2735,16 +2735,31 @@ class Interpreter:
             return left == right
         elif node.operator == '!=':
             return left != right
-        elif node.operator == '<':
-            return left < right
-        elif node.operator == '>':
-            return left > right
-        elif node.operator == '<=':
-            return left <= right
-        elif node.operator == '>=':
-            return left >= right
-        else:
-            raise ValueError(f'Unknown comparison operator: {node.operator}')
+        try:
+            if node.operator == '<':
+                return left < right
+            elif node.operator == '>':
+                return left > right
+            elif node.operator == '<=':
+                return left <= right
+            elif node.operator == '>=':
+                return left >= right
+            else:
+                raise ValueError(f'Unknown comparison operator: {node.operator}')
+        except TypeError:
+            left_type = 'string' if isinstance(left, str) else \
+                        'list' if isinstance(left, list) else \
+                        'bool' if isinstance(left, bool) else \
+                        'map' if isinstance(left, dict) else \
+                        'number' if isinstance(left, (int, float)) else type(left).__name__
+            right_type = 'string' if isinstance(right, str) else \
+                         'list' if isinstance(right, list) else \
+                         'bool' if isinstance(right, bool) else \
+                         'map' if isinstance(right, dict) else \
+                         'number' if isinstance(right, (int, float)) else type(right).__name__
+            raise RuntimeError(
+                f"Cannot compare {left_type} and {right_type} with '{node.operator}'"
+            )
 
     def _eval_logical(self, node):
         left = self.evaluate(node.left)
