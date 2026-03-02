@@ -489,6 +489,19 @@ class TernaryNode(ASTNode):
 
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
+    # Builtin function names that accept arguments.
+    # When one of these is followed by '[', the '[' starts a list literal
+    # argument rather than an index operation.  (Fixes #18)
+    BUILTIN_FUNCTIONS = frozenset({
+        'upper', 'lower', 'trim', 'replace', 'split', 'join',
+        'contains', 'starts_with', 'ends_with', 'substring', 'index_of',
+        'char_at', 'abs', 'round', 'floor', 'ceil', 'sqrt', 'power',
+        'type_of', 'to_string', 'to_number', 'input', 'range', 'reverse',
+        'sort', 'keys', 'values', 'has_key', 'map', 'filter', 'reduce',
+        'each', 'random', 'random_int', 'random_choice', 'random_shuffle',
+        'read_file', 'write_file', 'append_file', 'file_exists', 'read_lines',
+    })
+
     def __init__(self, tokens):
         self.tokens = tokens
         self.pos = 0
@@ -1064,8 +1077,13 @@ class Parser:
                 variant = self.expect('IDENT')[1]
                 return EnumAccessNode(value, variant)
             # Don't treat as function call if next is [ (indexing handled in parse_postfix)
-            if pk[0] == 'LBRACKET':
+            # UNLESS the identifier is a known builtin function — then [ starts
+            # a list argument, not an index operation.  (Fixes #18)
+            if pk[0] == 'LBRACKET' and value not in self.BUILTIN_FUNCTIONS:
                 return IdentifierNode(value)
+            if pk[0] == 'LBRACKET' and value in self.BUILTIN_FUNCTIONS:
+                func_call = self.parse_function_call(value)
+                return func_call
             # Check if next token could be a function argument
             if pk[0] in ('NUMBER', 'STRING', 'FSTRING', 'LPAREN'):
                 func_call = self.parse_function_call(value)
