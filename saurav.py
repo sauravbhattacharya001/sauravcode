@@ -1383,6 +1383,12 @@ class Interpreter:
             'random_int':     self._builtin_random_int,
             'random_choice':  self._builtin_random_choice,
             'random_shuffle': self._builtin_random_shuffle,
+            # --- File I/O functions ---
+            'read_file':      self._builtin_read_file,
+            'write_file':     self._builtin_write_file,
+            'append_file':    self._builtin_append_file,
+            'file_exists':    self._builtin_file_exists,
+            'read_lines':     self._builtin_read_lines,
         }
 
     # --- String built-ins ---
@@ -1761,6 +1767,83 @@ class Interpreter:
         result = lst[:]
         random.shuffle(result)
         return result
+
+    # --- File I/O built-ins ---
+    def _builtin_read_file(self, args):
+        """read_file path → return file contents as a string."""
+        self._expect_args('read_file', args, 1)
+        path = args[0]
+        if not isinstance(path, str):
+            raise RuntimeError("read_file expects a string path")
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except FileNotFoundError:
+            raise RuntimeError(f"read_file: file not found: {path}")
+        except PermissionError:
+            raise RuntimeError(f"read_file: permission denied: {path}")
+        except OSError as e:
+            raise RuntimeError(f"read_file: error reading file: {e}")
+
+    def _builtin_write_file(self, args):
+        """write_file path content → write content to file (creates or overwrites)."""
+        self._expect_args('write_file', args, 2)
+        path = args[0]
+        content = args[1]
+        if not isinstance(path, str):
+            raise RuntimeError("write_file expects a string path as first argument")
+        if not isinstance(content, str):
+            content = str(content)
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True
+        except PermissionError:
+            raise RuntimeError(f"write_file: permission denied: {path}")
+        except OSError as e:
+            raise RuntimeError(f"write_file: error writing file: {e}")
+
+    def _builtin_append_file(self, args):
+        """append_file path content → append content to file (creates if missing)."""
+        self._expect_args('append_file', args, 2)
+        path = args[0]
+        content = args[1]
+        if not isinstance(path, str):
+            raise RuntimeError("append_file expects a string path as first argument")
+        if not isinstance(content, str):
+            content = str(content)
+        try:
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(content)
+            return True
+        except PermissionError:
+            raise RuntimeError(f"append_file: permission denied: {path}")
+        except OSError as e:
+            raise RuntimeError(f"append_file: error appending to file: {e}")
+
+    def _builtin_file_exists(self, args):
+        """file_exists path → return true if file exists, false otherwise."""
+        self._expect_args('file_exists', args, 1)
+        path = args[0]
+        if not isinstance(path, str):
+            raise RuntimeError("file_exists expects a string path")
+        return os.path.isfile(path)
+
+    def _builtin_read_lines(self, args):
+        """read_lines path → return file contents as a list of lines."""
+        self._expect_args('read_lines', args, 1)
+        path = args[0]
+        if not isinstance(path, str):
+            raise RuntimeError("read_lines expects a string path")
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return [line.rstrip('\n').rstrip('\r') for line in f.readlines()]
+        except FileNotFoundError:
+            raise RuntimeError(f"read_lines: file not found: {path}")
+        except PermissionError:
+            raise RuntimeError(f"read_lines: permission denied: {path}")
+        except OSError as e:
+            raise RuntimeError(f"read_lines: error reading file: {e}")
 
     def _expect_args(self, name, args, count):
         if len(args) != count:
