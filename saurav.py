@@ -2096,22 +2096,35 @@ class Interpreter:
         left = self.evaluate(node.left)
         right = self.evaluate(node.right)
         debug(f"Performing operation: {left} {node.operator} {right}")
-        if node.operator == '+':
-            return left + right
-        elif node.operator == '-':
-            return left - right
-        elif node.operator == '*':
-            return left * right
-        elif node.operator == '/':
-            if right == 0:
-                raise RuntimeError("Division by zero")
-            return left / right
-        elif node.operator == '%':
-            if right == 0:
-                raise RuntimeError("Modulo by zero")
-            return left % right
-        else:
-            raise ValueError(f'Unknown operator: {node.operator}')
+        try:
+            if node.operator == '+':
+                return left + right
+            elif node.operator == '-':
+                return left - right
+            elif node.operator == '*':
+                return left * right
+            elif node.operator == '/':
+                if right == 0:
+                    raise RuntimeError("Division by zero")
+                return left / right
+            elif node.operator == '%':
+                if right == 0:
+                    raise RuntimeError("Modulo by zero")
+                return left % right
+            else:
+                raise ValueError(f'Unknown operator: {node.operator}')
+        except TypeError:
+            left_type = 'string' if isinstance(left, str) else \
+                        'list' if isinstance(left, list) else \
+                        'bool' if isinstance(left, bool) else \
+                        'number' if isinstance(left, (int, float)) else type(left).__name__
+            right_type = 'string' if isinstance(right, str) else \
+                         'list' if isinstance(right, list) else \
+                         'bool' if isinstance(right, bool) else \
+                         'number' if isinstance(right, (int, float)) else type(right).__name__
+            raise RuntimeError(
+                f"Cannot use '{node.operator}' on {left_type} and {right_type}"
+            )
 
     def _eval_compare(self, node):
         left = self.evaluate(node.left)

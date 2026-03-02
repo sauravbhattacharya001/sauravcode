@@ -917,6 +917,22 @@ class CCodeGenerator:
         self._ident_map[name] = safe
         return safe
 
+    def _is_string_expr(self, expr):
+        """Return True if *expr* is known to produce a string (const char*) in C.
+
+        Used to decide whether comparisons should emit strcmp() instead of
+        the default numeric == / < / > operators.
+        """
+        if isinstance(expr, StringNode):
+            return True
+        if isinstance(expr, FStringNode):
+            return True
+        if isinstance(expr, IdentifierNode) and expr.name in self.string_vars:
+            return True
+        if isinstance(expr, FunctionCallNode) and expr.name in self.STRING_RETURNING_BUILTINS:
+            return True
+        return False
+
     def emit(self, line=""):
         self.output_lines.append("    " * self.indent_level + line)
 
@@ -1789,6 +1805,22 @@ class CCodeGenerator:
         elif isinstance(expr, CompareNode):
             left_c = self.compile_expression(expr.left)
             right_c = self.compile_expression(expr.right)
+            # String operands need strcmp(); C's == compares pointers.
+            if self._is_string_expr(expr.left) or self._is_string_expr(expr.right):
+                self.uses_string_helpers = True
+                cmp_expr = f"strcmp({left_c}, {right_c})"
+                if expr.operator == '==':
+                    return f"({cmp_expr} == 0)"
+                elif expr.operator == '!=':
+                    return f"({cmp_expr} != 0)"
+                elif expr.operator == '<':
+                    return f"({cmp_expr} < 0)"
+                elif expr.operator == '>':
+                    return f"({cmp_expr} > 0)"
+                elif expr.operator == '<=':
+                    return f"({cmp_expr} <= 0)"
+                elif expr.operator == '>=':
+                    return f"({cmp_expr} >= 0)"
             return f"({left_c} {expr.operator} {right_c})"
 
         elif isinstance(expr, LogicalNode):

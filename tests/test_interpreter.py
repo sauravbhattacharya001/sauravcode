@@ -301,6 +301,22 @@ class TestArithmetic:
         with pytest.raises(RuntimeError, match="Modulo by zero"):
             run_code("print 1 % 0\n")
 
+    def test_number_plus_string_raises(self):
+        with pytest.raises(RuntimeError, match="Cannot use '\\+' on number and string"):
+            run_code('print 5 + "hello"\n')
+
+    def test_string_minus_number_raises(self):
+        with pytest.raises(RuntimeError, match="Cannot use '-' on string and number"):
+            run_code('print "hello" - 3\n')
+
+    def test_string_times_string_raises(self):
+        with pytest.raises(RuntimeError, match="Cannot use '\\*' on string and string"):
+            run_code('print "a" * "b"\n')
+
+    def test_bool_minus_string_raises(self):
+        with pytest.raises(RuntimeError, match="Cannot use '-' on bool and string"):
+            run_code('print true - "x"\n')
+
     def test_negative_numbers(self):
         output = run_code("x = -42\nprint x\n")
         assert output.strip() == "-42"

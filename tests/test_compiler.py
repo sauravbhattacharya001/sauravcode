@@ -282,6 +282,26 @@ class TestCCodeGenerator:
         c_code = compile_to_c("if 5 == 5\n    print 1\n")
         assert "==" in c_code
 
+    def test_string_comparison_uses_strcmp(self):
+        c_code = compile_to_c('name = "Alice"\nif name == "Bob"\n    print 1\n')
+        assert "strcmp" in c_code
+        assert "strcmp(" in c_code
+        assert "== 0" in c_code
+
+    def test_string_not_equal_uses_strcmp(self):
+        c_code = compile_to_c('name = "X"\nif name != "Y"\n    print 1\n')
+        assert "strcmp" in c_code
+        assert "!= 0" in c_code
+
+    def test_string_less_than_uses_strcmp(self):
+        c_code = compile_to_c('a = "abc"\nif a < "def"\n    print 1\n')
+        assert "strcmp" in c_code
+        assert "< 0" in c_code
+
+    def test_numeric_comparison_no_strcmp(self):
+        c_code = compile_to_c("if 5 > 3\n    print 1\n")
+        assert "strcmp" not in c_code
+
     def test_negation_generates_minus(self):
         c_code = compile_to_c("x = -5\n")
         assert "-(5)" in c_code or "-5" in c_code
