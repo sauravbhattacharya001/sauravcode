@@ -3,6 +3,8 @@ import sys
 import os
 import math
 import random
+import time as _time
+from datetime import datetime as _datetime, timezone as _timezone
 
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
@@ -500,7 +502,11 @@ class Parser:
         'sort', 'keys', 'values', 'has_key', 'map', 'filter', 'reduce',
         'each', 'random', 'random_int', 'random_choice', 'random_shuffle',
         'read_file', 'write_file', 'append_file', 'file_exists', 'read_lines',
+        'now', 'timestamp', 'date_format', 'date_part', 'sleep',
     })
+
+    # Builtins that take zero arguments — auto-called when used standalone
+    ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -1100,6 +1106,9 @@ class Parser:
                 func_call = self.parse_function_call(value)
                 return func_call
             else:
+                # Zero-argument builtin function call (only for builtins that take no args)
+                if value in self.ZERO_ARG_BUILTINS:
+                    return FunctionCallNode(value, [])
                 ident_node = IdentifierNode(value)
                 debug(f"parse_atom returning IdentifierNode: {ident_node}")
                 return ident_node
@@ -1407,6 +1416,12 @@ class Interpreter:
             'append_file':    self._builtin_append_file,
             'file_exists':    self._builtin_file_exists,
             'read_lines':     self._builtin_read_lines,
+            # --- Date/Time functions ---
+            'now':            self._builtin_now,
+            'timestamp':      self._builtin_timestamp,
+            'date_format':    self._builtin_date_format,
+            'date_part':      self._builtin_date_part,
+            'sleep':          self._builtin_sleep,
         }
 
     # --- String built-ins ---
@@ -1862,6 +1877,72 @@ class Interpreter:
             raise RuntimeError(f"read_lines: permission denied: {path}")
         except OSError as e:
             raise RuntimeError(f"read_lines: error reading file: {e}")
+
+    # --- Date/Time built-ins ---
+    def _builtin_now(self, args):
+        """now() → return current date/time as ISO 8601 string."""
+        if len(args) != 0:
+            raise RuntimeError("now expects 0 arguments")
+        return _datetime.now().isoformat()
+
+    def _builtin_timestamp(self, args):
+        """timestamp() → return current Unix timestamp as a float."""
+        if len(args) != 0:
+            raise RuntimeError("timestamp expects 0 arguments")
+        return _time.time()
+
+    def _builtin_date_format(self, args):
+        """date_format(iso_string, format) → format a date/time string.
+        Uses Python strftime codes: %Y, %m, %d, %H, %M, %S, etc."""
+        self._expect_args('date_format', args, 2)
+        iso_str, fmt = args
+        if not isinstance(iso_str, str):
+            raise RuntimeError("date_format expects a string as first argument")
+        if not isinstance(fmt, str):
+            raise RuntimeError("date_format expects a format string as second argument")
+        try:
+            dt = _datetime.fromisoformat(iso_str)
+            return dt.strftime(fmt)
+        except ValueError as e:
+            raise RuntimeError(f"date_format: invalid date string: {e}")
+
+    def _builtin_date_part(self, args):
+        """date_part(iso_string, part) → extract a component from a date/time.
+        Parts: year, month, day, hour, minute, second, weekday, weekday_name."""
+        self._expect_args('date_part', args, 2)
+        iso_str, part = args
+        if not isinstance(iso_str, str):
+            raise RuntimeError("date_part expects a string as first argument")
+        if not isinstance(part, str):
+            raise RuntimeError("date_part expects a string part name as second argument")
+        try:
+            dt = _datetime.fromisoformat(iso_str)
+        except ValueError as e:
+            raise RuntimeError(f"date_part: invalid date string: {e}")
+        part = part.lower()
+        parts = {
+            'year': dt.year, 'month': dt.month, 'day': dt.day,
+            'hour': dt.hour, 'minute': dt.minute, 'second': dt.second,
+            'weekday': dt.weekday(),
+            'weekday_name': dt.strftime('%A'),
+        }
+        if part not in parts:
+            raise RuntimeError(f"date_part: unknown part '{part}'. Use: {', '.join(parts.keys())}")
+        result = parts[part]
+        return float(result) if isinstance(result, int) else result
+
+    def _builtin_sleep(self, args):
+        """sleep(seconds) → pause execution for the given number of seconds."""
+        self._expect_args('sleep', args, 1)
+        seconds = args[0]
+        if not isinstance(seconds, (int, float)):
+            raise RuntimeError("sleep expects a numeric argument")
+        if seconds < 0:
+            raise RuntimeError("sleep: seconds must be non-negative")
+        if seconds > 60:
+            raise RuntimeError("sleep: maximum sleep is 60 seconds")
+        _time.sleep(seconds)
+        return 0.0
 
     def _expect_args(self, name, args, count):
         if len(args) != count:

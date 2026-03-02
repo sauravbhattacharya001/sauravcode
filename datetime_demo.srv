@@ -1,0 +1,34 @@
+# datetime_demo.srv - Date/Time builtins demo
+
+# Get current date/time as ISO string
+string t = now
+print "Current time:"
+print t
+
+# Get Unix timestamp (seconds since epoch)
+float ts = timestamp
+print "Unix timestamp:"
+print ts
+
+# Extract date parts using date_part
+string day_name = date_part (t) "weekday_name"
+print "Day of week:"
+print day_name
+
+float yr = date_part (t) "year"
+print "Year:"
+print yr
+
+float mo = date_part (t) "month"
+print "Month:"
+print mo
+
+# Format a date
+string pretty = date_format (t) "%A, %B %d, %Y"
+print "Formatted:"
+print pretty
+
+# Sleep (pause execution)
+print "Sleeping 0.2 seconds..."
+sleep 0.2
+print "Done!"
