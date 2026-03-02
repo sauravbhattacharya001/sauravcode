@@ -1,0 +1,23 @@
+# Slice notation demo
+
+# List slicing
+nums = [10, 20, 30, 40, 50]
+print nums[1:3]
+print nums[:2]
+print nums[3:]
+print nums[:]
+
+# String slicing
+text = "Hello World"
+print text[0:5]
+print text[6:]
+print text[:5]
+
+# Negative indices
+print nums[-2:]
+print text[-5:]
+
+# Slice in expressions
+first_three = nums[:3]
+print first_three
+print len (nums[1:4])
