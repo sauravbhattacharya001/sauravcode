@@ -1387,12 +1387,8 @@ class Interpreter:
             'index_of':    self._builtin_index_of,
             'char_at':     self._builtin_char_at,
             # --- Math functions ---
-            'abs':         self._builtin_abs,
             'round':       self._builtin_round,
-            'floor':       self._builtin_floor,
-            'ceil':        self._builtin_ceil,
-            'sqrt':        self._builtin_sqrt,
-            'power':       self._builtin_power,
+            # abs, floor, ceil, sqrt are registered below via _register_math_builtins()
             # --- Utility functions ---
             'type_of':     self._builtin_type_of,
             'to_string':   self._builtin_to_string,
@@ -1430,11 +1426,8 @@ class Interpreter:
             # --- Math constants & trig functions ---
             'pi':             self._builtin_pi,
             'euler':          self._builtin_euler,
-            'sin':            self._builtin_sin,
-            'cos':            self._builtin_cos,
-            'tan':            self._builtin_tan,
+            # sin, cos, tan, log10 are registered below via _register_math_builtins()
             'log':            self._builtin_log,
-            'log10':          self._builtin_log10,
             'min':            self._builtin_min,
             'max':            self._builtin_max,
             # --- Collection functions ---
@@ -1461,6 +1454,59 @@ class Interpreter:
             'json_stringify': self._builtin_json_stringify,
             'json_pretty':    self._builtin_json_pretty,
         }
+        self._register_math_builtins()
+
+    # ── Data-driven math builtins ────────────────────────
+
+    @staticmethod
+    def _make_math_builtin(name, fn, cast_float=True):
+        """Create a single-arg math builtin from a callable."""
+        def handler(self, args):
+            self._expect_args(name, args, 1)
+            result = fn(args[0])
+            return float(result) if cast_float else result
+        return handler
+
+    def _register_math_builtins(self):
+        """Register simple single-arg math builtins via a table.
+
+        Each entry maps a builtin name to its underlying Python callable.
+        This eliminates boilerplate for functions that are just thin
+        wrappers around ``math.*`` or Python builtins.
+        """
+        _MATH_TABLE = {
+            'abs':   abs,
+            'floor': math.floor,
+            'ceil':  math.ceil,
+            'sin':   math.sin,
+            'cos':   math.cos,
+            'tan':   math.tan,
+        }
+
+        # Builtins with special validation
+        def _safe_sqrt(x):
+            if x < 0:
+                raise RuntimeError("sqrt of negative number")
+            return math.sqrt(x)
+
+        def _safe_log10(x):
+            if x <= 0:
+                raise RuntimeError("log10: argument must be positive")
+            return math.log10(x)
+
+        _MATH_TABLE['sqrt'] = _safe_sqrt
+        _MATH_TABLE['log10'] = _safe_log10
+
+        # power takes 2 args — register manually
+        def _power(self_inner, args):
+            self_inner._expect_args('power', args, 2)
+            return float(args[0] ** args[1])
+        self.builtins['power'] = lambda args: _power(self, args)
+
+        for name, fn in _MATH_TABLE.items():
+            handler = Interpreter._make_math_builtin(name, fn)
+            # Bind to this instance
+            self.builtins[name] = lambda args, h=handler: h(self, args)
 
     # --- String built-ins ---
     def _builtin_upper(self, args):
@@ -1562,9 +1608,11 @@ class Interpreter:
         return s[i]
 
     # --- Math built-ins ---
-    def _builtin_abs(self, args):
-        self._expect_args('abs', args, 1)
-        return float(abs(args[0]))
+    #
+    # Simple single-arg math wrappers are registered via
+    # _register_math_builtins() below; only builtins needing
+    # custom logic (round, sqrt, power, log, min, max) are
+    # kept as explicit methods.
 
     def _builtin_round(self, args):
         if len(args) == 1:
@@ -1574,23 +1622,7 @@ class Interpreter:
         else:
             raise RuntimeError("round expects 1 or 2 arguments: round value [places]")
 
-    def _builtin_floor(self, args):
-        self._expect_args('floor', args, 1)
-        return float(math.floor(args[0]))
-
-    def _builtin_ceil(self, args):
-        self._expect_args('ceil', args, 1)
-        return float(math.ceil(args[0]))
-
-    def _builtin_sqrt(self, args):
-        self._expect_args('sqrt', args, 1)
-        if args[0] < 0:
-            raise RuntimeError("sqrt of negative number")
-        return float(math.sqrt(args[0]))
-
-    def _builtin_power(self, args):
-        self._expect_args('power', args, 2)
-        return float(args[0] ** args[1])
+    # sqrt, power are registered via _register_math_builtins()
 
     # --- Utility built-ins ---
     def _builtin_type_of(self, args):
@@ -1982,7 +2014,7 @@ class Interpreter:
         _time.sleep(seconds)
         return 0.0
 
-    # --- Math constants & trig/utility built-ins ---
+    # --- Math constants ---
     def _builtin_pi(self, args):
         """pi() → return the mathematical constant π (3.14159...)."""
         if len(args) != 0:
@@ -1995,20 +2027,7 @@ class Interpreter:
             raise RuntimeError("euler expects 0 arguments")
         return math.e
 
-    def _builtin_sin(self, args):
-        """sin(radians) → return the sine of the angle."""
-        self._expect_args('sin', args, 1)
-        return math.sin(args[0])
-
-    def _builtin_cos(self, args):
-        """cos(radians) → return the cosine of the angle."""
-        self._expect_args('cos', args, 1)
-        return math.cos(args[0])
-
-    def _builtin_tan(self, args):
-        """tan(radians) → return the tangent of the angle."""
-        self._expect_args('tan', args, 1)
-        return math.tan(args[0])
+    # sin, cos, tan, log10 are registered via _register_math_builtins()
 
     def _builtin_log(self, args):
         """log(value) → natural logarithm (base e). log(value, base) → log with custom base."""
@@ -2025,12 +2044,7 @@ class Interpreter:
         else:
             raise RuntimeError("log expects 1 or 2 arguments: log value [base]")
 
-    def _builtin_log10(self, args):
-        """log10(value) → base-10 logarithm."""
-        self._expect_args('log10', args, 1)
-        if args[0] <= 0:
-            raise RuntimeError("log10: argument must be positive")
-        return math.log10(args[0])
+    # log10 is registered via _register_math_builtins()
 
     def _builtin_min(self, args):
         """min(a, b) → return the smaller value. min(list) → return the smallest element."""

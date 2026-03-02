@@ -400,6 +400,14 @@ class DebugInterpreter(Interpreter):
         super().__init__()
         self.debugger = debugger
 
+    def _run_body(self, body):
+        """Execute a list of statements, dispatching via interpret/execute_function."""
+        for stmt in body:
+            if isinstance(stmt, FunctionCallNode):
+                self.execute_function(stmt)
+            else:
+                self.interpret(stmt)
+
     def interpret(self, ast):
         """Override to add debug hook before each statement."""
         self.debugger.on_statement(ast)
@@ -427,28 +435,16 @@ class DebugInterpreter(Interpreter):
         """Execute if/elif/else without re-triggering debug hook."""
         condition = self.evaluate(node.condition)
         if condition:
-            for stmt in node.body:
-                if isinstance(stmt, FunctionCallNode):
-                    self.execute_function(stmt)
-                else:
-                    self.interpret(stmt)
+            self._run_body(node.body)
             return
 
         for elif_cond, elif_body in node.elif_chains:
             if self.evaluate(elif_cond):
-                for stmt in elif_body:
-                    if isinstance(stmt, FunctionCallNode):
-                        self.execute_function(stmt)
-                    else:
-                        self.interpret(stmt)
+                self._run_body(elif_body)
                 return
 
         if node.else_body:
-            for stmt in node.else_body:
-                if isinstance(stmt, FunctionCallNode):
-                    self.execute_function(stmt)
-                else:
-                    self.interpret(stmt)
+            self._run_body(node.else_body)
 
     def execute_while(self, node):
         """Override to add debug hook on each iteration."""
@@ -458,11 +454,7 @@ class DebugInterpreter(Interpreter):
             if iteration > 10_000_000:
                 raise RuntimeError("Maximum loop iterations exceeded")
             self.debugger.on_statement(node)
-            for stmt in node.body:
-                if isinstance(stmt, FunctionCallNode):
-                    self.execute_function(stmt)
-                else:
-                    self.interpret(stmt)
+            self._run_body(node.body)
 
     def execute_for(self, node):
         """Override to add debug hook on each iteration."""
@@ -471,11 +463,7 @@ class DebugInterpreter(Interpreter):
         for i in range(start, end):
             self.debugger.on_statement(node)
             self.variables[node.var] = float(i)
-            for stmt in node.body:
-                if isinstance(stmt, FunctionCallNode):
-                    self.execute_function(stmt)
-                else:
-                    self.interpret(stmt)
+            self._run_body(node.body)
 
     def execute_for_each(self, node):
         """Override to add debug hook on each iteration."""
@@ -490,11 +478,7 @@ class DebugInterpreter(Interpreter):
         for item in iterable:
             self.debugger.on_statement(node)
             self.variables[node.var] = item
-            for stmt in node.body:
-                if isinstance(stmt, FunctionCallNode):
-                    self.execute_function(stmt)
-                else:
-                    self.interpret(stmt)
+            self._run_body(node.body)
 
 
 def main():
