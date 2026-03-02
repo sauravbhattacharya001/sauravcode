@@ -1,0 +1,39 @@
+# Random number demo for sauravcode
+# Demonstrates random, random_int, random_choice, random_shuffle builtins
+
+# Generate a random float between 0 and 1
+x = random 0.0 1.0
+print f"Random float (0-1): {x}"
+
+# Random float in a range
+temp = random 60.0 100.0
+print f"Random temperature: {temp}"
+
+# Generate random integers between 1 and 6
+roll = random_int 1 6
+print f"Dice roll: {roll}"
+
+# Pick a random element from a list
+colors = ["red", "green", "blue", "yellow", "purple"]
+pick = random_choice colors
+print f"Random color: {pick}"
+
+# Shuffle a list
+nums = [1, 2, 3, 4, 5]
+shuffled = random_shuffle nums
+print f"Original: {nums}"
+print f"Shuffled: {shuffled}"
+
+# Simple dice game
+print ""
+print "--- Dice Game ---"
+player = random_int 1 6
+computer = random_int 1 6
+print f"You rolled: {player}"
+print f"Computer rolled: {computer}"
+if player > computer
+    print "You win!"
+else if computer > player
+    print "Computer wins!"
+else
+    print "It's a tie!"

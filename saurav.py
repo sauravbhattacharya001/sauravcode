@@ -2,6 +2,7 @@ import re
 import sys
 import os
 import math
+import random
 
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
@@ -1374,6 +1375,11 @@ class Interpreter:
             'filter':      self._builtin_filter,
             'reduce':      self._builtin_reduce,
             'each':        self._builtin_each,
+            # --- Random functions ---
+            'random':         self._builtin_random,
+            'random_int':     self._builtin_random_int,
+            'random_choice':  self._builtin_random_choice,
+            'random_shuffle': self._builtin_random_shuffle,
         }
 
     # --- String built-ins ---
@@ -1717,6 +1723,41 @@ class Interpreter:
         for item in lst:
             self._call_function_with_args(func_ref, [item])
         return lst
+
+    # --- Random built-ins ---
+    def _builtin_random(self, args):
+        """random min max → random float between min and max."""
+        self._expect_args('random', args, 2)
+        lo, hi = args
+        if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+            raise RuntimeError("random expects numeric arguments")
+        return random.uniform(float(lo), float(hi))
+
+    def _builtin_random_int(self, args):
+        """random_int min max → random integer between min and max (inclusive)."""
+        self._expect_args('random_int', args, 2)
+        lo, hi = args
+        if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+            raise RuntimeError("random_int expects numeric arguments")
+        return random.randint(int(lo), int(hi))
+
+    def _builtin_random_choice(self, args):
+        """random_choice list → pick a random element from a list."""
+        self._expect_args('random_choice', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list) or len(lst) == 0:
+            raise RuntimeError("random_choice expects a non-empty list")
+        return random.choice(lst)
+
+    def _builtin_random_shuffle(self, args):
+        """random_shuffle list → return a new list with elements in random order."""
+        self._expect_args('random_shuffle', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("random_shuffle expects a list argument")
+        result = lst[:]
+        random.shuffle(result)
+        return result
 
     def _expect_args(self, name, args, count):
         if len(args) != count:
