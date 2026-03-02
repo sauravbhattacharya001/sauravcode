@@ -596,6 +596,42 @@ class TestLists:
         output = run_code("nums = [10, 20, 30]\nprint nums[2]\n")
         assert output.strip() == "30"
 
+    def test_list_negative_index(self):
+        output = run_code("nums = [10, 20, 30]\nprint nums[-1]\n")
+        assert output.strip() == "30"
+
+    def test_list_negative_index_second(self):
+        output = run_code("nums = [10, 20, 30]\nprint nums[-2]\n")
+        assert output.strip() == "20"
+
+    def test_list_negative_index_first(self):
+        output = run_code("nums = [10, 20, 30]\nprint nums[-3]\n")
+        assert output.strip() == "10"
+
+    def test_list_negative_index_out_of_bounds(self):
+        with pytest.raises(RuntimeError, match="out of bounds"):
+            run_code("nums = [1, 2]\nprint nums[-3]\n")
+
+    def test_string_index(self):
+        output = run_code('s = "hello"\nprint s[0]\n')
+        assert output.strip() == "h"
+
+    def test_string_index_last(self):
+        output = run_code('s = "hello"\nprint s[4]\n')
+        assert output.strip() == "o"
+
+    def test_string_negative_index(self):
+        output = run_code('s = "hello"\nprint s[-1]\n')
+        assert output.strip() == "o"
+
+    def test_string_negative_index_second(self):
+        output = run_code('s = "hello"\nprint s[-2]\n')
+        assert output.strip() == "l"
+
+    def test_string_index_out_of_bounds(self):
+        with pytest.raises(RuntimeError, match="out of bounds"):
+            run_code('s = "hi"\nprint s[5]\n')
+
     def test_list_len(self):
         output = run_code("nums = [10, 20, 30]\nprint len nums\n")
         assert output.strip() == "3"

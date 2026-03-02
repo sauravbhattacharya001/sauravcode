@@ -2383,10 +2383,12 @@ class Interpreter:
     def _eval_index(self, node):
         obj = self.evaluate(node.obj)
         idx = self.evaluate(node.index)
-        if isinstance(obj, list):
+        if isinstance(obj, (list, str)):
             i = int(idx)
+            if i < 0:
+                i += len(obj)
             if i < 0 or i >= len(obj):
-                raise RuntimeError(f"Index {i} out of bounds (size {len(obj)})")
+                raise RuntimeError(f"Index {int(idx)} out of bounds (size {len(obj)})")
             return obj[i]
         if isinstance(obj, dict):
             if idx not in obj:
