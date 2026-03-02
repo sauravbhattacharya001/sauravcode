@@ -506,6 +506,7 @@ class Parser:
         'pi', 'euler', 'sin', 'cos', 'tan', 'log', 'log10', 'min', 'max',
         'zip', 'enumerate', 'flatten', 'unique', 'count', 'sum', 'any', 'all',
         'slice', 'chunk', 'find', 'find_index',
+        'regex_match', 'regex_find', 'regex_find_all', 'regex_replace', 'regex_split',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1448,6 +1449,12 @@ class Interpreter:
             'chunk':          self._builtin_chunk,
             'find':           self._builtin_find,
             'find_index':     self._builtin_find_index,
+            # --- Regex functions ---
+            'regex_match':    self._builtin_regex_match,
+            'regex_find':     self._builtin_regex_find,
+            'regex_find_all': self._builtin_regex_find_all,
+            'regex_replace':  self._builtin_regex_replace,
+            'regex_split':    self._builtin_regex_split,
         }
 
     # --- String built-ins ---
@@ -2177,6 +2184,87 @@ class Interpreter:
             if result:
                 return i
         return -1
+
+    # --- Regex built-ins ---
+
+    def _builtin_regex_match(self, args):
+        """regex_match(pattern, string) -> true if the entire string matches the pattern."""
+        self._expect_args('regex_match', args, 2)
+        pattern, string = args[0], args[1]
+        if not isinstance(pattern, str):
+            raise RuntimeError("regex_match expects a string pattern as first argument")
+        if not isinstance(string, str):
+            raise RuntimeError("regex_match expects a string as second argument")
+        try:
+            return re.fullmatch(pattern, string) is not None
+        except re.error as e:
+            raise RuntimeError(f"regex_match: invalid regex pattern: {e}")
+
+    def _builtin_regex_find(self, args):
+        """regex_find(pattern, string) -> map with 'match', 'start', 'end', 'groups' or null."""
+        self._expect_args('regex_find', args, 2)
+        pattern, string = args[0], args[1]
+        if not isinstance(pattern, str):
+            raise RuntimeError("regex_find expects a string pattern as first argument")
+        if not isinstance(string, str):
+            raise RuntimeError("regex_find expects a string as second argument")
+        try:
+            m = re.search(pattern, string)
+        except re.error as e:
+            raise RuntimeError(f"regex_find: invalid regex pattern: {e}")
+        if m is None:
+            return None
+        groups = list(m.groups()) if m.groups() else []
+        return {
+            'match': m.group(0),
+            'start': m.start(),
+            'end': m.end(),
+            'groups': groups,
+        }
+
+    def _builtin_regex_find_all(self, args):
+        """regex_find_all(pattern, string) -> list of all matches (strings or group tuples)."""
+        self._expect_args('regex_find_all', args, 2)
+        pattern, string = args[0], args[1]
+        if not isinstance(pattern, str):
+            raise RuntimeError("regex_find_all expects a string pattern as first argument")
+        if not isinstance(string, str):
+            raise RuntimeError("regex_find_all expects a string as second argument")
+        try:
+            results = re.findall(pattern, string)
+        except re.error as e:
+            raise RuntimeError(f"regex_find_all: invalid regex pattern: {e}")
+        # re.findall returns strings when no groups, tuples when groups
+        # Convert tuples to lists for sauravcode consistency
+        return [list(r) if isinstance(r, tuple) else r for r in results]
+
+    def _builtin_regex_replace(self, args):
+        """regex_replace(pattern, replacement, string) -> string with matches replaced."""
+        self._expect_args('regex_replace', args, 3)
+        pattern, replacement, string = args[0], args[1], args[2]
+        if not isinstance(pattern, str):
+            raise RuntimeError("regex_replace expects a string pattern as first argument")
+        if not isinstance(replacement, str):
+            raise RuntimeError("regex_replace expects a string replacement as second argument")
+        if not isinstance(string, str):
+            raise RuntimeError("regex_replace expects a string as third argument")
+        try:
+            return re.sub(pattern, replacement, string)
+        except re.error as e:
+            raise RuntimeError(f"regex_replace: invalid regex pattern: {e}")
+
+    def _builtin_regex_split(self, args):
+        """regex_split(pattern, string) -> list of substrings split by pattern matches."""
+        self._expect_args('regex_split', args, 2)
+        pattern, string = args[0], args[1]
+        if not isinstance(pattern, str):
+            raise RuntimeError("regex_split expects a string pattern as first argument")
+        if not isinstance(string, str):
+            raise RuntimeError("regex_split expects a string as second argument")
+        try:
+            return re.split(pattern, string)
+        except re.error as e:
+            raise RuntimeError(f"regex_split: invalid regex pattern: {e}")
 
     def _expect_args(self, name, args, count):
         if len(args) != count:
@@ -3035,6 +3123,11 @@ def repl():
                 'filter':      'filter func list    — keep elements where func is truthy',
                 'reduce':      'reduce func list init — fold list with binary function',
                 'each':        'each func list      — apply func to each element (side effects)',
+                'regex_match':    'regex_match pat str    — true if entire string matches regex',
+                'regex_find':     'regex_find pat str     — first match as map {match, start, end, groups}',
+                'regex_find_all': 'regex_find_all pat str — list of all regex matches',
+                'regex_replace':  'regex_replace pat rep str — replace regex matches in string',
+                'regex_split':    'regex_split pat str    — split string by regex pattern',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):
