@@ -476,6 +476,16 @@ class ContinueNode(ASTNode):
     def __repr__(self):
         return "ContinueNode()"
 
+
+class TernaryNode(ASTNode):
+    """Ternary conditional expression: true_expr if condition else false_expr"""
+    def __init__(self, condition, true_expr, false_expr):
+        self.condition = condition
+        self.true_expr = true_expr
+        self.false_expr = false_expr
+    def __repr__(self):
+        return f"TernaryNode({self.true_expr} if {self.condition} else {self.false_expr})"
+
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
     def __init__(self, tokens):
@@ -899,18 +909,27 @@ class Parser:
         return self.parse_pipe()
 
     def parse_pipe(self):
-        """Parse pipe expressions: expr (|> expr)*
-        
-        Left-associative. Lowest precedence operator.
-        The right side is parsed as a logical_or expression (which includes
-        function calls, lambdas, etc.)
-        """
-        left = self.parse_logical_or()
+        """Parse pipe expressions: expr (|> expr)*"""
+        left = self.parse_ternary()
         while self.peek()[0] == 'PIPE':
-            self.advance()  # consume |>
-            right = self.parse_logical_or()
+            self.advance()
+            right = self.parse_ternary()
             left = PipeNode(left, right)
         return left
+
+    def parse_ternary(self):
+        """Parse ternary conditional: true_expr if condition else false_expr"""
+        true_expr = self.parse_logical_or()
+        if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'if':
+            self.advance()
+            condition = self.parse_logical_or()
+            if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'else':
+                self.advance()
+                false_expr = self.parse_ternary()
+                return TernaryNode(condition, true_expr, false_expr)
+            else:
+                raise SyntaxError("Expected 'else' in ternary expression")
+        return true_expr
 
     def parse_logical_or(self):
         left = self.parse_logical_and()
@@ -1312,6 +1331,7 @@ class Interpreter:
             LambdaNode:       self._eval_lambda,
             PipeNode:         self._eval_pipe,
             EnumAccessNode:   self._eval_enum_access,
+            TernaryNode:      self._eval_ternary,
         }
 
     def _init_builtins(self):
@@ -2308,6 +2328,13 @@ class Interpreter:
         finally:
             self.variables = saved_env
         return result
+
+    def _eval_ternary(self, node):
+        condition = self.evaluate(node.condition)
+        if condition:
+            return self.evaluate(node.true_expr)
+        else:
+            return self.evaluate(node.false_expr)
 
     def _eval_pipe(self, node):
         """Evaluate a pipe expression: value |> function.
