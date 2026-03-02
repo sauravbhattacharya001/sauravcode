@@ -1,0 +1,34 @@
+# Ternary Expression Demo
+# Syntax: value_if_true if condition else value_if_false
+
+x = 10
+result = "big" if x > 5 else "small"
+print result
+
+y = 3
+abs_val = y if y > 0 else 0 - y
+print abs_val
+
+a = 7
+b = 12
+max_val = a if a > b else b
+print max_val
+
+is_even = true if a % 2 == 0 else false
+print is_even
+
+age = 20
+print "adult" if age >= 18 else "minor"
+
+if x > 5
+    print "x is big (from if statement)"
+
+score = 85
+grade = "A" if score >= 90 else "B" if score >= 80 else "C"
+print grade
+
+function abs_value n
+    return n if n >= 0 else 0 - n
+
+print abs_value(5)
+print abs_value(0 - 3)

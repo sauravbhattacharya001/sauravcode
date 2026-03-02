@@ -288,6 +288,13 @@ class ForEachNode(ASTNode):
         self.body = body        # list of statements
 
 
+class TernaryNode(ASTNode):
+    def __init__(self, condition, true_expr, false_expr):
+        self.condition = condition
+        self.true_expr = true_expr
+        self.false_expr = false_expr
+
+
 # ============================================================
 # PARSER
 # ============================================================
@@ -611,7 +618,20 @@ class Parser:
     # atom -> NUMBER | STRING | BOOL | IDENT | '(' full_expression ')' | list | func_call
 
     def parse_full_expression(self):
-        return self.parse_logical_or()
+        return self.parse_ternary()
+
+    def parse_ternary(self):
+        true_expr = self.parse_logical_or()
+        if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'if':
+            self.advance()
+            condition = self.parse_logical_or()
+            if self.peek()[0] == 'KEYWORD' and self.peek()[1] == 'else':
+                self.advance()
+                false_expr = self.parse_ternary()
+                return TernaryNode(condition, true_expr, false_expr)
+            else:
+                raise SyntaxError("Expected 'else' in ternary expression")
+        return true_expr
 
     def parse_logical_or(self):
         left = self.parse_logical_and()
@@ -1851,6 +1871,12 @@ class CCodeGenerator:
 
         elif isinstance(expr, FStringNode):
             return self.compile_fstring(expr)
+
+        elif isinstance(expr, TernaryNode):
+            cond_c = self.compile_expression(expr.condition)
+            true_c = self.compile_expression(expr.true_expr)
+            false_c = self.compile_expression(expr.false_expr)
+            return f"(({cond_c}) ? ({true_c}) : ({false_c}))"
 
         elif isinstance(expr, MethodCallNode):
             obj_c = self.compile_expression(expr.obj)
