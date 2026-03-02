@@ -1,0 +1,35 @@
+# math_demo.srv — Math constants and trig/utility functions
+# Demonstrates: pi, e, sin, cos, tan, log, log10, min, max
+
+print "=== Math Constants ==="
+print f"pi = {pi}"
+print f"euler = {euler}"
+
+print ""
+print "=== Trigonometry ==="
+angle = pi / 4
+print f"sin(pi/4) = {sin angle}"
+print f"cos(pi/4) = {cos angle}"
+print f"tan(pi/4) = {tan angle}"
+
+print ""
+print "=== Logarithms ==="
+print f"log(euler) = {log euler}"
+print f"log(100, 10) = {log 100 10}"
+print f"log10(1000)  = {log10 1000}"
+
+print ""
+print "=== Min / Max ==="
+nums = [42, 7, 99, 3, 56]
+print f"nums = {nums}"
+print f"min(nums) = {min nums}"
+print f"max(nums) = {max nums}"
+print f"min(5, 3) = {min 5 3}"
+print f"max(5, 3) = {max 5 3}"
+
+print ""
+print "=== Circle Area ==="
+r = 5
+r_squared = r * r
+a = pi * r_squared
+print f"Circle with radius {r} has area {a}"

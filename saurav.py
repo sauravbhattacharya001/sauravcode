@@ -503,10 +503,11 @@ class Parser:
         'each', 'random', 'random_int', 'random_choice', 'random_shuffle',
         'read_file', 'write_file', 'append_file', 'file_exists', 'read_lines',
         'now', 'timestamp', 'date_format', 'date_part', 'sleep',
+        'pi', 'euler', 'sin', 'cos', 'tan', 'log', 'log10', 'min', 'max',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
-    ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp'})
+    ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -1422,6 +1423,16 @@ class Interpreter:
             'date_format':    self._builtin_date_format,
             'date_part':      self._builtin_date_part,
             'sleep':          self._builtin_sleep,
+            # --- Math constants & trig functions ---
+            'pi':             self._builtin_pi,
+            'euler':          self._builtin_euler,
+            'sin':            self._builtin_sin,
+            'cos':            self._builtin_cos,
+            'tan':            self._builtin_tan,
+            'log':            self._builtin_log,
+            'log10':          self._builtin_log10,
+            'min':            self._builtin_min,
+            'max':            self._builtin_max,
         }
 
     # --- String built-ins ---
@@ -1944,6 +1955,80 @@ class Interpreter:
         _time.sleep(seconds)
         return 0.0
 
+    # --- Math constants & trig/utility built-ins ---
+    def _builtin_pi(self, args):
+        """pi() → return the mathematical constant π (3.14159...)."""
+        if len(args) != 0:
+            raise RuntimeError("pi expects 0 arguments")
+        return math.pi
+
+    def _builtin_euler(self, args):
+        """euler() → return Euler's number e (2.71828...)."""
+        if len(args) != 0:
+            raise RuntimeError("euler expects 0 arguments")
+        return math.e
+
+    def _builtin_sin(self, args):
+        """sin(radians) → return the sine of the angle."""
+        self._expect_args('sin', args, 1)
+        return math.sin(args[0])
+
+    def _builtin_cos(self, args):
+        """cos(radians) → return the cosine of the angle."""
+        self._expect_args('cos', args, 1)
+        return math.cos(args[0])
+
+    def _builtin_tan(self, args):
+        """tan(radians) → return the tangent of the angle."""
+        self._expect_args('tan', args, 1)
+        return math.tan(args[0])
+
+    def _builtin_log(self, args):
+        """log(value) → natural logarithm (base e). log(value, base) → log with custom base."""
+        if len(args) == 1:
+            if args[0] <= 0:
+                raise RuntimeError("log: argument must be positive")
+            return math.log(args[0])
+        elif len(args) == 2:
+            if args[0] <= 0:
+                raise RuntimeError("log: argument must be positive")
+            if args[1] <= 0 or args[1] == 1:
+                raise RuntimeError("log: base must be positive and not 1")
+            return math.log(args[0], args[1])
+        else:
+            raise RuntimeError("log expects 1 or 2 arguments: log value [base]")
+
+    def _builtin_log10(self, args):
+        """log10(value) → base-10 logarithm."""
+        self._expect_args('log10', args, 1)
+        if args[0] <= 0:
+            raise RuntimeError("log10: argument must be positive")
+        return math.log10(args[0])
+
+    def _builtin_min(self, args):
+        """min(a, b) → return the smaller value. min(list) → return the smallest element."""
+        if len(args) == 1:
+            lst = args[0]
+            if not isinstance(lst, list) or len(lst) == 0:
+                raise RuntimeError("min expects a non-empty list when called with 1 argument")
+            return min(lst)
+        elif len(args) == 2:
+            return min(args[0], args[1])
+        else:
+            raise RuntimeError("min expects 1 or 2 arguments: min list | min a b")
+
+    def _builtin_max(self, args):
+        """max(a, b) → return the larger value. max(list) → return the largest element."""
+        if len(args) == 1:
+            lst = args[0]
+            if not isinstance(lst, list) or len(lst) == 0:
+                raise RuntimeError("max expects a non-empty list when called with 1 argument")
+            return max(lst)
+        elif len(args) == 2:
+            return max(args[0], args[1])
+        else:
+            raise RuntimeError("max expects 1 or 2 arguments: max list | max a b")
+
     def _expect_args(self, name, args, count):
         if len(args) != count:
             raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
@@ -2331,6 +2416,9 @@ class Interpreter:
         # Check built-in functions
         if call_node.name in self.builtins:
             evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+            # Zero-arg builtin call: if a user variable shadows it, return the variable
+            if len(evaluated_args) == 0 and call_node.name in self.variables:
+                return self.variables[call_node.name]
             return self.builtins[call_node.name](evaluated_args)
 
         raise RuntimeError(f"Function {call_node.name} is not defined.")
