@@ -1,0 +1,81 @@
+# String Padding & Character Utility Demo
+# New builtins: pad_left, pad_right, repeat, char_code, from_char_code
+
+# --- pad_left: left-pad a string to a given width ---
+x = pad_left "42" 6 "0"
+print f"Padded number: {x}"
+
+x = pad_left "hi" 10
+print f"Left padded:  [{x}]"
+
+# --- pad_right: right-pad a string to a given width ---
+x = pad_right "Name" 20 "."
+print f"Right padded: [{x}]"
+
+x = pad_right "done" 10
+print f"Right padded: [{x}]"
+
+# --- repeat: repeat a string n times ---
+line = repeat "-" 40
+print line
+
+stars = repeat "* " 5
+print stars
+
+# --- char_code: get Unicode code point ---
+code = char_code "A"
+print f"char_code of A: {code}"
+
+code = char_code "z"
+print f"char_code of z: {code}"
+
+# --- from_char_code: create character from code point ---
+ch = from_char_code 65
+print f"from_char_code 65: {ch}"
+
+ch = from_char_code 42
+print f"from_char_code 42: {ch}"
+
+# --- Practical example: formatted table header ---
+print ""
+divider = repeat "=" 40
+print divider
+col1 = pad_right "Item" 20
+col2 = pad_left "Price" 10
+print f"| {col1} | {col2} |"
+
+print repeat "-" 40
+
+col1 = pad_right "Apple" 20
+col2 = pad_left "1.50" 10
+print f"| {col1} | {col2} |"
+
+col1 = pad_right "Banana" 20
+col2 = pad_left "0.75" 10
+print f"| {col1} | {col2} |"
+
+col1 = pad_right "Cherry" 20
+col2 = pad_left "3.25" 10
+print f"| {col1} | {col2} |"
+print divider
+
+# --- Practical example: ASCII art border ---
+print ""
+border = repeat "#" 30
+print border
+print "##    Hello, sauravcode!    ##"
+print border
+
+# --- Caesar cipher using char_code + from_char_code ---
+print ""
+print "=== Caesar Cipher ==="
+msg = "HELLO"
+shift = 3
+result = ""
+for i in range 5
+    c = char_at "HELLO" i
+    code = char_code c
+    shifted = code + shift
+    result = result + from_char_code shifted
+print f"Original: {msg}"
+print f"Shifted by {shift}: {result}"

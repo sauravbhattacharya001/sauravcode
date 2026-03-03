@@ -510,6 +510,9 @@ class Parser:
         'slice', 'chunk', 'find', 'find_index',
         'regex_match', 'regex_find', 'regex_find_all', 'regex_replace', 'regex_split',
         'json_parse', 'json_stringify', 'json_pretty',
+        'pad_left', 'pad_right', 'repeat', 'char_code', 'from_char_code',
+        'md5', 'sha256', 'sha1', 'base64_encode', 'base64_decode',
+        'hex_encode', 'hex_decode', 'crc32', 'url_encode', 'url_decode',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1445,6 +1448,12 @@ class Interpreter:
             'chunk':          self._builtin_chunk,
             'find':           self._builtin_find,
             'find_index':     self._builtin_find_index,
+            # --- String padding & char functions ---
+            'pad_left':       self._builtin_pad_left,
+            'pad_right':      self._builtin_pad_right,
+            'repeat':         self._builtin_repeat,
+            'char_code':      self._builtin_char_code,
+            'from_char_code': self._builtin_from_char_code,
             # --- Regex functions ---
             'regex_match':    self._builtin_regex_match,
             'regex_find':     self._builtin_regex_find,
@@ -1455,6 +1464,17 @@ class Interpreter:
             'json_parse':     self._builtin_json_parse,
             'json_stringify': self._builtin_json_stringify,
             'json_pretty':    self._builtin_json_pretty,
+            # --- Hash & encoding functions ---
+            'md5':            self._builtin_md5,
+            'sha256':         self._builtin_sha256,
+            'sha1':           self._builtin_sha1,
+            'base64_encode':  self._builtin_base64_encode,
+            'base64_decode':  self._builtin_base64_decode,
+            'hex_encode':     self._builtin_hex_encode,
+            'hex_decode':     self._builtin_hex_decode,
+            'crc32':          self._builtin_crc32,
+            'url_encode':     self._builtin_url_encode,
+            'url_decode':     self._builtin_url_decode,
         }
         self._register_math_builtins()
 
@@ -2338,6 +2358,171 @@ class Interpreter:
             return _json.dumps(self._srv_to_json(args[0]), indent=2)
         except (TypeError, ValueError) as e:
             raise RuntimeError(f"json_pretty: cannot serialize: {e}")
+
+    # — Hash & encoding builtins ————————————————————
+
+    def _builtin_md5(self, args):
+        """md5(string) -> MD5 hex digest of the input string."""
+        self._expect_args('md5', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        import hashlib
+        return hashlib.md5(s.encode('utf-8')).hexdigest()
+
+    def _builtin_sha256(self, args):
+        """sha256(string) -> SHA-256 hex digest of the input string."""
+        self._expect_args('sha256', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        import hashlib
+        return hashlib.sha256(s.encode('utf-8')).hexdigest()
+
+    def _builtin_sha1(self, args):
+        """sha1(string) -> SHA-1 hex digest of the input string."""
+        self._expect_args('sha1', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        import hashlib
+        return hashlib.sha1(s.encode('utf-8')).hexdigest()
+
+    def _builtin_base64_encode(self, args):
+        """base64_encode(string) -> Base64 encoded string."""
+        self._expect_args('base64_encode', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        import base64
+        return base64.b64encode(s.encode('utf-8')).decode('ascii')
+
+    def _builtin_base64_decode(self, args):
+        """base64_decode(string) -> decoded string from Base64."""
+        self._expect_args('base64_decode', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            raise RuntimeError("base64_decode expects a string argument")
+        import base64
+        try:
+            return base64.b64decode(s).decode('utf-8')
+        except Exception as e:
+            raise RuntimeError(f"base64_decode: invalid input: {e}")
+
+    def _builtin_hex_encode(self, args):
+        """hex_encode(string) -> hex-encoded string."""
+        self._expect_args('hex_encode', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        return s.encode('utf-8').hex()
+
+    def _builtin_hex_decode(self, args):
+        """hex_decode(hex_string) -> decoded string from hex."""
+        self._expect_args('hex_decode', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            raise RuntimeError("hex_decode expects a string argument")
+        try:
+            return bytes.fromhex(s).decode('utf-8')
+        except Exception as e:
+            raise RuntimeError(f"hex_decode: invalid hex string: {e}")
+
+    def _builtin_crc32(self, args):
+        """crc32(string) -> CRC-32 checksum as unsigned integer."""
+        self._expect_args('crc32', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        import binascii
+        return float(binascii.crc32(s.encode('utf-8')) & 0xFFFFFFFF)
+
+    def _builtin_url_encode(self, args):
+        """url_encode(string) -> percent-encoded string for URLs."""
+        self._expect_args('url_encode', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        from urllib.parse import quote
+        return quote(s, safe='')
+
+    def _builtin_url_decode(self, args):
+        """url_decode(string) -> decoded string from percent-encoding."""
+        self._expect_args('url_decode', args, 1)
+        s = args[0]
+        if not isinstance(s, str):
+            raise RuntimeError("url_decode expects a string argument")
+        from urllib.parse import unquote
+        return unquote(s)
+
+    # — String padding & char builtins ———————————————
+
+    def _builtin_pad_left(self, args):
+        """pad_left str width [fill] — left-pad string to given width."""
+        if len(args) < 2 or len(args) > 3:
+            raise RuntimeError("pad_left expects 2-3 arguments: str width [fill]")
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        width = args[1]
+        if not isinstance(width, (int, float)):
+            raise RuntimeError("pad_left: width must be a number")
+        width = int(width)
+        fill = args[2] if len(args) == 3 else ' '
+        if not isinstance(fill, str) or len(fill) != 1:
+            raise RuntimeError("pad_left: fill must be a single character")
+        return s.rjust(width, fill)
+
+    def _builtin_pad_right(self, args):
+        """pad_right str width [fill] — right-pad string to given width."""
+        if len(args) < 2 or len(args) > 3:
+            raise RuntimeError("pad_right expects 2-3 arguments: str width [fill]")
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        width = args[1]
+        if not isinstance(width, (int, float)):
+            raise RuntimeError("pad_right: width must be a number")
+        width = int(width)
+        fill = args[2] if len(args) == 3 else ' '
+        if not isinstance(fill, str) or len(fill) != 1:
+            raise RuntimeError("pad_right: fill must be a single character")
+        return s.ljust(width, fill)
+
+    def _builtin_repeat(self, args):
+        """repeat str n — repeat string n times."""
+        self._expect_args('repeat', args, 2)
+        s = args[0]
+        if not isinstance(s, str):
+            s = str(s)
+        n = args[1]
+        if not isinstance(n, (int, float)):
+            raise RuntimeError("repeat: count must be a number")
+        n = int(n)
+        if n < 0:
+            raise RuntimeError("repeat: count must be non-negative")
+        if n > MAX_ALLOC_SIZE:
+            raise RuntimeError(f"repeat: count {n} exceeds safety limit {MAX_ALLOC_SIZE}")
+        return s * n
+
+    def _builtin_char_code(self, args):
+        """char_code str — get Unicode code point of first character."""
+        self._expect_args('char_code', args, 1)
+        s = args[0]
+        if not isinstance(s, str) or len(s) == 0:
+            raise RuntimeError("char_code expects a non-empty string")
+        return float(ord(s[0]))
+
+    def _builtin_from_char_code(self, args):
+        """from_char_code n — create character from Unicode code point."""
+        self._expect_args('from_char_code', args, 1)
+        n = args[0]
+        if not isinstance(n, (int, float)):
+            raise RuntimeError("from_char_code expects a number")
+        code = int(n)
+        if code < 0 or code > 0x10FFFF:
+            raise RuntimeError(f"from_char_code: {code} is not a valid Unicode code point")
+        return chr(code)
 
     def _json_to_srv(self, value):
         """Convert a Python JSON value to sauravcode types."""
@@ -3284,6 +3469,11 @@ def repl():
                 'json_parse':     'json_parse str         — parse JSON string into value',
                 'json_stringify': 'json_stringify val     — convert value to compact JSON string',
                 'json_pretty':    'json_pretty val        — convert value to pretty JSON string',
+                'pad_left':       'pad_left str w [fill]  — left-pad string to width w',
+                'pad_right':      'pad_right str w [fill] — right-pad string to width w',
+                'repeat':         'repeat str n           — repeat string n times',
+                'char_code':      'char_code str          — Unicode code point of first char',
+                'from_char_code': 'from_char_code n       — character from Unicode code point',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):
