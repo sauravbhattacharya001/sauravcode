@@ -12,6 +12,8 @@ DEBUG = False
 # Security limits to prevent denial-of-service attacks
 MAX_RECURSION_DEPTH = 500      # Maximum nested function call depth
 MAX_LOOP_ITERATIONS = 10_000_000  # Maximum iterations per loop
+MAX_ALLOC_SIZE = 10_000_000    # Maximum elements in a single allocation (list/string repeat/range)
+MAX_EXPONENT = 10_000          # Maximum exponent to prevent memory exhaustion via huge integers
 
 def debug(msg):
     """Print debug message only when DEBUG mode is enabled."""
@@ -1500,7 +1502,12 @@ class Interpreter:
         # power takes 2 args — register manually
         def _power(self_inner, args):
             self_inner._expect_args('power', args, 2)
-            return float(args[0] ** args[1])
+            base, exp = args[0], args[1]
+            if isinstance(exp, (int, float)) and abs(exp) > MAX_EXPONENT:
+                raise RuntimeError(
+                    f"Exponent {exp} exceeds maximum of {MAX_EXPONENT:,} "
+                    f"(prevent memory exhaustion)")
+            return float(base ** exp)
         self.builtins['power'] = lambda args: _power(self, args)
 
         for name, fn in _MATH_TABLE.items():
@@ -1679,13 +1686,28 @@ class Interpreter:
 
     def _builtin_range(self, args):
         if len(args) == 1:
+            count = int(args[0])
+        elif len(args) == 2:
+            count = int(args[1]) - int(args[0])
+        elif len(args) == 3:
+            step = int(args[2])
+            if step == 0:
+                raise RuntimeError("range step cannot be zero")
+            count = max(0, (int(args[1]) - int(args[0]) + (step - (1 if step > 0 else -1))) // step)
+        else:
+            raise RuntimeError("range expects 1-3 arguments: range end | range start end | range start end step")
+
+        if count > MAX_ALLOC_SIZE:
+            raise RuntimeError(
+                f"range would create {count:,} elements, "
+                f"exceeding limit of {MAX_ALLOC_SIZE:,}")
+
+        if len(args) == 1:
             return [float(i) for i in range(int(args[0]))]
         elif len(args) == 2:
             return [float(i) for i in range(int(args[0]), int(args[1]))]
-        elif len(args) == 3:
-            return [float(i) for i in range(int(args[0]), int(args[1]), int(args[2]))]
         else:
-            raise RuntimeError("range expects 1-3 arguments: range end | range start end | range start end step")
+            return [float(i) for i in range(int(args[0]), int(args[1]), int(args[2]))]
 
     def _builtin_reverse(self, args):
         self._expect_args('reverse', args, 1)
@@ -2790,6 +2812,35 @@ class Interpreter:
             elif node.operator == '-':
                 return left - right
             elif node.operator == '*':
+                # Guard against memory exhaustion via string/list repetition
+                if isinstance(left, str) and isinstance(right, (int, float)):
+                    count = int(right)
+                    if count > 0 and len(left) * count > MAX_ALLOC_SIZE:
+                        raise RuntimeError(
+                            f"String repetition would create {len(left) * count:,} characters, "
+                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
+                    return left * count
+                elif isinstance(left, list) and isinstance(right, (int, float)):
+                    count = int(right)
+                    if count > 0 and len(left) * count > MAX_ALLOC_SIZE:
+                        raise RuntimeError(
+                            f"List repetition would create {len(left) * count:,} elements, "
+                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
+                    return left * count
+                elif isinstance(right, str) and isinstance(left, (int, float)):
+                    count = int(left)
+                    if count > 0 and len(right) * count > MAX_ALLOC_SIZE:
+                        raise RuntimeError(
+                            f"String repetition would create {len(right) * count:,} characters, "
+                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
+                    return right * count
+                elif isinstance(right, list) and isinstance(left, (int, float)):
+                    count = int(left)
+                    if count > 0 and len(right) * count > MAX_ALLOC_SIZE:
+                        raise RuntimeError(
+                            f"List repetition would create {len(right) * count:,} elements, "
+                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
+                    return right * count
                 return left * right
             elif node.operator == '/':
                 if right == 0:
