@@ -1755,7 +1755,10 @@ class Interpreter:
         val = args[0]
         if not isinstance(val, list):
             raise RuntimeError("sort expects a list argument")
-        return sorted(val)
+        try:
+            return sorted(val)
+        except TypeError:
+            raise RuntimeError("sort: cannot compare elements of different types")
 
     # --- Map built-ins ---
     def _builtin_keys(self, args):
@@ -2106,9 +2109,15 @@ class Interpreter:
             lst = args[0]
             if not isinstance(lst, list) or len(lst) == 0:
                 raise RuntimeError("min expects a non-empty list when called with 1 argument")
-            return min(lst)
+            try:
+                return min(lst)
+            except TypeError:
+                raise RuntimeError("min: cannot compare elements of different types")
         elif len(args) == 2:
-            return min(args[0], args[1])
+            try:
+                return min(args[0], args[1])
+            except TypeError:
+                raise RuntimeError("min: cannot compare values of different types")
         else:
             raise RuntimeError("min expects 1 or 2 arguments: min list | min a b")
 
@@ -2118,9 +2127,15 @@ class Interpreter:
             lst = args[0]
             if not isinstance(lst, list) or len(lst) == 0:
                 raise RuntimeError("max expects a non-empty list when called with 1 argument")
-            return max(lst)
+            try:
+                return max(lst)
+            except TypeError:
+                raise RuntimeError("max: cannot compare elements of different types")
         elif len(args) == 2:
-            return max(args[0], args[1])
+            try:
+                return max(args[0], args[1])
+            except TypeError:
+                raise RuntimeError("max: cannot compare values of different types")
         else:
             raise RuntimeError("max expects 1 or 2 arguments: max list | max a b")
 
