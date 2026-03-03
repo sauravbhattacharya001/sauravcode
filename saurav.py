@@ -3129,6 +3129,15 @@ class Interpreter:
         # Normalize for circular import detection
         full_path = os.path.abspath(full_path)
         
+        # Prevent path traversal — imports must resolve within the source
+        # directory or current working directory (defense in depth)
+        allowed_root = os.path.abspath(self._source_dir or os.getcwd())
+        if not full_path.startswith(allowed_root + os.sep) and full_path != allowed_root:
+            raise RuntimeError(
+                f"Cannot import '{node.module_path}': "
+                f"path traversal outside project directory is not allowed"
+            )
+        
         # Circular import guard
         if full_path in self._imported_modules:
             debug(f"Skipping already-imported module: {full_path}")
