@@ -505,6 +505,7 @@ class Parser:
         'each', 'random', 'random_int', 'random_choice', 'random_shuffle',
         'read_file', 'write_file', 'append_file', 'file_exists', 'read_lines',
         'now', 'timestamp', 'date_format', 'date_part', 'sleep',
+        'date_add', 'date_diff', 'date_compare', 'date_range',
         'pi', 'euler', 'sin', 'cos', 'tan', 'log', 'log10', 'min', 'max',
         'zip', 'enumerate', 'flatten', 'unique', 'count', 'sum', 'any', 'all',
         'slice', 'chunk', 'find', 'find_index',
@@ -1429,6 +1430,10 @@ class Interpreter:
             'timestamp':      self._builtin_timestamp,
             'date_format':    self._builtin_date_format,
             'date_part':      self._builtin_date_part,
+            'date_add':       self._builtin_date_add,
+            'date_diff':      self._builtin_date_diff,
+            'date_compare':   self._builtin_date_compare,
+            'date_range':     self._builtin_date_range,
             'sleep':          self._builtin_sleep,
             # --- Math constants & trig functions ---
             'pi':             self._builtin_pi,
@@ -2057,6 +2062,119 @@ class Interpreter:
             raise RuntimeError(f"date_part: unknown part '{part}'. Use: {', '.join(parts.keys())}")
         result = parts[part]
         return float(result) if isinstance(result, int) else result
+
+    # --- Date arithmetic built-ins ---
+
+    _DATE_UNITS = {
+        'seconds': 'seconds', 'second': 'seconds', 'sec': 'seconds', 's': 'seconds',
+        'minutes': 'minutes', 'minute': 'minutes', 'min': 'minutes',
+        'hours': 'hours', 'hour': 'hours', 'h': 'hours',
+        'days': 'days', 'day': 'days', 'd': 'days',
+        'weeks': 'weeks', 'week': 'weeks', 'w': 'weeks',
+    }
+
+    def _resolve_date_unit(self, unit):
+        """Resolve a unit alias to a canonical timedelta keyword."""
+        if not isinstance(unit, str):
+            raise RuntimeError("date unit must be a string")
+        key = unit.lower().strip()
+        if key not in self._DATE_UNITS:
+            valid = sorted(set(self._DATE_UNITS.values()))
+            raise RuntimeError(
+                f"unknown date unit '{unit}'. Use: {', '.join(valid)}")
+        return self._DATE_UNITS[key]
+
+    def _parse_iso(self, value, fn_name):
+        """Parse an ISO 8601 string into a datetime object."""
+        if not isinstance(value, str):
+            raise RuntimeError(f"{fn_name} expects a date string")
+        try:
+            return _datetime.fromisoformat(value)
+        except ValueError as e:
+            raise RuntimeError(f"{fn_name}: invalid date string: {e}")
+
+    def _builtin_date_add(self, args):
+        """date_add(iso_string, amount, unit) -- add/subtract time from a date.
+        Returns a new ISO 8601 string.
+        Units: seconds, minutes, hours, days, weeks (and abbreviations).
+        Use negative amount to subtract."""
+        self._expect_args('date_add', args, 3)
+        iso_str, amount, unit = args
+        dt = self._parse_iso(iso_str, 'date_add')
+        if not isinstance(amount, (int, float)):
+            raise RuntimeError("date_add expects a numeric amount")
+        canon = self._resolve_date_unit(unit)
+        from datetime import timedelta as _td
+        delta = _td(**{canon: amount})
+        return (dt + delta).isoformat()
+
+    def _builtin_date_diff(self, args):
+        """date_diff(iso_a, iso_b, unit) -- difference (a - b) in given unit.
+        Returns a float. Positive if a is after b, negative if before.
+        Units: seconds, minutes, hours, days, weeks."""
+        self._expect_args('date_diff', args, 3)
+        iso_a, iso_b, unit = args
+        dt_a = self._parse_iso(iso_a, 'date_diff')
+        dt_b = self._parse_iso(iso_b, 'date_diff')
+        canon = self._resolve_date_unit(unit)
+        delta = dt_a - dt_b
+        total_seconds = delta.total_seconds()
+        divisors = {
+            'seconds': 1.0,
+            'minutes': 60.0,
+            'hours': 3600.0,
+            'days': 86400.0,
+            'weeks': 604800.0,
+        }
+        return total_seconds / divisors[canon]
+
+    def _builtin_date_compare(self, args):
+        """date_compare(iso_a, iso_b) -- comparison result.
+        Returns -1.0 if a < b, 0.0 if equal, 1.0 if a > b."""
+        self._expect_args('date_compare', args, 2)
+        iso_a, iso_b = args
+        dt_a = self._parse_iso(iso_a, 'date_compare')
+        dt_b = self._parse_iso(iso_b, 'date_compare')
+        if dt_a < dt_b:
+            return -1.0
+        elif dt_a > dt_b:
+            return 1.0
+        else:
+            return 0.0
+
+    def _builtin_date_range(self, args):
+        """date_range(start, end, step, unit) -- list of ISO strings.
+        Generates dates from start to end (exclusive) with given step.
+        Units: seconds, minutes, hours, days, weeks."""
+        self._expect_args('date_range', args, 4)
+        start_iso, end_iso, step_amount, step_unit = args
+        dt_start = self._parse_iso(start_iso, 'date_range')
+        dt_end = self._parse_iso(end_iso, 'date_range')
+        if not isinstance(step_amount, (int, float)):
+            raise RuntimeError("date_range expects a numeric step amount")
+        if step_amount == 0:
+            raise RuntimeError("date_range: step amount cannot be zero")
+        canon = self._resolve_date_unit(step_unit)
+        from datetime import timedelta as _td
+        delta = _td(**{canon: step_amount})
+        if step_amount > 0 and dt_start >= dt_end:
+            return []
+        if step_amount < 0 and dt_start <= dt_end:
+            return []
+        result = []
+        current = dt_start
+        max_items = 10000
+        if step_amount > 0:
+            while current < dt_end and len(result) < max_items:
+                result.append(current.isoformat())
+                current = current + delta
+        else:
+            while current > dt_end and len(result) < max_items:
+                result.append(current.isoformat())
+                current = current + delta
+        if len(result) >= max_items:
+            raise RuntimeError("date_range: too many items (max 10000)")
+        return result
 
     def _builtin_sleep(self, args):
         """sleep(seconds) → pause execution for the given number of seconds."""
