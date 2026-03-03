@@ -513,8 +513,6 @@ class Parser:
         'pad_left', 'pad_right', 'repeat', 'char_code', 'from_char_code',
         'md5', 'sha256', 'sha1', 'base64_encode', 'base64_decode',
         'hex_encode', 'hex_decode', 'crc32', 'url_encode', 'url_decode',
-        'mean', 'median', 'stdev', 'variance', 'mode', 'percentile',
-        'clamp', 'lerp', 'remap',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1477,16 +1475,6 @@ class Interpreter:
             'crc32':          self._builtin_crc32,
             'url_encode':     self._builtin_url_encode,
             'url_decode':     self._builtin_url_decode,
-            # --- Statistics & math functions ---
-            'mean':           self._builtin_mean,
-            'median':         self._builtin_median,
-            'stdev':          self._builtin_stdev,
-            'variance':       self._builtin_variance,
-            'mode':           self._builtin_mode,
-            'percentile':     self._builtin_percentile,
-            'clamp':          self._builtin_clamp,
-            'lerp':           self._builtin_lerp,
-            'remap':          self._builtin_remap,
         }
         self._register_math_builtins()
 
@@ -2257,155 +2245,6 @@ class Interpreter:
             if result:
                 return i
         return -1
-
-    # — Statistics builtins ————————————————————————
-
-    def _builtin_mean(self, args):
-        self._expect_args('mean', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("mean expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("mean: empty list")
-        total = 0.0
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("mean: all elements must be numbers")
-            total += v
-        return total / len(lst)
-
-    def _builtin_median(self, args):
-        self._expect_args('median', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("median expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("median: empty list")
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("median: all elements must be numbers")
-        s = sorted(lst)
-        n = len(s)
-        mid = n // 2
-        if n % 2 == 1:
-            return float(s[mid])
-        return (s[mid - 1] + s[mid]) / 2.0
-
-    def _builtin_stdev(self, args):
-        self._expect_args('stdev', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("stdev expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("stdev: empty list")
-        import math
-        m = self._builtin_mean([lst])
-        variance = 0.0
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("stdev: all elements must be numbers")
-            variance += (v - m) ** 2
-        variance /= len(lst)
-        return math.sqrt(variance)
-
-    def _builtin_variance(self, args):
-        self._expect_args('variance', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("variance expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("variance: empty list")
-        m = self._builtin_mean([lst])
-        total = 0.0
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("variance: all elements must be numbers")
-            total += (v - m) ** 2
-        return total / len(lst)
-
-    def _builtin_mode(self, args):
-        self._expect_args('mode', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("mode expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("mode: empty list")
-        counts = {}
-        order = []
-        for v in lst:
-            key = v
-            if key not in counts:
-                counts[key] = 0
-                order.append(key)
-            counts[key] += 1
-        best = order[0]
-        best_count = counts[best]
-        for k in order[1:]:
-            if counts[k] > best_count:
-                best = k
-                best_count = counts[k]
-        return best
-
-    def _builtin_percentile(self, args):
-        self._expect_args('percentile', args, 2)
-        lst = args[0]
-        p = args[1]
-        if not isinstance(lst, list):
-            raise RuntimeError("percentile expects a list as first argument")
-        if not isinstance(p, (int, float)):
-            raise RuntimeError("percentile expects a number as second argument")
-        if p < 0 or p > 100:
-            raise RuntimeError("percentile: p must be between 0 and 100")
-        if len(lst) == 0:
-            raise RuntimeError("percentile: empty list")
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("percentile: all elements must be numbers")
-        s = sorted(lst)
-        if p == 0:
-            return float(s[0])
-        if p == 100:
-            return float(s[-1])
-        k = (p / 100.0) * (len(s) - 1)
-        f = int(k)
-        c = f + 1
-        if c >= len(s):
-            return float(s[f])
-        d = k - f
-        return float(s[f]) + d * (float(s[c]) - float(s[f]))
-
-    def _builtin_clamp(self, args):
-        self._expect_args('clamp', args, 3)
-        val, lo, hi = args[0], args[1], args[2]
-        for v in (val, lo, hi):
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("clamp: all arguments must be numbers")
-        if lo > hi:
-            raise RuntimeError("clamp: lo must be <= hi")
-        if val < lo:
-            return float(lo)
-        if val > hi:
-            return float(hi)
-        return float(val)
-
-    def _builtin_lerp(self, args):
-        self._expect_args('lerp', args, 3)
-        a, b, t = args[0], args[1], args[2]
-        for v in (a, b, t):
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("lerp: all arguments must be numbers")
-        return float(a) + (float(b) - float(a)) * float(t)
-
-    def _builtin_remap(self, args):
-        self._expect_args('remap', args, 5)
-        val, in_lo, in_hi, out_lo, out_hi = args
-        for v in args:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("remap: all arguments must be numbers")
-        if in_lo == in_hi:
-            raise RuntimeError("remap: input range must not be zero-width")
-        t = (val - in_lo) / (in_hi - in_lo)
-        return float(out_lo) + t * (float(out_hi) - float(out_lo))
 
     # --- Regex built-ins ---
 
