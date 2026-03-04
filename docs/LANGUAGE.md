@@ -24,6 +24,13 @@
 - [Error Handling](#error-handling)
 - [Assertions](#assertions)
 - [Built-in Functions](#built-in-functions)
+  - [Collection Functions](#collection-functions)
+  - [Statistics Functions](#statistics-functions)
+  - [Date/Time Functions](#datetime-functions)
+  - [JSON Functions](#json-functions)
+  - [Regex Functions](#regex-functions)
+  - [File I/O Functions](#file-io-functions)
+  - [Encoding & Hashing Functions](#encoding--hashing-functions)
 - [Grammar (EBNF)](#grammar-ebnf)
 
 ---
@@ -693,6 +700,125 @@ catch err
 | `ceil`           | `ceil n`              | Round up to integer                    |
 | `sqrt`           | `sqrt n`              | Square root                            |
 | `power`          | `power base exp`      | Exponentiation                         |
+| `log`            | `log n` / `log n base`| Natural log, or log with custom base   |
+| `pi`             | `pi`                  | The constant π (3.14159...)            |
+| `euler`          | `euler`               | Euler's number *e* (2.71828...)        |
+| `min`            | `min a b` / `min list`| Smaller of two values, or list minimum |
+| `max`            | `max a b` / `max list`| Larger of two values, or list maximum  |
+| `clamp`          | `clamp n lo hi`       | Clamp number to [lo, hi] range         |
+| `lerp`           | `lerp a b t`          | Linear interpolation: a + (b-a) × t   |
+| `remap`          | `remap n a1 a2 b1 b2` | Remap n from [a1,a2] to [b1,b2]      |
+| `random`         | `random min max`      | Random float between min and max       |
+| `random_int`     | `random_int min max`  | Random integer between min and max     |
+
+### String Functions (continued)
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `char_code`      | `char_code str`                 | Unicode code point of first character  |
+| `from_char_code` | `from_char_code n`              | Create character from Unicode code point|
+| `pad_left`       | `pad_left str width [fill]`     | Left-pad string to width               |
+| `pad_right`      | `pad_right str width [fill]`    | Right-pad string to width              |
+| `repeat`         | `repeat str n`                  | Repeat string n times                  |
+
+### Collection Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `map`            | `map fn list`                   | Apply function to each element, return new list |
+| `filter`         | `filter fn list`                | Keep elements where function returns true |
+| `reduce`         | `reduce fn list initial`        | Fold list with binary function         |
+| `each`           | `each fn list`                  | Apply function to each element (side effects) |
+| `find`           | `find fn list`                  | First element where fn returns true, or null |
+| `find_index`     | `find_index fn list`            | Index of first match, or -1            |
+| `all`            | `all list`                      | True if all elements are truthy        |
+| `any`            | `any list`                      | True if any element is truthy          |
+| `count`          | `count list value`              | Number of occurrences of value in list |
+| `sum`            | `sum list`                      | Sum of all numeric elements            |
+| `unique`         | `unique list`                   | Remove duplicates, preserving order    |
+| `flatten`        | `flatten list`                  | Flatten nested lists one level deep    |
+| `chunk`          | `chunk list size`               | Split list into sub-lists of given size|
+| `zip`            | `zip list1 list2 ...`           | Pair elements by index into sub-lists  |
+| `enumerate`      | `enumerate list`                | List of [index, value] pairs           |
+| `slice`          | `slice list start end`          | Sub-list from start to end (exclusive) |
+| `has_key`        | `has_key map key`               | Check if map contains a key            |
+| `keys`           | `keys map`                      | List of keys from a map                |
+| `values`         | `values map`                    | List of values from a map              |
+
+### Statistics Functions
+
+| Function          | Syntax                | Description                            |
+|------------------|-----------------------|----------------------------------------|
+| `mean`           | `mean list`           | Arithmetic mean of numeric list        |
+| `median`         | `median list`         | Median value of numeric list           |
+| `mode`           | `mode list`           | Most frequent value in list            |
+| `stdev`          | `stdev list`          | Standard deviation of numeric list     |
+| `variance`       | `variance list`       | Variance of numeric list               |
+| `percentile`     | `percentile list p`   | p-th percentile (0–100) of numeric list|
+
+### Date/Time Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `now`            | `now`                           | Current date/time as ISO 8601 string   |
+| `timestamp`      | `timestamp`                     | Current Unix timestamp as float        |
+| `date_format`    | `date_format iso fmt`           | Format a date (%Y, %m, %d, %H, %M, %S)|
+| `date_part`      | `date_part iso part`            | Extract component (year, month, day, hour, minute, second, weekday) |
+| `date_add`       | `date_add iso amount unit`      | Add/subtract time (days, hours, minutes, seconds) |
+| `date_diff`      | `date_diff iso_a iso_b unit`    | Difference (a − b) in given unit       |
+| `date_compare`   | `date_compare iso_a iso_b`      | -1 if a < b, 0 if equal, 1 if a > b   |
+| `date_range`     | `date_range start end step unit`| Generate list of ISO strings           |
+
+### JSON Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `json_parse`     | `json_parse str`                | Parse JSON string into map/list/value  |
+| `json_stringify` | `json_stringify val`            | Convert value to compact JSON string   |
+| `json_pretty`    | `json_pretty val`               | Convert value to pretty-printed JSON   |
+
+### Regex Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `regex_match`    | `regex_match pattern str`       | True if entire string matches pattern  |
+| `regex_find`     | `regex_find pattern str`        | Map with match, start, end, groups (or null) |
+| `regex_find_all` | `regex_find_all pattern str`    | List of all matches                    |
+| `regex_replace`  | `regex_replace pat repl str`    | Replace matches with replacement       |
+| `regex_split`    | `regex_split pattern str`       | Split string by pattern matches        |
+
+### File I/O Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `read_file`      | `read_file path`                | Read entire file as string             |
+| `read_lines`     | `read_lines path`               | Read file as list of lines             |
+| `write_file`     | `write_file path content`       | Write content to file (creates/overwrites) |
+| `append_file`    | `append_file path content`      | Append content to file                 |
+| `file_exists`    | `file_exists path`              | True if file exists                    |
+
+### Encoding & Hashing Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `base64_encode`  | `base64_encode str`             | Base64-encode a string                 |
+| `base64_decode`  | `base64_decode str`             | Decode a Base64 string                 |
+| `hex_encode`     | `hex_encode str`                | Hex-encode a string                    |
+| `hex_decode`     | `hex_decode str`                | Decode a hex string                    |
+| `url_encode`     | `url_encode str`                | Percent-encode a string for URLs       |
+| `url_decode`     | `url_decode str`                | Decode a percent-encoded string        |
+| `md5`            | `md5 str`                       | MD5 hex digest                         |
+| `sha1`           | `sha1 str`                      | SHA-1 hex digest                       |
+| `sha256`         | `sha256 str`                    | SHA-256 hex digest                     |
+| `crc32`          | `crc32 str`                     | CRC-32 checksum as integer             |
+
+### Miscellaneous Functions
+
+| Function          | Syntax                          | Description                            |
+|------------------|---------------------------------|----------------------------------------|
+| `sleep`          | `sleep seconds`                 | Pause execution for given seconds      |
+| `random_choice`  | `random_choice list`            | Pick a random element from a list      |
+| `random_shuffle` | `random_shuffle list`           | Return new list with shuffled elements |
 
 ### Utility Functions
 
