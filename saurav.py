@@ -3116,12 +3116,18 @@ class Interpreter:
                 if matched:
                     if case.guard:
                         if case.binding_name:
+                            # Save previous value so we can restore it if guard fails
+                            _had_prev = case.binding_name in self.variables
+                            _prev_val = self.variables.get(case.binding_name)
                             self.variables[case.binding_name] = value
                         if self._is_truthy(self.evaluate(case.guard)):
                             self.execute_body(case.body)
                             return
                         if case.binding_name:
-                            if case.binding_name in self.variables:
+                            # Guard failed — restore previous variable state
+                            if _had_prev:
+                                self.variables[case.binding_name] = _prev_val
+                            elif case.binding_name in self.variables:
                                 del self.variables[case.binding_name]
                     else:
                         if case.binding_name:

@@ -293,3 +293,26 @@ def test_binding_with_guard_used():
         y = x + 1
         print y'''
     assert run(code) == "26"
+
+
+def test_guard_fail_preserves_existing_variable():
+    """Guard failure must not delete a variable that existed before match."""
+    code = '''x = 42
+value = 10
+match value
+  case x if x > 100
+    print "big"
+  case _
+    print x'''
+    assert run(code) == "42"
+
+
+def test_guard_fail_cleans_up_new_binding():
+    """Guard failure should not leak the binding when it was not previously defined."""
+    code = '''value = 5
+match value
+  case n if n > 100
+    print "big"
+  case _
+    print "small"'''
+    assert run(code) == "small"
