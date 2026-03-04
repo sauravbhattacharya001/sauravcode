@@ -3207,6 +3207,13 @@ class Interpreter:
             # Collect all variables defined by the module
             module_vars = dict(self.variables)
 
+            # Attach the module scope as a closure on each function defined
+            # in this module, so they can reference module-level variables
+            # at call time even after the caller's scope is restored (#26).
+            for fname, func in module_functions.items():
+                if fname not in saved_funcs or func is not saved_funcs[fname]:
+                    func.closure_scope = dict(module_vars)
+
             # Restore caller's state
             self.variables = saved_vars
             self.functions = saved_funcs
@@ -3258,6 +3265,14 @@ class Interpreter:
 
             result = None
             with self._scoped_env():
+                # Inject closure scope from imported modules (#26).
+                # Variables from the defining module are available but
+                # won't overwrite the caller's existing variables.
+                if hasattr(func, 'closure_scope') and func.closure_scope:
+                    for cname, cval in func.closure_scope.items():
+                        if cname not in self.variables:
+                            self.variables[cname] = cval
+
                 for param, arg in zip(func.params, call_node.arguments):
                     evaluated_arg = self.evaluate(arg)
                     self.variables[param] = evaluated_arg
