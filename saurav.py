@@ -1814,18 +1814,17 @@ class Interpreter:
                     f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
                     f"in function '{func_name}'"
                 )
-            saved_env = self.variables.copy()
-            for param, val in zip(func.params, evaluated_args):
-                self.variables[param] = val
             result = None
-            try:
-                for stmt in func.body:
-                    self.interpret(stmt)
-            except ReturnSignal as ret:
-                result = ret.value
-            finally:
-                self._call_depth -= 1
-                self.variables = saved_env
+            with self._scoped_env():
+                for param, val in zip(func.params, evaluated_args):
+                    self.variables[param] = val
+                try:
+                    for stmt in func.body:
+                        self.interpret(stmt)
+                except ReturnSignal as ret:
+                    result = ret.value
+                finally:
+                    self._call_depth -= 1
             return result
         if func_name in self.builtins:
             return self.builtins[func_name](evaluated_args)
@@ -2854,6 +2853,34 @@ class Interpreter:
             return {str(k): self._srv_to_json(v) for k, v in value.items()}
         return str(value)
 
+    def _guarded_repeat(self, seq, count):
+        """Guard string/list repetition against memory exhaustion."""
+        kind = "String" if isinstance(seq, str) else "List"
+        unit = "characters" if isinstance(seq, str) else "elements"
+        if count > 0 and len(seq) * count > MAX_ALLOC_SIZE:
+            raise RuntimeError(
+                f"{kind} repetition would create {len(seq) * count:,} {unit}, "
+                f"exceeding limit of {MAX_ALLOC_SIZE:,}")
+        return seq * count
+
+    def _scoped_env(self):
+        """Context manager: saves self.variables on entry, restores on exit.
+
+        Eliminates the repeated saved_env = self.variables.copy() / restore
+        pattern used across execute_function, _call_lambda, _eval_pipe, etc.
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _scope():
+            saved = self.variables.copy()
+            try:
+                yield
+            finally:
+                self.variables = saved
+
+        return _scope()
+
     def _expect_args(self, name, args, count):
         if len(args) != count:
             raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
@@ -3229,21 +3256,19 @@ class Interpreter:
                     f"in function '{call_node.name}'"
                 )
 
-            saved_env = self.variables.copy()
-            for param, arg in zip(func.params, call_node.arguments):
-                evaluated_arg = self.evaluate(arg)
-                self.variables[param] = evaluated_arg
-                debug(f"Set parameter '{param}' to {evaluated_arg}")
-
             result = None
-            try:
-                for stmt in func.body:
-                    self.interpret(stmt)
-            except ReturnSignal as ret:
-                result = ret.value
-            finally:
-                self._call_depth -= 1
-                self.variables = saved_env
+            with self._scoped_env():
+                for param, arg in zip(func.params, call_node.arguments):
+                    evaluated_arg = self.evaluate(arg)
+                    self.variables[param] = evaluated_arg
+                    debug(f"Set parameter '{param}' to {evaluated_arg}")
+                try:
+                    for stmt in func.body:
+                        self.interpret(stmt)
+                except ReturnSignal as ret:
+                    result = ret.value
+                finally:
+                    self._call_depth -= 1
             debug(f"Function {call_node.name} returned {result}\n")
             return result
 
@@ -3301,34 +3326,10 @@ class Interpreter:
                 return left - right
             elif node.operator == '*':
                 # Guard against memory exhaustion via string/list repetition
-                if isinstance(left, str) and isinstance(right, (int, float)):
-                    count = int(right)
-                    if count > 0 and len(left) * count > MAX_ALLOC_SIZE:
-                        raise RuntimeError(
-                            f"String repetition would create {len(left) * count:,} characters, "
-                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
-                    return left * count
-                elif isinstance(left, list) and isinstance(right, (int, float)):
-                    count = int(right)
-                    if count > 0 and len(left) * count > MAX_ALLOC_SIZE:
-                        raise RuntimeError(
-                            f"List repetition would create {len(left) * count:,} elements, "
-                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
-                    return left * count
-                elif isinstance(right, str) and isinstance(left, (int, float)):
-                    count = int(left)
-                    if count > 0 and len(right) * count > MAX_ALLOC_SIZE:
-                        raise RuntimeError(
-                            f"String repetition would create {len(right) * count:,} characters, "
-                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
-                    return right * count
-                elif isinstance(right, list) and isinstance(left, (int, float)):
-                    count = int(left)
-                    if count > 0 and len(right) * count > MAX_ALLOC_SIZE:
-                        raise RuntimeError(
-                            f"List repetition would create {len(right) * count:,} elements, "
-                            f"exceeding limit of {MAX_ALLOC_SIZE:,}")
-                    return right * count
+                if isinstance(left, (str, list)) and isinstance(right, (int, float)):
+                    return self._guarded_repeat(left, int(right))
+                elif isinstance(right, (str, list)) and isinstance(left, (int, float)):
+                    return self._guarded_repeat(right, int(left))
                 return left * right
             elif node.operator == '/':
                 if right == 0:
@@ -3513,15 +3514,11 @@ class Interpreter:
                 f"got {len(args)}"
             )
         # Set up lambda scope: closure + params
-        saved_env = self.variables.copy()
-        self.variables = lam.closure.copy()
-        for param, val in zip(lam.params, args):
-            self.variables[param] = val
-        try:
-            result = self.evaluate(lam.body_expr)
-        finally:
-            self.variables = saved_env
-        return result
+        with self._scoped_env():
+            self.variables = lam.closure.copy()
+            for param, val in zip(lam.params, args):
+                self.variables[param] = val
+            return self.evaluate(lam.body_expr)
 
     def _eval_ternary(self, node):
         condition = self.evaluate(node.condition)
@@ -3556,18 +3553,17 @@ class Interpreter:
                     self._call_depth -= 1
                     raise RuntimeError(
                         f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded")
-                saved_env = self.variables.copy()
-                for param, val in zip(func.params, evaluated_args):
-                    self.variables[param] = val
                 result = None
-                try:
-                    for stmt in func.body:
-                        self.interpret(stmt)
-                except ReturnSignal as ret:
-                    result = ret.value
-                finally:
-                    self._call_depth -= 1
-                    self.variables = saved_env
+                with self._scoped_env():
+                    for param, val in zip(func.params, evaluated_args):
+                        self.variables[param] = val
+                    try:
+                        for stmt in func.body:
+                            self.interpret(stmt)
+                    except ReturnSignal as ret:
+                        result = ret.value
+                    finally:
+                        self._call_depth -= 1
                 return result
             if func_name in self.builtins:
                 return self.builtins[func_name](evaluated_args)
@@ -3590,18 +3586,17 @@ class Interpreter:
                     self._call_depth -= 1
                     raise RuntimeError(
                         f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded")
-                saved_env = self.variables.copy()
-                for param, val in zip(func.params, [piped_value]):
-                    self.variables[param] = val
                 result = None
-                try:
-                    for stmt in func.body:
-                        self.interpret(stmt)
-                except ReturnSignal as ret:
-                    result = ret.value
-                finally:
-                    self._call_depth -= 1
-                    self.variables = saved_env
+                with self._scoped_env():
+                    for param, val in zip(func.params, [piped_value]):
+                        self.variables[param] = val
+                    try:
+                        for stmt in func.body:
+                            self.interpret(stmt)
+                    except ReturnSignal as ret:
+                        result = ret.value
+                    finally:
+                        self._call_depth -= 1
                 return result
             # Check builtins
             if func_name in self.builtins:
