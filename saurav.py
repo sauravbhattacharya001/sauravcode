@@ -59,7 +59,8 @@ tok_regex = re.compile('|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_sp
 _indent_re = re.compile(r'[ \t]*')
 
 def tokenize(code):
-    debug("Tokenizing code...")
+    if DEBUG:
+        debug("Tokenizing code...")
     tokens = []
     line_num = 1
     line_start = 0
@@ -68,7 +69,8 @@ def tokenize(code):
     for match in tok_regex.finditer(code):
         typ = match.lastgroup
         value = match.group(typ)
-        debug(f"Token: {typ}, Value: {repr(value)}")
+        if DEBUG:
+            debug(f"Token: {typ}, Value: {repr(value)}")
 
         if typ == 'NEWLINE':
             line_num += 1
@@ -80,15 +82,18 @@ def tokenize(code):
             if indent_match:
                 indent_str = indent_match.group(0)
                 indent = len(indent_str.replace('\t', '    '))  # Normalize tabs to spaces
-                debug(f"Detected indentation: {indent} spaces")
+                if DEBUG:
+                    debug(f"Detected indentation: {indent} spaces")
                 if indent > indent_levels[-1]:
                     indent_levels.append(indent)
                     tokens.append(('INDENT', indent, line_num, line_start))
-                    debug(f"Added INDENT token: {indent}")
+                    if DEBUG:
+                        debug(f"Added INDENT token: {indent}")
                 while indent < indent_levels[-1]:
                     popped_indent = indent_levels.pop()
                     tokens.append(('DEDENT', popped_indent, line_num, line_start))
-                    debug(f"Added DEDENT token: {popped_indent}")
+                    if DEBUG:
+                        debug(f"Added DEDENT token: {popped_indent}")
     
         elif typ in ('SKIP', 'COMMENT'):
             continue
@@ -97,15 +102,18 @@ def tokenize(code):
         else:
             column = match.start() - line_start
             tokens.append((typ, value, line_num, column))
-            debug(f"Added token: ({typ}, {value}, {line_num}, {column})")
+            if DEBUG:
+                debug(f"Added token: ({typ}, {value}, {line_num}, {column})")
     
     # Final dedents at end of file
     while len(indent_levels) > 1:
         popped_indent = indent_levels.pop()
         tokens.append(('DEDENT', popped_indent, line_num, line_start))
-        debug(f"Added final DEDENT token: {popped_indent}")
+        if DEBUG:
+            debug(f"Added final DEDENT token: {popped_indent}")
     
-    debug("Finished tokenizing.\n")
+    if DEBUG:
+        debug("Finished tokenizing.\n")
     return tokens
 
 # AST Node Classes with __repr__ for Debugging
@@ -526,7 +534,8 @@ class Parser:
         self.pos = 0
 
     def parse(self):
-        debug("Parsing tokens into AST...")
+        if DEBUG:
+            debug("Parsing tokens into AST...")
         statements = []
         while self.pos < len(self.tokens):
             self.skip_newlines()
@@ -534,12 +543,14 @@ class Parser:
                 statement = self.parse_statement()
                 if statement:  # Only add valid statements
                     statements.append(statement)
-        debug("Finished parsing.\n")
+        if DEBUG:
+            debug("Finished parsing.\n")
         return statements
 
     def parse_statement(self):
         token_type, value, *_ = self.peek()
-        debug(f"Parsing statement: token_type={token_type}, value={repr(value)}")
+        if DEBUG:
+            debug(f"Parsing statement: token_type={token_type}, value={repr(value)}")
 
         if token_type == 'KEYWORD' and value == 'function':
             return self.parse_function()
@@ -582,7 +593,8 @@ class Parser:
             if self.peek()[0] == 'ASSIGN':
                 self.expect('ASSIGN')
                 expression = self.parse_full_expression()
-                debug(f"Parsed assignment: {name} = {expression}")
+                if DEBUG:
+                    debug(f"Parsed assignment: {name} = {expression}")
                 return AssignmentNode(name, expression)
             elif self.peek()[0] == 'LBRACKET':
                 # list[index] or map[key] access — parse index
@@ -600,7 +612,8 @@ class Parser:
             self.advance()
             return None
         elif token_type in {'INDENT', 'DEDENT'}:
-            debug(f"Skipping unexpected {token_type} with value={value}")
+            if DEBUG:
+                debug(f"Skipping unexpected {token_type} with value={value}")
             self.advance()
             return None
         # Skip type annotations
@@ -611,7 +624,8 @@ class Parser:
             raise SyntaxError(f"Unknown top-level statement: token_type={token_type}, value={repr(value)}")
 
     def parse_function(self):
-        debug("Parsing function definition...")
+        if DEBUG:
+            debug("Parsing function definition...")
         self.expect('KEYWORD', 'function')
         name = self.expect('IDENT')[1]
         params = []
@@ -625,7 +639,8 @@ class Parser:
         self.expect('DEDENT')
 
         function_node = FunctionNode(name, params, body)
-        debug(f"Created {function_node}\n")
+        if DEBUG:
+            debug(f"Created {function_node}\n")
         return function_node
 
     def parse_lambda(self):
@@ -641,7 +656,8 @@ class Parser:
             map (lambda x -> x * 2) [1, 2, 3]
             let result = (lambda x y -> x + y) 3 4  -- not yet supported for direct call
         """
-        debug("Parsing lambda expression...")
+        if DEBUG:
+            debug("Parsing lambda expression...")
         self.expect('KEYWORD', 'lambda')
         params = []
 
@@ -660,11 +676,13 @@ class Parser:
         body_expr = self.parse_logical_or()
 
         lambda_node = LambdaNode(params, body_expr)
-        debug(f"Created {lambda_node}\n")
+        if DEBUG:
+            debug(f"Created {lambda_node}\n")
         return lambda_node
 
     def parse_if(self):
-        debug("Parsing if statement...")
+        if DEBUG:
+            debug("Parsing if statement...")
         self.expect('KEYWORD', 'if')
         condition = self.parse_full_expression()
         self.expect('NEWLINE')
@@ -693,7 +711,8 @@ class Parser:
         return IfNode(condition, body, elif_chains, else_body)
 
     def parse_while(self):
-        debug("Parsing while statement...")
+        if DEBUG:
+            debug("Parsing while statement...")
         self.expect('KEYWORD', 'while')
         condition = self.parse_full_expression()
         self.expect('NEWLINE')
@@ -703,7 +722,8 @@ class Parser:
         return WhileNode(condition, body)
 
     def parse_for(self):
-        debug("Parsing for statement...")
+        if DEBUG:
+            debug("Parsing for statement...")
         self.expect('KEYWORD', 'for')
         var = self.expect('IDENT')[1]
         # Check for for-each syntax: for item in collection
@@ -732,7 +752,8 @@ class Parser:
         catch error_var
             ... handler ...
         """
-        debug("Parsing try/catch statement...")
+        if DEBUG:
+            debug("Parsing try/catch statement...")
         self.expect('KEYWORD', 'try')
         self.expect('NEWLINE')
         self.expect('INDENT')
@@ -750,7 +771,8 @@ class Parser:
 
     def parse_throw(self):
         """Parse throw statement: throw expression"""
-        debug("Parsing throw statement...")
+        if DEBUG:
+            debug("Parsing throw statement...")
         self.expect('KEYWORD', 'throw')
         expression = self.parse_full_expression()
         return ThrowNode(expression)
@@ -762,7 +784,8 @@ class Parser:
             assert x == 5
             assert len(items) > 0 "list must not be empty"
         """
-        debug("Parsing assert statement...")
+        if DEBUG:
+            debug("Parsing assert statement...")
         self.expect('KEYWORD', 'assert')
         condition = self.parse_full_expression()
         # Check for optional string message
@@ -787,7 +810,8 @@ class Parser:
             case _
                 default_body
         """
-        debug("Parsing match statement...")
+        if DEBUG:
+            debug("Parsing match statement...")
         self.expect('KEYWORD', 'match')
         expression = self.parse_full_expression()
         self.expect('NEWLINE')
@@ -850,7 +874,8 @@ class Parser:
             GREEN
             BLUE
         """
-        debug("Parsing enum definition...")
+        if DEBUG:
+            debug("Parsing enum definition...")
         self.expect('KEYWORD', 'enum')
         name = self.expect('IDENT')[1]
         self.expect('NEWLINE')
@@ -873,12 +898,14 @@ class Parser:
             raise SyntaxError(f"Enum '{name}' must have at least one variant")
 
         self.expect('DEDENT')
-        debug(f"Parsed enum: {name} with variants {variants}")
+        if DEBUG:
+            debug(f"Parsed enum: {name} with variants {variants}")
         return EnumNode(name, variants)
 
     def parse_import(self):
         """Parse import statement: import "module_name" """
-        debug("Parsing import statement...")
+        if DEBUG:
+            debug("Parsing import statement...")
         self.expect('KEYWORD', 'import')
         # Accept a string literal as the module path
         token_type, value, *_ = self.peek()
@@ -901,7 +928,8 @@ class Parser:
         return AppendNode(list_name, value)
 
     def parse_block(self):
-        debug("Parsing block...")
+        if DEBUG:
+            debug("Parsing block...")
         statements = []
         while self.peek()[0] != 'DEDENT' and self.peek()[0] != 'EOF':
             statement = self.parse_statement()
@@ -909,11 +937,13 @@ class Parser:
                 statements.append(statement)
             while self.peek()[0] == 'NEWLINE':
                 self.advance()
-        debug(f"Parsed block: {statements}\n")
+        if DEBUG:
+            debug(f"Parsed block: {statements}\n")
         return statements
 
     def parse_function_call(self, name):
-        debug(f"Parsing function call for: {name}")
+        if DEBUG:
+            debug(f"Parsing function call for: {name}")
         arguments = []
         while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN', 'LBRACKET', 'LBRACE', 'KEYWORD'):
             pk = self.peek()
@@ -924,7 +954,8 @@ class Parser:
             else:
                 arguments.append(self.parse_atom())
         function_call_node = FunctionCallNode(name, arguments)
-        debug(f"Created {function_call_node}\n")
+        if DEBUG:
+            debug(f"Created {function_call_node}\n")
         return function_call_node
 
     # Expression parsing with proper precedence:
@@ -989,13 +1020,15 @@ class Parser:
         return left
 
     def parse_expression(self):
-        debug("Parsing expression...")
+        if DEBUG:
+            debug("Parsing expression...")
         left = self.parse_term_mul()
         while self.peek()[0] == 'OP' and self.peek()[1] in ('+', '-'):
             op = self.expect('OP')[1]
             right = self.parse_term_mul()
             left = BinaryOpNode(left, op, right)
-        debug(f"Parsed expression: {left}\n")
+        if DEBUG:
+            debug(f"Parsed expression: {left}\n")
         return left
 
     def parse_term_mul(self):
@@ -1049,22 +1082,26 @@ class Parser:
 
     def parse_atom(self):
         token_type, value, *_ = self.peek()
-        debug(f"Parsing atom: token_type={token_type}, value={repr(value)}")
+        if DEBUG:
+            debug(f"Parsing atom: token_type={token_type}, value={repr(value)}")
 
         if token_type == 'NUMBER':
             self.advance()
             number_node = NumberNode(float(value))
-            debug(f"parse_atom returning NumberNode: {number_node}")
+            if DEBUG:
+                debug(f"parse_atom returning NumberNode: {number_node}")
             return number_node
         elif token_type == 'STRING':
             self.advance()
             string_node = StringNode(value[1:-1])
-            debug(f"parse_atom returning StringNode: {string_node}")
+            if DEBUG:
+                debug(f"parse_atom returning StringNode: {string_node}")
             return string_node
         elif token_type == 'FSTRING':
             self.advance()
             fstring_node = self.parse_fstring(value)
-            debug(f"parse_atom returning FStringNode: {fstring_node}")
+            if DEBUG:
+                debug(f"parse_atom returning FStringNode: {fstring_node}")
             return fstring_node
         elif token_type == 'KEYWORD' and value == 'true':
             self.advance()
@@ -1106,11 +1143,13 @@ class Parser:
             # Check if next token could be a function argument
             if pk[0] in ('NUMBER', 'STRING', 'FSTRING', 'LPAREN'):
                 func_call = self.parse_function_call(value)
-                debug(f"parse_atom returning FunctionCallNode: {func_call}")
+                if DEBUG:
+                    debug(f"parse_atom returning FunctionCallNode: {func_call}")
                 return func_call
             elif pk[0] == 'IDENT':
                 func_call = self.parse_function_call(value)
-                debug(f"parse_atom returning FunctionCallNode: {func_call}")
+                if DEBUG:
+                    debug(f"parse_atom returning FunctionCallNode: {func_call}")
                 return func_call
             elif pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len'):
                 func_call = self.parse_function_call(value)
@@ -1123,7 +1162,8 @@ class Parser:
                 if value in self.ZERO_ARG_BUILTINS:
                     return FunctionCallNode(value, [])
                 ident_node = IdentifierNode(value)
-                debug(f"parse_atom returning IdentifierNode: {ident_node}")
+                if DEBUG:
+                    debug(f"parse_atom returning IdentifierNode: {ident_node}")
                 return ident_node
         else:
             raise SyntaxError(f'Unexpected token: {value}')
@@ -1262,12 +1302,14 @@ class Parser:
     def advance(self):
         token = self.tokens[self.pos]
         self.pos += 1
-        debug(f"Advanced to token: {token}")
+        if DEBUG:
+            debug(f"Advanced to token: {token}")
         return token
 
     def expect(self, token_type, value=None):
         actual_type, actual_value, *_ = self.advance()
-        debug(f"Expecting token: {token_type} {repr(value)}. Got: {actual_type} {repr(actual_value)}")
+        if DEBUG:
+            debug(f"Expecting token: {token_type} {repr(value)}. Got: {actual_type} {repr(actual_value)}")
         if actual_type != token_type or (value and actual_value != value):
             raise SyntaxError(f'Expected {token_type} {repr(value)}, got {actual_type} {repr(actual_value)}')
         return actual_type, actual_value
@@ -2886,7 +2928,8 @@ class Interpreter:
             raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
 
     def interpret(self, ast):
-        debug("Interpreting AST...")
+        if DEBUG:
+            debug("Interpreting AST...")
         handler = self._interpret_dispatch.get(type(ast))
         if handler is not None:
             return handler(ast)
@@ -2896,12 +2939,14 @@ class Interpreter:
     # ── interpret dispatch handlers ──────────────────────────
 
     def _interp_function(self, ast):
-        debug(f"Storing function: {ast.name}\n")
+        if DEBUG:
+            debug(f"Storing function: {ast.name}\n")
         self.functions[ast.name] = ast
 
     def _interp_return(self, ast):
         result = self.evaluate(ast.expression)
-        debug(f"ReturnNode evaluated with result: {result}\n")
+        if DEBUG:
+            debug(f"ReturnNode evaluated with result: {result}\n")
         raise ReturnSignal(result)
 
     def _interp_print(self, ast):
@@ -2917,16 +2962,19 @@ class Interpreter:
             print(_format_map(value))
         else:
             print(value)
-        debug(f"Printed: {value}\n")
+        if DEBUG:
+            debug(f"Printed: {value}\n")
 
     def _interp_function_call(self, ast):
-        debug(f"Interpreting function call: {ast.name}")
+        if DEBUG:
+            debug(f"Interpreting function call: {ast.name}")
         return self.execute_function(ast)
 
     def _interp_assignment(self, ast):
         value = self.evaluate(ast.expression)
         self.variables[ast.name] = value
-        debug(f"Assigned {value} to {ast.name}\n")
+        if DEBUG:
+            debug(f"Assigned {value} to {ast.name}\n")
 
     def _interp_indexed_assignment(self, ast):
         collection = self.variables.get(ast.name)
@@ -2941,7 +2989,8 @@ class Interpreter:
             collection[idx_or_key] = value
         else:
             raise RuntimeError(f"'{ast.name}' is not a list or map")
-        debug(f"Indexed assignment: {ast.name}[{idx_or_key}] = {value}\n")
+        if DEBUG:
+            debug(f"Indexed assignment: {ast.name}[{idx_or_key}] = {value}\n")
 
     def _interp_append(self, ast):
         lst = self.variables.get(ast.list_name)
@@ -2956,7 +3005,8 @@ class Interpreter:
         for i, variant in enumerate(ast.variants):
             enum_map[variant] = float(i)
         self.enums[ast.name] = enum_map
-        debug(f"Registered enum: {ast.name} = {enum_map}")
+        if DEBUG:
+            debug(f"Registered enum: {ast.name} = {enum_map}")
 
     def _interp_break(self, ast):
         raise BreakSignal()
@@ -3173,7 +3223,8 @@ class Interpreter:
         
         # Circular import guard
         if full_path in self._imported_modules:
-            debug(f"Skipping already-imported module: {full_path}")
+            if DEBUG:
+                debug(f"Skipping already-imported module: {full_path}")
             return
         
         if not os.path.isfile(full_path):
@@ -3235,7 +3286,8 @@ class Interpreter:
             # Restore source dir
             self._source_dir = prev_source_dir
         
-        debug(f"Imported module: {node.module_path}")
+        if DEBUG:
+            debug(f"Imported module: {node.module_path}")
 
     def execute_body(self, body):
         """Execute a list of statements. Propagates ReturnSignal."""
@@ -3258,7 +3310,8 @@ class Interpreter:
         # Check user-defined functions first (allows overriding builtins)
         func = self.functions.get(call_node.name)
         if func:
-            debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
+            if DEBUG:
+                debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
 
             # Guard against excessive recursion (DoS protection)
             self._call_depth += 1
@@ -3282,7 +3335,8 @@ class Interpreter:
                 for param, arg in zip(func.params, call_node.arguments):
                     evaluated_arg = self.evaluate(arg)
                     self.variables[param] = evaluated_arg
-                    debug(f"Set parameter '{param}' to {evaluated_arg}")
+                    if DEBUG:
+                        debug(f"Set parameter '{param}' to {evaluated_arg}")
                 try:
                     for stmt in func.body:
                         self.interpret(stmt)
@@ -3290,7 +3344,8 @@ class Interpreter:
                     result = ret.value
                 finally:
                     self._call_depth -= 1
-            debug(f"Function {call_node.name} returned {result}\n")
+            if DEBUG:
+                debug(f"Function {call_node.name} returned {result}\n")
             return result
 
         # Check built-in functions
@@ -3304,7 +3359,8 @@ class Interpreter:
         raise RuntimeError(f"Function {call_node.name} is not defined.")
 
     def evaluate(self, node):
-        debug(f"Evaluating node: {node}")
+        if DEBUG:
+            debug(f"Evaluating node: {node}")
         handler = self._evaluate_dispatch.get(type(node))
         if handler is not None:
             return handler(node)
@@ -3325,13 +3381,16 @@ class Interpreter:
     def _eval_identifier(self, node):
         if node.name in self.variables:
             value = self.variables[node.name]
-            debug(f"Identifier '{node.name}' is a variable with value {value}")
+            if DEBUG:
+                debug(f"Identifier '{node.name}' is a variable with value {value}")
             return value
         elif node.name in self.functions:
-            debug(f"Identifier '{node.name}' is a function name")
+            if DEBUG:
+                debug(f"Identifier '{node.name}' is a function name")
             return node.name
         elif node.name in self.builtins:
-            debug(f"Identifier '{node.name}' is a built-in function")
+            if DEBUG:
+                debug(f"Identifier '{node.name}' is a built-in function")
             return node.name
         else:
             raise RuntimeError(f"Name '{node.name}' is not defined.")
@@ -3339,7 +3398,8 @@ class Interpreter:
     def _eval_binary_op(self, node):
         left = self.evaluate(node.left)
         right = self.evaluate(node.right)
-        debug(f"Performing operation: {left} {node.operator} {right}")
+        if DEBUG:
+            debug(f"Performing operation: {left} {node.operator} {right}")
         try:
             if node.operator == '+':
                 return left + right
@@ -3378,7 +3438,8 @@ class Interpreter:
     def _eval_compare(self, node):
         left = self.evaluate(node.left)
         right = self.evaluate(node.right)
-        debug(f"Comparing: {left} {node.operator} {right}")
+        if DEBUG:
+            debug(f"Comparing: {left} {node.operator} {right}")
         if node.operator == '==':
             return left == right
         elif node.operator == '!=':
@@ -3565,30 +3626,7 @@ class Interpreter:
         if isinstance(func_node, FunctionCallNode):
             evaluated_args = [self.evaluate(arg) for arg in func_node.arguments]
             evaluated_args.append(piped_value)
-            func_name = func_node.name
-            # Check user-defined functions first
-            func = self.functions.get(func_name)
-            if func:
-                self._call_depth += 1
-                if self._call_depth > MAX_RECURSION_DEPTH:
-                    self._call_depth -= 1
-                    raise RuntimeError(
-                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded")
-                result = None
-                with self._scoped_env():
-                    for param, val in zip(func.params, evaluated_args):
-                        self.variables[param] = val
-                    try:
-                        for stmt in func.body:
-                            self.interpret(stmt)
-                    except ReturnSignal as ret:
-                        result = ret.value
-                    finally:
-                        self._call_depth -= 1
-                return result
-            if func_name in self.builtins:
-                return self.builtins[func_name](evaluated_args)
-            raise RuntimeError(f"Function '{func_name}' is not defined.")
+            return self._call_function_with_args(func_node.name, evaluated_args)
         
         # Case 2: Right side is an identifier (function name, no extra args)
         # e.g., "hello" |> upper → upper("hello")
@@ -3599,30 +3637,7 @@ class Interpreter:
                 val = self.variables[func_name]
                 if isinstance(val, LambdaValue):
                     return self._call_lambda(val, [piped_value])
-            # Check user-defined functions
-            func = self.functions.get(func_name)
-            if func:
-                self._call_depth += 1
-                if self._call_depth > MAX_RECURSION_DEPTH:
-                    self._call_depth -= 1
-                    raise RuntimeError(
-                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded")
-                result = None
-                with self._scoped_env():
-                    for param, val in zip(func.params, [piped_value]):
-                        self.variables[param] = val
-                    try:
-                        for stmt in func.body:
-                            self.interpret(stmt)
-                    except ReturnSignal as ret:
-                        result = ret.value
-                    finally:
-                        self._call_depth -= 1
-                return result
-            # Check builtins
-            if func_name in self.builtins:
-                return self.builtins[func_name]([piped_value])
-            raise RuntimeError(f"Function '{func_name}' is not defined.")
+            return self._call_function_with_args(func_name, [piped_value])
         
         # Case 3: Right side is a lambda expression
         # e.g., 5 |> lambda x -> x * 2
@@ -3939,18 +3954,21 @@ def main():
     try:
         with open(filename, 'r') as file:
             code = file.read()
-            debug(f"Read code from {filename}:\n{code}\n")
+            if DEBUG:
+                debug(f"Read code from {filename}:\n{code}\n")
     except Exception as e:
         print(f"Error reading file '{filename}': {e}")
         sys.exit(1)
     
     # Tokenize and parse multiple top-level statements
     tokens = list(tokenize(code))
-    debug(f"\nTokens: {tokens}\n")
+    if DEBUG:
+        debug(f"\nTokens: {tokens}\n")
 
     parser = Parser(tokens)
     ast_nodes = parser.parse()
-    debug(f"\nAST: {ast_nodes}\n")
+    if DEBUG:
+        debug(f"\nAST: {ast_nodes}\n")
 
     # Interpret each top-level AST node
     interpreter = Interpreter()
