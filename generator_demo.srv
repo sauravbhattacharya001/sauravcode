@@ -1,0 +1,71 @@
+# Generator Functions Demo
+# Generators use 'yield' to produce values lazily
+
+# Basic generator — yields a sequence of numbers
+function count_up limit
+    i = 0
+    while i < limit
+        yield i
+        i = i + 1
+
+# Use generator in a for-each loop
+print "Counting to 5:"
+for n in count_up 5
+    print n
+
+# Generator that yields filtered values
+function evens limit
+    for i in range 0 limit
+        if i % 2 == 0
+            yield i
+
+print "Even numbers up to 10:"
+for n in evens 10
+    print n
+
+# Collect generator into a list
+even_list = collect evens 8
+print "Collected evens:"
+print even_list
+
+# Generator that yields squares up to a limit
+function squares limit
+    i = 1
+    while i * i <= limit
+        yield i * i
+        i = i + 1
+
+print "Perfect squares up to 50:"
+for s in squares 50
+    print s
+
+# Fibonacci generator
+function fibonacci limit
+    a = 0
+    b = 1
+    while a < limit
+        yield a
+        temp = a + b
+        a = b
+        b = temp
+
+print "Fibonacci numbers under 100:"
+for f in fibonacci 100
+    print f
+
+# Type checking
+gen = count_up 3
+print type_of gen
+print is_generator gen
+
+# Len of generator (materializes it)
+print len count_up 5
+
+# Generators compose — use one generator's output in another
+function double_items limit
+    for n in count_up limit
+        yield n * 2
+
+print "Doubled:"
+for d in double_items 5
+    print d

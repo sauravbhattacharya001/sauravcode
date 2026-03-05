@@ -48,7 +48,7 @@ token_specification = [
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
     ('DOT',      r'\.'),  # Dot accessor (for enum variants)
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum|break|continue|assert)\b'),  # All keywords
+    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum|break|continue|assert|yield|next)\b'),  # All keywords
     ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
@@ -181,6 +181,14 @@ class ReturnNode(ASTNode):
 
     def __repr__(self):
         return f"ReturnNode(expression={self.expression})"
+
+class YieldNode(ASTNode):
+    """Yield a value from a generator function."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __repr__(self):
+        return f"YieldNode(expression={self.expression})"
 
 class BinaryOpNode(ASTNode):
     def __init__(self, left, operator, right):
@@ -598,6 +606,10 @@ class Parser:
             self.expect('KEYWORD', 'return')
             expression = self.parse_full_expression()
             return ReturnNode(expression)
+        elif token_type == 'KEYWORD' and value == 'yield':
+            self.expect('KEYWORD', 'yield')
+            expression = self.parse_full_expression()
+            return YieldNode(expression)
         elif token_type == 'KEYWORD' and value == 'print':
             self.expect('KEYWORD', 'print')
             expression = self.parse_full_expression()
@@ -1380,6 +1392,133 @@ class ContinueSignal(Exception):
     """Signal to skip to the next iteration of the nearest enclosing loop."""
     pass
 
+class YieldSignal(Exception):
+    """Signal to yield a value from a generator function."""
+    def __init__(self, value):
+        self.value = value
+
+class GeneratorValue:
+    """Runtime representation of a generator — a lazy iterable.
+
+    Created when a function containing ``yield`` is called.
+    Internally runs the function body step-by-step: each call to
+    ``__next__`` resumes execution until the next ``yield`` or the
+    function body ends.
+
+    Implementation uses a background thread that pauses at every
+    ``yield`` via threading events, so the interpreter's existing
+    tree-walking execution model works unchanged.
+    """
+    def __init__(self, interpreter, func_node, args):
+        import threading
+        self.interpreter = interpreter
+        self.func_node = func_node
+        self.args = args
+        self._values = []       # buffered yielded values
+        self._done = False
+        self._error = None
+        self._started = False
+        # Synchronization primitives
+        self._yield_ready = threading.Event()
+        self._resume = threading.Event()
+        self._thread = None
+
+    def _run(self):
+        """Run the generator body in a background thread."""
+        import threading
+        try:
+            # Create a fresh interpreter scope snapshot
+            saved_vars = self.interpreter.variables.copy()
+            saved_funcs = self.interpreter.functions.copy()
+            try:
+                # Set up parameters
+                for param, arg_val in zip(self.func_node.params, self.args):
+                    self.interpreter.variables[param] = arg_val
+
+                # Inject closure scope
+                if hasattr(self.func_node, 'closure_scope') and self.func_node.closure_scope:
+                    for cname, cval in self.func_node.closure_scope.items():
+                        if cname not in self.interpreter.variables:
+                            self.interpreter.variables[cname] = cval
+
+                for stmt in self.func_node.body:
+                    self.interpreter.interpret(stmt)
+            except YieldSignal as ys:
+                # Should not happen here — handled inside interpret
+                pass
+            except ReturnSignal:
+                pass
+            except Exception as e:
+                self._error = e
+        finally:
+            self.interpreter.variables = saved_vars
+            self.interpreter.functions = saved_funcs
+            self._done = True
+            self._yield_ready.set()
+
+    def _ensure_started(self):
+        if not self._started:
+            self._started = True
+            self._collect_all()
+
+    def _collect_all(self):
+        """Eagerly collect all yielded values by executing the function body."""
+        saved_vars = self.interpreter.variables.copy()
+        saved_funcs = self.interpreter.functions.copy()
+        try:
+            for param, arg_val in zip(self.func_node.params, self.args):
+                self.interpreter.variables[param] = arg_val
+
+            if hasattr(self.func_node, 'closure_scope') and self.func_node.closure_scope:
+                for cname, cval in self.func_node.closure_scope.items():
+                    if cname not in self.interpreter.variables:
+                        self.interpreter.variables[cname] = cval
+
+            self._execute_collecting(self.func_node.body)
+        except ReturnSignal:
+            pass
+        except StopIteration:
+            pass
+        finally:
+            self.interpreter.variables = saved_vars
+            self.interpreter.functions = saved_funcs
+            self._done = True
+
+    def _execute_collecting(self, stmts):
+        """Execute statements, collecting yield values instead of raising.
+        
+        Temporarily patches the interpreter's yield handler to collect values
+        instead of raising YieldSignal, so yield works correctly inside loops.
+        """
+        interp = self.interpreter
+        original_interp_yield = interp._interp_yield
+        collected = self._values
+
+        def _collecting_yield(ast):
+            result = interp.evaluate(ast.expression)
+            collected.append(result)
+
+        # Temporarily replace yield handler so loops don't break on yield
+        interp._interp_yield = _collecting_yield
+        interp._interpret_dispatch[YieldNode] = _collecting_yield
+        try:
+            for stmt in stmts:
+                interp.interpret(stmt)
+        finally:
+            interp._interp_yield = original_interp_yield
+            interp._interpret_dispatch[YieldNode] = original_interp_yield
+
+    def to_list(self):
+        """Convert generator to a list of all yielded values."""
+        self._ensure_started()
+        return list(self._values)
+
+    def __repr__(self):
+        return f"<generator {self.func_node.name}>"
+
+    def __str__(self):
+        return self.__repr__()
+
 class LambdaValue:
     """Runtime representation of a lambda expression.
     
@@ -1421,6 +1560,7 @@ class Interpreter:
         self._interpret_dispatch = {
             FunctionNode:           self._interp_function,
             ReturnNode:             self._interp_return,
+            YieldNode:              self._interp_yield,
             PrintNode:              self._interp_print,
             FunctionCallNode:       self._interp_function_call,
             AssignmentNode:         self._interp_assignment,
@@ -1578,6 +1718,9 @@ class Interpreter:
             'clamp':          self._builtin_clamp,
             'lerp':           self._builtin_lerp,
             'remap':          self._builtin_remap,
+            # --- Generator functions ---
+            'collect':        self._builtin_collect,
+            'is_generator':   self._builtin_is_generator,
         }
         self._register_math_builtins()
 
@@ -1770,6 +1913,8 @@ class Interpreter:
             return "map"
         if isinstance(val, LambdaValue):
             return "lambda"
+        if isinstance(val, GeneratorValue):
+            return "generator"
         return "unknown"
 
     def _builtin_to_string(self, args):
@@ -2625,6 +2770,23 @@ class Interpreter:
         t = (val - in_lo) / (in_hi - in_lo)
         return float(out_lo) + t * (float(out_hi) - float(out_lo))
 
+    # --- Generator built-ins ---
+
+    def _builtin_collect(self, args):
+        """collect(generator) -> list of all yielded values."""
+        self._expect_args('collect', args, 1)
+        gen = args[0]
+        if isinstance(gen, GeneratorValue):
+            return gen.to_list()
+        elif isinstance(gen, list):
+            return list(gen)
+        raise RuntimeError("collect: argument must be a generator or list")
+
+    def _builtin_is_generator(self, args):
+        """is_generator(value) -> true if value is a generator."""
+        self._expect_args('is_generator', args, 1)
+        return isinstance(args[0], GeneratorValue)
+
     # --- Regex built-ins ---
 
     def _builtin_regex_match(self, args):
@@ -2971,6 +3133,28 @@ class Interpreter:
         if len(args) != count:
             raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
 
+    def _has_yield(self, body):
+        """Check if a function body contains any yield statements (recursively)."""
+        for stmt in body:
+            if isinstance(stmt, YieldNode):
+                return True
+            # Check nested blocks
+            if isinstance(stmt, IfNode):
+                if self._has_yield(stmt.body):
+                    return True
+                for elif_cond, elif_body in (stmt.elif_blocks if hasattr(stmt, 'elif_blocks') else []):
+                    if self._has_yield(elif_body):
+                        return True
+                if hasattr(stmt, 'else_body') and stmt.else_body and self._has_yield(stmt.else_body):
+                    return True
+            elif isinstance(stmt, (WhileNode, ForNode, ForEachNode)):
+                if self._has_yield(stmt.body):
+                    return True
+            elif isinstance(stmt, TryCatchNode):
+                if self._has_yield(stmt.body) or self._has_yield(stmt.handler):
+                    return True
+        return False
+
     def interpret(self, ast):
         if DEBUG:
             debug("Interpreting AST...")
@@ -2993,6 +3177,11 @@ class Interpreter:
             debug(f"ReturnNode evaluated with result: {result}\n")
         raise ReturnSignal(result)
 
+    def _interp_yield(self, ast):
+        result = self.evaluate(ast.expression)
+        debug(f"YieldNode evaluated with result: {result}\n")
+        raise YieldSignal(result)
+
     def _interp_print(self, ast):
         value = self.evaluate(ast.expression)
         # Format numeric output: show integers without decimal point
@@ -3004,6 +3193,8 @@ class Interpreter:
             print(_format_list(value))
         elif isinstance(value, dict):
             print(_format_map(value))
+        elif isinstance(value, GeneratorValue):
+            print(repr(value))
         else:
             print(value)
         if DEBUG:
@@ -3135,9 +3326,12 @@ class Interpreter:
         - Lists → elements
         - Strings → individual characters
         - Maps → keys
+        - Generators → yielded values
         """
         collection = self.evaluate(node.iterable)
-        if isinstance(collection, list):
+        if isinstance(collection, GeneratorValue):
+            items = collection.to_list()
+        elif isinstance(collection, list):
             items = collection
         elif isinstance(collection, str):
             items = list(collection)
@@ -3146,7 +3340,7 @@ class Interpreter:
         else:
             raise RuntimeError(
                 f"Cannot iterate over {type(collection).__name__}. "
-                f"for-each requires a list, string, or map."
+                f"for-each requires a list, string, map, or generator."
             )
         if len(items) > MAX_LOOP_ITERATIONS:
             raise RuntimeError(
@@ -3356,6 +3550,12 @@ class Interpreter:
         if func:
             if DEBUG:
                 debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
+
+            # Check if this is a generator function (contains yield)
+            if self._has_yield(func.body):
+                debug(f"Function {call_node.name} is a generator — returning GeneratorValue")
+                evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+                return GeneratorValue(self, func, evaluated_args)
 
             # Guard against excessive recursion (DoS protection)
             self._call_depth += 1
@@ -3602,6 +3802,8 @@ class Interpreter:
             return float(len(obj))
         if isinstance(obj, dict):
             return float(len(obj))
+        if isinstance(obj, GeneratorValue):
+            return float(len(obj.to_list()))
         raise RuntimeError(f"Cannot get length of {type(obj).__name__}")
 
     def _eval_map(self, node):
