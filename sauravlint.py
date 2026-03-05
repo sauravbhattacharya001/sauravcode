@@ -103,7 +103,7 @@ class LintReport:
         }
 
 
-# ── Token types for lightweight scanning ──
+# -- Token types for lightweight scanning --
 
 _KEYWORDS = {
     "function", "return", "class", "int", "float", "bool", "string",
@@ -241,7 +241,7 @@ class SauravLinter:
         if rule not in self.disabled:
             report.add(LintIssue(rule, severity, line, col, msg, src))
 
-    # ── Structural checks ──
+    # -- Structural checks --
 
     def _check_structure(self, lines: List[str], report: LintReport):
         """Check for structural issues: unreachable code, empty blocks, etc."""
@@ -375,7 +375,7 @@ class SauravLinter:
                 self._emit(report, "W009", Severity.WARNING, ln, 1,
                            f"Unused import '{mod}'")
 
-    # ── Variable analysis ──
+    # -- Variable analysis --
 
     def _check_variables(self, lines: List[str], report: LintReport):
         """Check for undefined/unused variables and parameters."""
@@ -490,7 +490,7 @@ class SauravLinter:
                     self._emit(report, "W002", Severity.WARNING, ln, 1,
                                f"Parameter '{p}' of function '{fname}' is never used")
 
-    # ── Style checks ──
+    # -- Style checks --
 
     def _check_style(self, lines: List[str], report: LintReport, source: str):
         """Check for style issues."""
@@ -582,9 +582,9 @@ def format_summary(reports: List[LintReport]) -> str:
         parts.append(f"{total_s} style issue{'s' if total_s != 1 else ''}")
 
     if not parts:
-        return f"\n✓ {files} file{'s' if files != 1 else ''} checked — no issues found"
+        return f"\n[PASS] {files} file{'s' if files != 1 else ''} checked - no issues found"
 
-    return f"\n✗ {files} file{'s' if files != 1 else ''} checked ({clean} clean) — {', '.join(parts)}"
+    return f"\n[FAIL] {files} file{'s' if files != 1 else ''} checked ({clean} clean) - {', '.join(parts)}"
 
 
 def main():

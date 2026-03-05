@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 
 
-# ─── Source Parsing ──────────────────────────────────────────────────────────
+# --- Source Parsing -----------------------------------------------------------
 
 class DocItem:
     """Represents a documentable item extracted from source code."""
@@ -304,7 +304,7 @@ class SourceParser:
         }
 
 
-# ─── Markdown Generator ─────────────────────────────────────────────────────
+# --- Markdown Generator -------------------------------------------------------
 
 class MarkdownGenerator:
     """Generate Markdown documentation from parsed source."""
@@ -518,7 +518,7 @@ class MarkdownGenerator:
         return ''
 
 
-# ─── HTML Generator ──────────────────────────────────────────────────────────
+# --- HTML Generator -----------------------------------------------------------
 
 class HtmlGenerator:
     """Generate HTML documentation from parsed source."""
@@ -597,7 +597,7 @@ def _html_escape(text):
         .replace('"', '&quot;'))
 
 
-# ─── JSON Generator ──────────────────────────────────────────────────────────
+# --- JSON Generator -----------------------------------------------------------
 
 class JsonGenerator:
     """Generate JSON documentation from parsed source."""
@@ -639,7 +639,7 @@ class JsonGenerator:
         return json.dumps(data, indent=2)
 
 
-# ─── Multi-File Documentation ───────────────────────────────────────────────
+# --- Multi-File Documentation -------------------------------------------------
 
 def document_directory(dir_path, output_dir=None, format='markdown', **kwargs):
     """Generate documentation for all .srv files in a directory."""
@@ -679,7 +679,7 @@ def document_directory(dir_path, output_dir=None, format='markdown', **kwargs):
             out_file = output_dir / (rel_path.stem + ext)
             out_file.parent.mkdir(parents=True, exist_ok=True)
             out_file.write_text(doc, encoding='utf-8')
-            print(f"  ✓ {rel_path} → {out_file}")
+            print(f"  [OK] {rel_path} -> {out_file}")
         else:
             results.append(doc)
 
@@ -719,10 +719,10 @@ def _generate_index(srv_files, src_dir, output_dir):
 
     index_path = output_dir / 'index.md'
     index_path.write_text('\n'.join(lines), encoding='utf-8')
-    print(f"  ✓ Index → {index_path}")
+    print(f"  [OK] Index -> {index_path}")
 
 
-# ─── CLI ─────────────────────────────────────────────────────────────────────
+# --- CLI ----------------------------------------------------------------------
 
 def main():
     argparser = argparse.ArgumentParser(

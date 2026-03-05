@@ -66,7 +66,7 @@ def _normalise_indent(line, old_indent, new_indent):
     """Convert leading whitespace to use new_indent spaces per level."""
     if not line or not line[0] in (" ", "\t"):
         return line
-    # Count leading spaces (tabs → old_indent spaces)
+    # Count leading spaces (tabs -> old_indent spaces)
     expanded = ""
     for ch in line:
         if ch == "\t":
