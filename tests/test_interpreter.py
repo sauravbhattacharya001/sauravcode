@@ -1712,6 +1712,79 @@ class TestFStringEscaping:
         assert output.strip() == "value: {x} = 42"
 
 
+class TestStringEscapeSequences:
+    """Test backslash escape sequences in strings and f-strings (issue #28)."""
+
+    # ── Regular strings ──────────────────────────────────────
+
+    def test_newline_escape(self):
+        output = run_code('print "hello\\nworld"\n')
+        assert output.strip() == "hello\nworld"
+
+    def test_tab_escape(self):
+        output = run_code('print "col1\\tcol2"\n')
+        assert output.strip() == "col1\tcol2"
+
+    def test_carriage_return_escape(self):
+        output = run_code('print "before\\rafter"\n')
+        assert output.strip() == "before\rafter"
+
+    def test_backslash_escape(self):
+        output = run_code('print "back\\\\slash"\n')
+        assert output.strip() == "back\\slash"
+
+    def test_quote_escape(self):
+        output = run_code('print "say \\"hi\\""\n')
+        assert output.strip() == 'say "hi"'
+
+    def test_null_escape(self):
+        # Null character should be present but not printed visibly
+        output = run_code('x = "a\\0b"\nprint len x\n')
+        assert output.strip() == "3"
+
+    def test_unknown_escape_preserved(self):
+        # Unknown escapes like \d keep the backslash (for regex patterns)
+        output = run_code('print "\\\\d+"\n')
+        assert output.strip() == "\\d+"
+
+    def test_multiple_escapes(self):
+        output = run_code('print "line1\\nline2\\nline3"\n')
+        lines = output.strip().split('\n')
+        assert len(lines) == 3
+        assert lines[0] == "line1"
+        assert lines[2] == "line3"
+
+    # ── F-string escapes ────────────────────────────────────
+
+    def test_fstring_newline(self):
+        output = run_code('print f"hello\\nworld"\n')
+        assert output.strip() == "hello\nworld"
+
+    def test_fstring_tab(self):
+        output = run_code('print f"col1\\tcol2"\n')
+        assert output.strip() == "col1\tcol2"
+
+    def test_fstring_backslash(self):
+        output = run_code('print f"back\\\\slash"\n')
+        assert output.strip() == "back\\slash"
+
+    def test_fstring_escape_with_expression(self):
+        output = run_code('x = 42\nprint f"value: {x}\\ndone"\n')
+        lines = output.strip().split('\n')
+        assert lines[0] == "value: 42"
+        assert lines[1] == "done"
+
+    def test_fstring_unknown_escape_preserved(self):
+        output = run_code('print f"regex: \\\\d+"\n')
+        assert output.strip() == "regex: \\d+"
+
+    # ── Consistency ─────────────────────────────────────────
+
+    def test_string_and_fstring_consistent(self):
+        output = run_code('a = "hello\\nworld"\nb = f"hello\\nworld"\nprint a == b\n')
+        assert output.strip() == "true"
+
+
 class TestFStringEdgeCases:
     """Test edge cases for f-strings."""
 

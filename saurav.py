@@ -58,6 +58,44 @@ token_specification = [
 tok_regex = re.compile('|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_specification))
 _indent_re = re.compile(r'[ \t]*')
 
+# Escape sequence mapping for string literals
+_ESCAPE_MAP = {
+    'n': '\n',
+    't': '\t',
+    'r': '\r',
+    '\\': '\\',
+    '"': '"',
+    '0': '\0',
+}
+
+def process_escapes(s):
+    """Process backslash escape sequences in a string literal.
+
+    Translates \\n → newline, \\t → tab, \\r → carriage return,
+    \\\\ → backslash, \\" → quote, \\0 → null.
+    Unknown escape sequences (e.g. \\d) are kept verbatim
+    (backslash + character), which preserves regex patterns
+    and other backslash-heavy content.
+    """
+    if '\\' not in s:
+        return s
+    result = []
+    i = 0
+    while i < len(s):
+        if s[i] == '\\' and i + 1 < len(s):
+            nxt = s[i + 1]
+            if nxt in _ESCAPE_MAP:
+                result.append(_ESCAPE_MAP[nxt])
+            else:
+                # Unknown escape — keep both backslash and character
+                result.append('\\')
+                result.append(nxt)
+            i += 2
+        else:
+            result.append(s[i])
+            i += 1
+    return ''.join(result)
+
 def tokenize(code):
     if DEBUG:
         debug("Tokenizing code...")
@@ -793,7 +831,7 @@ class Parser:
         if self.pos < len(self.tokens):
             next_tok = self.peek()
             if next_tok[0] == 'STRING':
-                message = StringNode(self.advance()[1][1:-1])
+                message = StringNode(process_escapes(self.advance()[1][1:-1]))
             elif next_tok[0] == 'FSTRING':
                 message = self.parse_fstring(self.advance()[1])
         return AssertNode(condition, message)
@@ -1093,7 +1131,7 @@ class Parser:
             return number_node
         elif token_type == 'STRING':
             self.advance()
-            string_node = StringNode(value[1:-1])
+            string_node = StringNode(process_escapes(value[1:-1]))
             if DEBUG:
                 debug(f"parse_atom returning StringNode: {string_node}")
             return string_node
@@ -1240,8 +1278,14 @@ class Parser:
         while i < len(content):
             ch = content[i]
             if ch == '\\' and i + 1 < len(content):
-                # Handle escape sequences
-                text_buf.append(content[i + 1])
+                # Handle escape sequences (same mapping as regular strings)
+                nxt = content[i + 1]
+                if nxt in _ESCAPE_MAP:
+                    text_buf.append(_ESCAPE_MAP[nxt])
+                else:
+                    # Unknown escape — keep both backslash and character
+                    text_buf.append('\\')
+                    text_buf.append(nxt)
                 i += 2
             elif ch == '{':
                 # Check for escaped brace {{ → literal {
