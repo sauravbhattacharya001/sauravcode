@@ -1,0 +1,23 @@
+# AST Visualizer Demo
+# Run: python sauravast.py demos/ast_demo.srv
+
+# Simple variable
+x = 42
+
+# Function definition
+function greet name
+    print f"Hello {name}!"
+    return name
+
+# Control flow
+if x > 10
+    print "big"
+else
+    print "small"
+
+# List operations
+items = [1, 2, 3, 4, 5]
+print len items
+
+# Call our function
+greet "World"

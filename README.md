@@ -370,6 +370,47 @@ python sauravcc.py program.srv -v
 | Parenthesized expressions | ✅ | ✅ |
 | Negative numbers | ✅ | ✅ |
 
+## 🌳 AST Visualizer
+
+Explore how sauravcode parses your programs with the AST visualizer (`sauravast.py`):
+
+```bash
+# Pretty tree view
+python sauravast.py hello.srv
+
+# Limit depth for large programs
+python sauravast.py program.srv --depth 3
+
+# Machine-readable JSON
+python sauravast.py program.srv --json
+
+# Node statistics
+python sauravast.py program.srv --stats
+
+# Graphviz DOT graph (pipe to dot -Tpng for images)
+python sauravast.py program.srv --dot | dot -Tpng -o ast.png
+```
+
+Example output:
+```
+Program
+├── AssignmentNode
+│   ├── expression: NumberNode
+│   │   └── value: 42.0
+│   └── name: 'x'
+├── FunctionNode
+│   ├── body: [2 items]
+│   │   ├── [0]: PrintNode ...
+│   │   └── [1]: ReturnNode ...
+│   ├── name: 'greet'
+│   └── params: ['name']
+└── FunctionCallNode
+    ├── arguments: [1 items]
+    │   └── [0]: StringNode
+    │       └── value: 'World'
+    └── name: 'greet'
+```
+
 ## 🏗️ Architecture
 
 The codebase has two execution paths sharing a common tokenizer design:
@@ -387,6 +428,7 @@ For the full deep-dive, see the [Architecture Guide](docs/ARCHITECTURE.md).
 sauravcode/
 ├── saurav.py           # Interpreter + interactive REPL
 ├── sauravcc.py         # Compiler (.srv → C → native)
+├── sauravast.py        # AST visualizer (tree, JSON, DOT, stats)
 ├── hello.srv           # Hello World example
 ├── a.srv               # Function composition example
 ├── test.srv            # Basic test
