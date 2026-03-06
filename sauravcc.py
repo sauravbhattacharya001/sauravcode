@@ -58,7 +58,7 @@ token_specification = [
     ('COLON',    r':'),
     ('DOT',      r'\.'),
     ('COMMA',    r','),
-    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue|assert)\b'),
+    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue|assert|enum)\b'),
     ('IDENT',    r'[a-zA-Z_]\w*'),
     ('NEWLINE',  r'\n'),
     ('SKIP',     r'[ \t]+'),
@@ -252,6 +252,12 @@ class AssertNode(ASTNode):
         self.condition = condition
         self.message = message
 
+class EnumNode(ASTNode):
+    """Enum type definition with auto-incrementing integer variants."""
+    def __init__(self, name, variants):
+        self.name = name
+        self.variants = variants
+
 class IndexedAssignmentNode(ASTNode):
     """Assignment to a list element: list[index] = value"""
     def __init__(self, name, index, value):
@@ -367,6 +373,8 @@ class Parser:
             return self.parse_throw()
         elif token_type == 'KEYWORD' and value == 'assert':
             return self.parse_assert()
+        elif token_type == 'KEYWORD' and value == 'enum':
+            return self.parse_enum()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'KEYWORD' and value == 'pop':
@@ -531,6 +539,32 @@ class Parser:
             elif next_tok[0] == 'FSTRING':
                 message = self.parse_fstring(self.advance()[1])
         return AssertNode(condition, message)
+
+    def parse_enum(self):
+        """Parse enum definition: enum Name followed by indented variants."""
+        self.expect('KEYWORD', 'enum')
+        name = self.expect('IDENT')[1]
+        self.expect('NEWLINE')
+        self.expect('INDENT')
+
+        variants = []
+        while self.pos < len(self.tokens):
+            self.skip_newlines()
+            if self.pos >= len(self.tokens):
+                break
+            pk = self.peek()
+            if pk[0] == 'DEDENT':
+                break
+            if pk[0] == 'IDENT':
+                variants.append(self.expect('IDENT')[1])
+            else:
+                break
+
+        if not variants:
+            raise SyntaxError(f"Enum '{name}' must have at least one variant")
+
+        self.expect('DEDENT')
+        return EnumNode(name, variants)
 
     def parse_append(self):
         self.expect('KEYWORD', 'append')
@@ -946,6 +980,7 @@ class CCodeGenerator:
     def __init__(self):
         self.functions = {}       # name -> FunctionNode
         self.classes = {}         # name -> ClassNode
+        self.enums = {}           # name -> {variant: index}
         self.declared_vars = {}   # scope -> set of var names
         self.string_vars = set()  # track which vars hold strings
         self.list_vars = set()    # track which vars hold lists
@@ -1101,6 +1136,8 @@ class CCodeGenerator:
                 self.functions[stmt.name] = stmt
             elif isinstance(stmt, ClassNode):
                 self.classes[stmt.name] = stmt
+            elif isinstance(stmt, EnumNode):
+                self.enums[stmt.name] = {v: i for i, v in enumerate(stmt.variants)}
             else:
                 top_level.append(stmt)
 
@@ -1836,6 +1873,9 @@ class CCodeGenerator:
         elif isinstance(stmt, ContinueNode):
             self.emit('continue;')
 
+        elif isinstance(stmt, EnumNode):
+            pass  # Already handled in first pass (stored in self.enums)
+
         elif isinstance(stmt, ClassNode):
             pass  # Already handled in first pass
 
@@ -1955,6 +1995,16 @@ class CCodeGenerator:
             return f"srv_list_len(&{inner})"
 
         elif isinstance(expr, DotAccessNode):
+            # Check for enum access: EnumName.VARIANT -> integer constant
+            if isinstance(expr.obj, IdentifierNode) and expr.obj.name in self.enums:
+                enum_map = self.enums[expr.obj.name]
+                if expr.field not in enum_map:
+                    avail = ', '.join(enum_map.keys())
+                    raise RuntimeError(
+                        f"Enum '{expr.obj.name}' has no variant '{expr.field}'. "
+                        f"Available: {avail}"
+                    )
+                return str(enum_map[expr.field])
             obj_c = self.compile_expression(expr.obj)
             field = self._safe_ident(expr.field)
             # Use -> for pointer access (self is a pointer in class methods)
