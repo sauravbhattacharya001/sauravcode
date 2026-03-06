@@ -50,6 +50,7 @@ from saurav import (
     ThrowNode,
     ThrowSignal,
     ForEachNode,
+    PopNode,
 )
 
 
@@ -654,6 +655,53 @@ print nums[2]
     def test_append_to_non_list_raises(self):
         with pytest.raises(RuntimeError, match="not a list"):
             run_code("x = 5\nappend x 10\n")
+
+    # ── Pop ───────────────────────────────────────────────────
+
+    def test_pop_statement(self):
+        """pop as a statement removes the last element."""
+        code = "x = [1, 2, 3]\npop x\nprint x\n"
+        output = run_code(code)
+        assert output.strip() == "[1, 2]"
+
+    def test_pop_expression(self):
+        """pop as an expression returns the removed element."""
+        code = "x = [10, 20, 30]\ny = pop x\nprint y\nprint x\n"
+        output = run_code(code)
+        lines = output.strip().split("\n")
+        assert lines[0] == "30"
+        assert lines[1] == "[10, 20]"
+
+    def test_pop_empty_list_raises(self):
+        """Popping an empty list raises RuntimeError."""
+        with pytest.raises(RuntimeError, match="Pop from empty list"):
+            run_code("x = []\npop x\n")
+
+    def test_pop_non_list_raises(self):
+        """Popping a non-list variable raises RuntimeError."""
+        with pytest.raises(RuntimeError, match="not a list"):
+            run_code("x = 5\npop x\n")
+
+    def test_pop_until_empty(self):
+        """Pop all elements one by one."""
+        code = "x = [1, 2]\npop x\npop x\nprint len x\n"
+        output = run_code(code)
+        assert output.strip() == "0"
+
+    def test_pop_return_value_in_expression(self):
+        """Pop result can be used in arithmetic."""
+        code = "x = [10, 20]\ny = pop x + 5\nprint y\n"
+        output = run_code(code)
+        assert output.strip() == "25"
+
+    def test_pop_parser_creates_pop_node(self):
+        """Parser creates a PopNode for pop keyword."""
+        tokens = list(tokenize("pop mylist\n"))
+        parser = Parser(tokens)
+        stmts = parser.parse()
+        assert len(stmts) == 1
+        assert isinstance(stmts[0], PopNode)
+        assert stmts[0].list_name == "mylist"
 
     def test_empty_list(self):
         output = run_code("nums = []\nprint len nums\n")
