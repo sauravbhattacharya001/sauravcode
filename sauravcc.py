@@ -58,7 +58,7 @@ token_specification = [
     ('COLON',    r':'),
     ('DOT',      r'\.'),
     ('COMMA',    r','),
-    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue)\b'),
+    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue)\b'),
     ('IDENT',    r'[a-zA-Z_]\w*'),
     ('NEWLINE',  r'\n'),
     ('SKIP',     r'[ \t]+'),
@@ -241,6 +241,11 @@ class TryCatchNode(ASTNode):
         self.catch_var = catch_var
         self.catch_body = catch_body
 
+class ThrowNode(ASTNode):
+    """Throw an error with a message expression."""
+    def __init__(self, expression):
+        self.expression = expression
+
 class IndexedAssignmentNode(ASTNode):
     """Assignment to a list element: list[index] = value"""
     def __init__(self, name, index, value):
@@ -352,6 +357,8 @@ class Parser:
             return ContinueNode()
         elif token_type == 'KEYWORD' and value == 'try':
             return self.parse_try()
+        elif token_type == 'KEYWORD' and value == 'throw':
+            return self.parse_throw()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'KEYWORD' and value == 'pop':
@@ -496,6 +503,11 @@ class Parser:
         self.expect('DEDENT')
 
         return TryCatchNode(try_body, catch_var, catch_body)
+
+    def parse_throw(self):
+        self.expect('KEYWORD', 'throw')
+        expression = self.parse_full_expression()
+        return ThrowNode(expression)
 
     def parse_append(self):
         self.expect('KEYWORD', 'append')
@@ -985,6 +997,8 @@ class CCodeGenerator:
                 self.uses_strings = True
             if isinstance(node, TryCatchNode):
                 self.uses_try_catch = True
+            if isinstance(node, ThrowNode):
+                self.uses_try_catch = True
             # Walk children
             if isinstance(node, ProgramNode):
                 for s in node.statements: walk(s)
@@ -1012,6 +1026,8 @@ class CCodeGenerator:
             elif isinstance(node, TryCatchNode):
                 for s in node.try_body: walk(s)
                 for s in node.catch_body: walk(s)
+            elif isinstance(node, ThrowNode):
+                walk(node.expression)
             elif isinstance(node, ReturnNode):
                 walk(node.expression)
             elif isinstance(node, PrintNode):
@@ -1755,10 +1771,18 @@ class CCodeGenerator:
                     self.declared_vars.setdefault(scope, set()).add(stmt.catch_var)
                 else:
                     self.emit(f'{safe_catch} = __error_msg;')
+                self.string_vars.add(stmt.catch_var)
             for s in stmt.catch_body:
                 self.compile_statement(s, scope=scope)
             self.indent_level -= 1
             self.emit("}")
+
+        elif isinstance(stmt, ThrowNode):
+            msg_c = self.compile_expression(stmt.expression)
+            self.uses_try_catch = True  # ensure setjmp.h and error globals are emitted
+            self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%s", {msg_c});')
+            self.emit("__has_error = 1;")
+            self.emit("longjmp(__catch_buf, 1);")
 
         elif isinstance(stmt, AppendNode):
             safe_list = self._safe_ident(stmt.list_name)
