@@ -58,6 +58,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **String interpolation** — `f"Hello {name}, you are {age} years old"` f-strings
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
+- **VS Code extension** — syntax highlighting, 25 snippets, and language configuration
 
 ## 🚀 Quick Start
 
@@ -436,6 +437,8 @@ sauravcode/
 ├── stdlib_demo.srv     # Standard library demo
 ├── map_demo.srv        # Map/dictionary demo
 ├── fstring_demo.srv    # String interpolation demo
+├── editors/
+│   └── vscode/         # VS Code extension (syntax, snippets)
 ├── docs/
 │   ├── LANGUAGE.md     # Language reference & EBNF grammar
 │   ├── ARCHITECTURE.md # Compiler/interpreter internals
@@ -487,6 +490,23 @@ The result is code that reads almost like pseudocode but actually runs.
 | [Website](https://sauravbhattacharya001.github.io/sauravcode/) | Interactive documentation |
 | [Home Page](https://sites.google.com/view/sauravcode) | Project home |
 
+## ✏️ Editor Support
+
+### Visual Studio Code
+
+Full syntax highlighting, 25 code snippets, and language configuration for VS Code.
+
+**Quick install:**
+```bash
+# Symlink the extension (Windows)
+mklink /D "%USERPROFILE%\.vscode\extensions\sauravcode" "path\to\sauravcode\editors\vscode"
+
+# Symlink the extension (macOS / Linux)
+ln -s path/to/sauravcode/editors/vscode ~/.vscode/extensions/sauravcode
+```
+
+See [`editors/vscode/README.md`](editors/vscode/README.md) for full details.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Here's how to get started:
@@ -502,7 +522,7 @@ Contributions are welcome! Here's how to get started:
 - Additional data structures (sets, tuples)
 - Import/module system
 - Standard library functions
-- IDE/editor syntax highlighting
+- Editor support for more editors (Sublime Text, Vim, Emacs, JetBrains)
 - Optimization passes in the compiler
 - Map support in the compiler (`sauravcc.py`)
 

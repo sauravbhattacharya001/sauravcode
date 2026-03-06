@@ -1,0 +1,55 @@
+{
+  "name": "sauravcode",
+  "displayName": "Sauravcode",
+  "description": "Syntax highlighting, snippets, and language support for the sauravcode programming language (.srv files)",
+  "version": "1.0.0",
+  "publisher": "sauravbhattacharya",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sauravbhattacharya001/sauravcode"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "sauravcode",
+    "srv",
+    "programming language",
+    "minimal syntax"
+  ],
+  "icon": "icon.png",
+  "contributes": {
+    "languages": [
+      {
+        "id": "sauravcode",
+        "aliases": [
+          "Sauravcode",
+          "sauravcode",
+          "srv"
+        ],
+        "extensions": [
+          ".srv"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sauravcode",
+        "scopeName": "source.sauravcode",
+        "path": "./syntaxes/sauravcode.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "sauravcode",
+        "path": "./snippets/sauravcode.json"
+      }
+    ]
+  }
+}

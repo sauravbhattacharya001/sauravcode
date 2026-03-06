@@ -1,0 +1,206 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Sauravcode",
+  "scopeName": "source.sauravcode",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#fstrings" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords-control" },
+    { "include": "#keywords-declaration" },
+    { "include": "#keywords-type" },
+    { "include": "#constants" },
+    { "include": "#operators" },
+    { "include": "#builtins" },
+    { "include": "#function-call" },
+    { "include": "#function-def" },
+    { "include": "#class-def" },
+    { "include": "#enum-def" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.sauravcode",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.sauravcode",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.sauravcode",
+              "match": "\\\\[ntr\\\\\"0]"
+            }
+          ]
+        }
+      ]
+    },
+    "fstrings": {
+      "patterns": [
+        {
+          "name": "string.interpolated.sauravcode",
+          "begin": "f\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.sauravcode",
+              "match": "\\\\[ntr\\\\\"0]"
+            },
+            {
+              "name": "meta.embedded.expression.sauravcode",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.interpolation.begin.sauravcode" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.interpolation.end.sauravcode" }
+              },
+              "patterns": [
+                { "include": "#numbers" },
+                { "include": "#constants" },
+                { "include": "#operators" },
+                { "include": "#builtins" },
+                { "include": "#function-call" },
+                { "include": "#identifiers" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.sauravcode",
+          "match": "\\b\\d+(\\.\\d*)?\\b"
+        }
+      ]
+    },
+    "keywords-control": {
+      "patterns": [
+        {
+          "name": "keyword.control.sauravcode",
+          "match": "\\b(if|else\\s+if|else|while|for|in|break|continue|return|try|catch|throw|match|case|import|yield|next)\\b"
+        }
+      ]
+    },
+    "keywords-declaration": {
+      "patterns": [
+        {
+          "name": "keyword.other.declaration.sauravcode",
+          "match": "\\b(function|class|enum|lambda)\\b"
+        }
+      ]
+    },
+    "keywords-type": {
+      "patterns": [
+        {
+          "name": "support.type.sauravcode",
+          "match": "\\b(int|float|bool|string|list|set|stack|queue|map)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.sauravcode",
+          "match": "\\b(true|false)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.sauravcode",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.sauravcode",
+          "match": "\\b(and|or|not)\\b"
+        },
+        {
+          "name": "keyword.operator.assignment.sauravcode",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.sauravcode",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.pipe.sauravcode",
+          "match": "\\|>"
+        },
+        {
+          "name": "keyword.operator.arrow.sauravcode",
+          "match": "->"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.sauravcode",
+          "match": "\\b(print|append|len|pop|assert|upper|lower|trim|replace|split|join|contains|starts_with|ends_with|substring|index_of|char_at|abs|round|floor|ceil|sqrt|power|type_of|to_string|to_number|input|range|reverse|sort|keys|values|has_key|map|filter|reduce|each|regex_match|regex_find|regex_find_all|regex_replace|regex_split|json_parse|json_stringify|json_pretty|pad_left|pad_right|repeat|char_code|from_char_code)\\b"
+        }
+      ]
+    },
+    "function-def": {
+      "patterns": [
+        {
+          "match": "\\b(function)\\s+([a-zA-Z_]\\w*)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.sauravcode" },
+            "2": { "name": "entity.name.function.sauravcode" }
+          }
+        }
+      ]
+    },
+    "class-def": {
+      "patterns": [
+        {
+          "match": "\\b(class)\\s+([a-zA-Z_]\\w*)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.sauravcode" },
+            "2": { "name": "entity.name.type.class.sauravcode" }
+          }
+        }
+      ]
+    },
+    "enum-def": {
+      "patterns": [
+        {
+          "match": "\\b(enum)\\s+([a-zA-Z_]\\w*)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.sauravcode" },
+            "2": { "name": "entity.name.type.enum.sauravcode" }
+          }
+        }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_]\\w*)(?=\\s+[a-zA-Z_\"\\d\\[\\(\\{f]|\\s*$)",
+          "name": "meta.function-call.sauravcode"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.sauravcode",
+          "match": "\\b[a-zA-Z_]\\w*\\b"
+        }
+      ]
+    }
+  }
+}

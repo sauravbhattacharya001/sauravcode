@@ -1,0 +1,169 @@
+{
+  "Function": {
+    "prefix": "fn",
+    "body": [
+      "function ${1:name} ${2:params}",
+      "  ${0:body}"
+    ],
+    "description": "Define a function"
+  },
+  "Function with return": {
+    "prefix": "fnr",
+    "body": [
+      "function ${1:name} ${2:params}",
+      "  ${3:body}",
+      "  return ${0:result}"
+    ],
+    "description": "Define a function with return"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition}",
+      "  ${0:body}"
+    ],
+    "description": "If statement"
+  },
+  "If-Else": {
+    "prefix": "ife",
+    "body": [
+      "if ${1:condition}",
+      "  ${2:body}",
+      "else",
+      "  ${0:else_body}"
+    ],
+    "description": "If-else statement"
+  },
+  "If-Else If-Else": {
+    "prefix": "ifei",
+    "body": [
+      "if ${1:condition}",
+      "  ${2:body}",
+      "else if ${3:condition2}",
+      "  ${4:body2}",
+      "else",
+      "  ${0:else_body}"
+    ],
+    "description": "If-else if-else statement"
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition}",
+      "  ${0:body}"
+    ],
+    "description": "While loop"
+  },
+  "For Range": {
+    "prefix": "for",
+    "body": [
+      "for ${1:i} in range ${2:n}",
+      "  ${0:body}"
+    ],
+    "description": "For loop with range"
+  },
+  "For Each": {
+    "prefix": "foreach",
+    "body": [
+      "for ${1:item} in ${2:list}",
+      "  ${0:body}"
+    ],
+    "description": "For-each loop over a list"
+  },
+  "Class": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name}",
+      "  function init ${2:params}",
+      "    self.${3:field} = ${4:value}",
+      "",
+      "  function ${5:method} self",
+      "    ${0:body}"
+    ],
+    "description": "Class definition with init and method"
+  },
+  "Try-Catch": {
+    "prefix": "try",
+    "body": [
+      "try",
+      "  ${1:body}",
+      "catch ${2:err}",
+      "  ${0:handler}"
+    ],
+    "description": "Try-catch error handling"
+  },
+  "Lambda": {
+    "prefix": "lam",
+    "body": "lambda ${1:params} -> ${0:expr}",
+    "description": "Lambda expression"
+  },
+  "Print": {
+    "prefix": "pr",
+    "body": "print ${0:value}",
+    "description": "Print a value"
+  },
+  "Print F-String": {
+    "prefix": "prf",
+    "body": "print f\"${0:text}\"",
+    "description": "Print with f-string interpolation"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": [
+      "match ${1:value}",
+      "  case ${2:pattern}",
+      "    ${3:body}",
+      "  case _",
+      "    ${0:default}"
+    ],
+    "description": "Match-case expression"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name}",
+      "  ${2:Variant1}",
+      "  ${0:Variant2}"
+    ],
+    "description": "Enum definition"
+  },
+  "Map Literal": {
+    "prefix": "map",
+    "body": "${1:name} = {\"${2:key}\": ${0:value}}",
+    "description": "Map (dictionary) literal"
+  },
+  "List Literal": {
+    "prefix": "list",
+    "body": "${1:name} = [${0:items}]",
+    "description": "List literal"
+  },
+  "Import": {
+    "prefix": "imp",
+    "body": "import \"${0:module}\"",
+    "description": "Import a module"
+  },
+  "Assert": {
+    "prefix": "assert",
+    "body": "assert ${1:condition} \"${0:message}\"",
+    "description": "Assert with message"
+  },
+  "Generator": {
+    "prefix": "gen",
+    "body": [
+      "function ${1:name} ${2:params}",
+      "  ${3:body}",
+      "  yield ${0:value}"
+    ],
+    "description": "Generator function with yield"
+  },
+  "F-String": {
+    "prefix": "fs",
+    "body": "f\"${0:text {expr}}\"",
+    "description": "F-string interpolated string"
+  },
+  "Pipe": {
+    "prefix": "pipe",
+    "body": "${1:value} |> ${0:function}",
+    "description": "Pipe operator"
+  }
+}
