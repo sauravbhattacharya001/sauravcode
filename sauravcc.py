@@ -58,7 +58,7 @@ token_specification = [
     ('COLON',    r':'),
     ('DOT',      r'\.'),
     ('COMMA',    r','),
-    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue)\b'),
+    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue|assert)\b'),
     ('IDENT',    r'[a-zA-Z_]\w*'),
     ('NEWLINE',  r'\n'),
     ('SKIP',     r'[ \t]+'),
@@ -246,6 +246,12 @@ class ThrowNode(ASTNode):
     def __init__(self, expression):
         self.expression = expression
 
+class AssertNode(ASTNode):
+    """Assert that a condition is true, with optional error message."""
+    def __init__(self, condition, message=None):
+        self.condition = condition
+        self.message = message
+
 class IndexedAssignmentNode(ASTNode):
     """Assignment to a list element: list[index] = value"""
     def __init__(self, name, index, value):
@@ -359,6 +365,8 @@ class Parser:
             return self.parse_try()
         elif token_type == 'KEYWORD' and value == 'throw':
             return self.parse_throw()
+        elif token_type == 'KEYWORD' and value == 'assert':
+            return self.parse_assert()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'KEYWORD' and value == 'pop':
@@ -509,6 +517,20 @@ class Parser:
         self.expect('KEYWORD', 'throw')
         expression = self.parse_expression()
         return ThrowNode(expression)
+
+    def parse_assert(self):
+        """Parse assert statement: assert condition [message]"""
+        self.expect('KEYWORD', 'assert')
+        condition = self.parse_full_expression()
+        message = None
+        if self.pos < len(self.tokens):
+            next_tok = self.peek()
+            if next_tok[0] == 'STRING':
+                message = StringNode(next_tok[1][1:-1])
+                self.advance()
+            elif next_tok[0] == 'FSTRING':
+                message = self.parse_fstring(self.advance()[1])
+        return AssertNode(condition, message)
 
     def parse_append(self):
         self.expect('KEYWORD', 'append')
@@ -1054,6 +1076,9 @@ class CCodeGenerator:
                 for p in node.parts: walk(p)
             elif isinstance(node, AppendNode):
                 walk(node.value)
+            elif isinstance(node, AssertNode):
+                walk(node.condition)
+                if node.message: walk(node.message)
             elif isinstance(node, LenNode):
                 walk(node.expression)
             elif isinstance(node, ListNode):
@@ -1784,6 +1809,17 @@ class CCodeGenerator:
                 self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%s", srv_to_string({msg_c}));')
             self.emit("__has_error = 1;")
             self.emit("longjmp(__catch_buf, 1);")
+
+        elif isinstance(stmt, AssertNode):
+            cond_c = self.compile_expression(stmt.condition)
+            if stmt.message:
+                msg_c = self.compile_expression(stmt.message)
+                if self._is_string_expr(stmt.message):
+                    self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed: %s\\n", {msg_c}); exit(1); }}')
+                else:
+                    self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed: %s\\n", srv_to_string({msg_c})); exit(1); }}')
+            else:
+                self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed\\n"); exit(1); }}')
 
         elif isinstance(stmt, AppendNode):
             safe_list = self._safe_ident(stmt.list_name)
