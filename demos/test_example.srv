@@ -1,0 +1,54 @@
+# Test file for sauravtest runner demo
+
+function add x y
+    return x + y
+
+function multiply x y
+    return x * y
+
+function factorial n
+    if n <= 1
+        return 1
+    return n * factorial (n - 1)
+
+# --- Test functions ---
+
+function test_add_basic
+    r1 = add 2 3
+    assert r1 == 5 "2+3 should equal 5"
+    r2 = add 0 0
+    assert r2 == 0 "0+0 should equal 0"
+
+function test_add_negatives
+    result = 0 - 5 + (0 - 3)
+    assert result == -8 "two negatives should sum correctly"
+
+function test_multiply
+    r1 = multiply 3 4
+    assert r1 == 12
+    r2 = multiply 0 100
+    assert r2 == 0 "anything times zero"
+
+function test_factorial
+    assert factorial(1) == 1 "1! = 1"
+    assert factorial(5) == 120 "5! = 120"
+
+function test_string_operations
+    name = "hello"
+    assert len(name) == 5
+    assert upper(name) == "HELLO"
+    assert lower("WORLD") == "world"
+
+function test_list_operations
+    items = [1, 2, 3, 4, 5]
+    assert len(items) == 5
+    assert items[0] == 1
+    assert items[4] == 5
+    append items 6
+    assert len(items) == 6
+
+function test_boolean_logic
+    assert true and true
+    assert not false
+    assert true or false
+    assert not (false and true)
