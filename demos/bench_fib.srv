@@ -1,0 +1,11 @@
+# Fibonacci benchmark — sauravcode
+# Good for testing interpreter performance
+# Usage: python sauravbench.py demos/bench_fib.srv -n 20
+
+function fib n
+    if n <= 1
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+result = fib 20
+print result

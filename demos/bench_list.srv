@@ -1,0 +1,17 @@
+# List operations benchmark — sauravcode
+# Tests list creation, iteration, and map/filter
+# Usage: python sauravbench.py demos/bench_list.srv -n 20
+
+# Build a list of squares
+squares = []
+i = 0
+while i < 50
+    append squares i * i
+    i = i + 1
+
+# Sum the list manually
+total = 0
+for s in squares
+    total = total + s
+
+print total
