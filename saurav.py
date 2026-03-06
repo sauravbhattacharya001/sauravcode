@@ -322,6 +322,13 @@ class AppendNode(ASTNode):
     def __repr__(self):
         return f"AppendNode(list_name={self.list_name}, value={self.value})"
 
+class PopNode(ASTNode):
+    def __init__(self, list_name):
+        self.list_name = list_name
+
+    def __repr__(self):
+        return f"PopNode(list_name={self.list_name})"
+
 class LenNode(ASTNode):
     def __init__(self, expression):
         self.expression = expression
@@ -638,6 +645,8 @@ class Parser:
             return self.parse_assert()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
+        elif token_type == 'KEYWORD' and value == 'pop':
+            return self.parse_pop()
         elif token_type == 'IDENT':
             name = self.expect('IDENT')[1]
             if self.peek()[0] == 'ASSIGN':
@@ -977,6 +986,11 @@ class Parser:
         value = self.parse_full_expression()
         return AppendNode(list_name, value)
 
+    def parse_pop(self):
+        self.expect('KEYWORD', 'pop')
+        list_name = self.expect('IDENT')[1]
+        return PopNode(list_name)
+
     def parse_block(self):
         if DEBUG:
             debug("Parsing block...")
@@ -1163,6 +1177,8 @@ class Parser:
             self.advance()
             arg = self.parse_atom()
             return LenNode(arg)
+        elif token_type == 'KEYWORD' and value == 'pop':
+            return self.parse_pop()
         elif token_type == 'KEYWORD' and value == 'lambda':
             return self.parse_lambda()
         elif token_type == 'LPAREN':
@@ -1572,6 +1588,7 @@ class Interpreter:
             TryCatchNode:           self.execute_try_catch,
             ThrowNode:              self.execute_throw,
             AppendNode:             self._interp_append,
+            PopNode:                self._interp_pop,
             ImportNode:             self.execute_import,
             MatchNode:              self.execute_match,
             EnumNode:               self._interp_enum,
@@ -1596,6 +1613,7 @@ class Interpreter:
             IndexNode:        self._eval_index,
             SliceNode:        self._eval_slice,
             LenNode:          self._eval_len,
+            PopNode:          self._eval_pop,
             MapNode:           self._eval_map,
             FStringNode:      self._eval_fstring,
             LambdaNode:       self._eval_lambda,
@@ -3234,6 +3252,14 @@ class Interpreter:
         value = self.evaluate(ast.value)
         lst.append(value)
 
+    def _interp_pop(self, ast):
+        lst = self.variables.get(ast.list_name)
+        if not isinstance(lst, list):
+            raise RuntimeError(f"'{ast.list_name}' is not a list")
+        if len(lst) == 0:
+            raise RuntimeError(f"Cannot pop from empty list '{ast.list_name}'")
+        lst.pop()
+
     def _interp_enum(self, ast):
         """Register an enum type with auto-incrementing integer values."""
         enum_map = {}
@@ -3805,6 +3831,14 @@ class Interpreter:
         if isinstance(obj, GeneratorValue):
             return float(len(obj.to_list()))
         raise RuntimeError(f"Cannot get length of {type(obj).__name__}")
+
+    def _eval_pop(self, node):
+        lst = self.variables.get(node.list_name)
+        if not isinstance(lst, list):
+            raise RuntimeError(f"'{node.list_name}' is not a list")
+        if len(lst) == 0:
+            raise RuntimeError(f"Cannot pop from empty list '{node.list_name}'")
+        return lst.pop()
 
     def _eval_map(self, node):
         result = {}
