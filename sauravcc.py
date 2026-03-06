@@ -58,7 +58,7 @@ token_specification = [
     ('COLON',    r':'),
     ('DOT',      r'\.'),
     ('COMMA',    r','),
-    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue)\b'),
+    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|assert|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue)\b'),
     ('IDENT',    r'[a-zA-Z_]\w*'),
     ('NEWLINE',  r'\n'),
     ('SKIP',     r'[ \t]+'),
@@ -294,6 +294,15 @@ class BreakNode(ASTNode):
 class ContinueNode(ASTNode):
     pass
 
+class AssertNode(ASTNode):
+    def __init__(self, condition, message=None):
+        self.condition = condition
+        self.message = message
+
+class ThrowNode(ASTNode):
+    def __init__(self, expression):
+        self.expression = expression
+
 class TernaryNode(ASTNode):
     def __init__(self, condition, true_expr, false_expr):
         self.condition = condition
@@ -352,6 +361,10 @@ class Parser:
             return ContinueNode()
         elif token_type == 'KEYWORD' and value == 'try':
             return self.parse_try()
+        elif token_type == 'KEYWORD' and value == 'throw':
+            return self.parse_throw()
+        elif token_type == 'KEYWORD' and value == 'assert':
+            return self.parse_assert()
         elif token_type == 'KEYWORD' and value == 'append':
             return self.parse_append()
         elif token_type == 'KEYWORD' and value == 'pop':
@@ -496,6 +509,23 @@ class Parser:
         self.expect('DEDENT')
 
         return TryCatchNode(try_body, catch_var, catch_body)
+
+    def parse_throw(self):
+        self.expect('KEYWORD', 'throw')
+        expression = self.parse_full_expression()
+        return ThrowNode(expression)
+
+    def parse_assert(self):
+        self.expect('KEYWORD', 'assert')
+        condition = self.parse_full_expression()
+        message = None
+        if self.pos < len(self.tokens):
+            next_tok = self.peek()
+            if next_tok[0] == 'STRING':
+                message = StringNode(self.advance()[1][1:-1])
+            elif next_tok[0] == 'FSTRING':
+                message = self.parse_fstring(self.advance()[1])
+        return AssertNode(condition, message)
 
     def parse_append(self):
         self.expect('KEYWORD', 'append')
@@ -985,6 +1015,10 @@ class CCodeGenerator:
                 self.uses_strings = True
             if isinstance(node, TryCatchNode):
                 self.uses_try_catch = True
+            if isinstance(node, ThrowNode):
+                self.uses_try_catch = True
+            if isinstance(node, AssertNode):
+                self.uses_try_catch = True
             # Walk children
             if isinstance(node, ProgramNode):
                 for s in node.statements: walk(s)
@@ -1047,6 +1081,11 @@ class CCodeGenerator:
                 for k, v in node.pairs: walk(k); walk(v)
             elif isinstance(node, IndexNode):
                 walk(node.obj); walk(node.index)
+            elif isinstance(node, ThrowNode):
+                walk(node.expression)
+            elif isinstance(node, AssertNode):
+                walk(node.condition)
+                if node.message: walk(node.message)
         walk(program)
 
     def compile(self, program):
@@ -1750,6 +1789,7 @@ class CCodeGenerator:
             self.indent_level += 1
             if stmt.catch_var:
                 safe_catch = self._safe_ident(stmt.catch_var)
+                self.string_vars.add(stmt.catch_var)
                 if stmt.catch_var not in self.declared_vars.get(scope, set()):
                     self.emit(f'const char *{safe_catch} = __error_msg;')
                     self.declared_vars.setdefault(scope, set()).add(stmt.catch_var)
@@ -1774,6 +1814,35 @@ class CCodeGenerator:
 
         elif isinstance(stmt, ContinueNode):
             self.emit('continue;')
+
+        elif isinstance(stmt, ThrowNode):
+            expr_c = self.compile_expression(stmt.expression)
+            if isinstance(stmt.expression, StringNode) or isinstance(stmt.expression, FStringNode):
+                self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%s", {expr_c});')
+            else:
+                self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%.10g", {expr_c});')
+            self.emit('longjmp(__catch_buf, 1);')
+
+        elif isinstance(stmt, AssertNode):
+            cond_c = self.compile_expression(stmt.condition)
+            if stmt.message:
+                msg_c = self.compile_expression(stmt.message)
+                if isinstance(stmt.message, StringNode) or isinstance(stmt.message, FStringNode):
+                    self.emit(f'if (!({cond_c})) {{')
+                else:
+                    self.emit(f'if (!({cond_c})) {{')
+                self.indent_level += 1
+                self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "AssertionError: %s", {msg_c});')
+                self.emit('longjmp(__catch_buf, 1);')
+                self.indent_level -= 1
+                self.emit('}')
+            else:
+                self.emit(f'if (!({cond_c})) {{')
+                self.indent_level += 1
+                self.emit('snprintf(__error_msg, sizeof(__error_msg), "AssertionError: Assertion failed");')
+                self.emit('longjmp(__catch_buf, 1);')
+                self.indent_level -= 1
+                self.emit('}')
 
         elif isinstance(stmt, ClassNode):
             pass  # Already handled in first pass
