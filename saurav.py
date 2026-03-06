@@ -4,6 +4,7 @@ import os
 import math
 import random
 import time as _time
+import contextlib
 from datetime import datetime as _datetime, timezone as _timezone
 
 # Debug flag — enabled with --debug command-line argument
@@ -3131,23 +3132,18 @@ class Interpreter:
                 f"exceeding limit of {MAX_ALLOC_SIZE:,}")
         return seq * count
 
+    @contextlib.contextmanager
     def _scoped_env(self):
         """Context manager: saves self.variables on entry, restores on exit.
 
         Eliminates the repeated saved_env = self.variables.copy() / restore
         pattern used across execute_function, _call_lambda, _eval_pipe, etc.
         """
-        import contextlib
-
-        @contextlib.contextmanager
-        def _scope():
-            saved = self.variables.copy()
-            try:
-                yield
-            finally:
-                self.variables = saved
-
-        return _scope()
+        saved = self.variables.copy()
+        try:
+            yield
+        finally:
+            self.variables = saved
 
     def _expect_args(self, name, args, count):
         if len(args) != count:
@@ -3189,6 +3185,10 @@ class Interpreter:
     def _interp_function(self, ast):
         if DEBUG:
             debug(f"Storing function: {ast.name}\n")
+        # Cache generator status on the FunctionNode to avoid O(n)
+        # AST walk on every call (was a major bottleneck for recursion).
+        if not hasattr(ast, '_is_generator'):
+            ast._is_generator = self._has_yield(ast.body)
         self.functions[ast.name] = ast
 
     def _interp_return(self, ast):
@@ -3579,8 +3579,8 @@ class Interpreter:
             if DEBUG:
                 debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
 
-            # Check if this is a generator function (contains yield)
-            if self._has_yield(func.body):
+            # Check if this is a generator function (cached on first definition)
+            if getattr(func, '_is_generator', False) or self._has_yield(func.body):
                 debug(f"Function {call_node.name} is a generator — returning GeneratorValue")
                 evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
                 return GeneratorValue(self, func, evaluated_args)
