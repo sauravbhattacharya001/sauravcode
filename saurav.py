@@ -1673,8 +1673,6 @@ class Interpreter:
             'file_exists':    self._builtin_file_exists,
             'read_lines':     self._builtin_read_lines,
             # --- Date/Time functions ---
-            'now':            self._builtin_now,
-            'timestamp':      self._builtin_timestamp,
             'date_format':    self._builtin_date_format,
             'date_part':      self._builtin_date_part,
             'date_add':       self._builtin_date_add,
@@ -1682,10 +1680,9 @@ class Interpreter:
             'date_compare':   self._builtin_date_compare,
             'date_range':     self._builtin_date_range,
             'sleep':          self._builtin_sleep,
-            # --- Math constants & trig functions ---
-            'pi':             self._builtin_pi,
-            'euler':          self._builtin_euler,
-            # sin, cos, tan, log10 are registered below via _register_math_builtins()
+            # --- Math constants (trig via _register_math_builtins) ---
+            # pi, euler registered via _register_zero_arg_builtins()
+            # sin, cos, tan, log10 are registered via _register_math_builtins()
             'log':            self._builtin_log,
             'min':            self._builtin_min,
             'max':            self._builtin_max,
@@ -1718,17 +1715,11 @@ class Interpreter:
             'json_parse':     self._builtin_json_parse,
             'json_stringify': self._builtin_json_stringify,
             'json_pretty':    self._builtin_json_pretty,
-            # --- Hash & encoding functions ---
-            'md5':            self._builtin_md5,
-            'sha256':         self._builtin_sha256,
-            'sha1':           self._builtin_sha1,
+            # --- Hash & encoding (md5/sha256/sha1/crc32/url_encode/hex_encode/url_decode
+            #     registered via _register_hash_builtins; these 3 have special error handling) ---
             'base64_encode':  self._builtin_base64_encode,
             'base64_decode':  self._builtin_base64_decode,
-            'hex_encode':     self._builtin_hex_encode,
             'hex_decode':     self._builtin_hex_decode,
-            'crc32':          self._builtin_crc32,
-            'url_encode':     self._builtin_url_encode,
-            'url_decode':     self._builtin_url_decode,
             # --- Statistics & math functions ---
             'mean':           self._builtin_mean,
             'median':         self._builtin_median,
@@ -1744,6 +1735,8 @@ class Interpreter:
             'is_generator':   self._builtin_is_generator,
         }
         self._register_math_builtins()
+        self._register_zero_arg_builtins()
+        self._register_hash_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -1801,6 +1794,92 @@ class Interpreter:
             handler = Interpreter._make_math_builtin(name, fn)
             # Bind to this instance
             self.builtins[name] = lambda args, h=handler: h(self, args)
+
+    # ── Data-driven zero-arg builtins ────────────────────
+
+    def _register_zero_arg_builtins(self):
+        """Register builtins that take no arguments and return a value.
+
+        Eliminates boilerplate for functions like ``now()``, ``pi()``,
+        ``timestamp()``, and ``euler()`` that all share the same
+        pattern: reject any arguments, return a constant or call.
+        """
+        _ZERO_ARG_TABLE = {
+            'now':       lambda: _datetime.now().isoformat(),
+            'timestamp': lambda: _time.time(),
+            'pi':        lambda: math.pi,
+            'euler':     lambda: math.e,
+        }
+        for name, fn in _ZERO_ARG_TABLE.items():
+            def make_handler(n, f):
+                def handler(self_inner, args):
+                    if len(args) != 0:
+                        raise RuntimeError(f"{n} expects 0 arguments")
+                    return f()
+                return handler
+            h = make_handler(name, fn)
+            self.builtins[name] = lambda args, h=h: h(self, args)
+
+    # ── Data-driven hash & encoding builtins ──────────
+
+    def _register_hash_builtins(self):
+        """Register hash/encoding builtins via a data-driven table.
+
+        All these functions take a single string argument (auto-coercing
+        non-strings via ``str()``), encode to UTF-8, and apply a
+        transform.  This eliminates ~70 lines of near-identical methods.
+        """
+        import hashlib, binascii
+        from urllib.parse import quote, unquote
+
+        # Simple transforms: coerce to str, encode, apply fn
+        _HASH_TABLE = {
+            'md5':           lambda s: hashlib.md5(s.encode('utf-8')).hexdigest(),
+            'sha256':        lambda s: hashlib.sha256(s.encode('utf-8')).hexdigest(),
+            'sha1':          lambda s: hashlib.sha1(s.encode('utf-8')).hexdigest(),
+            'crc32':         lambda s: float(binascii.crc32(s.encode('utf-8')) & 0xFFFFFFFF),
+            'url_encode':    lambda s: quote(s, safe=''),
+            'hex_encode':    lambda s: s.encode('utf-8').hex(),
+        }
+        for name, fn in _HASH_TABLE.items():
+            def make_handler(n, f):
+                def handler(self_inner, args):
+                    self_inner._expect_args(n, args, 1)
+                    s = args[0]
+                    if not isinstance(s, str):
+                        s = str(s)
+                    return f(s)
+                return handler
+            h = make_handler(name, fn)
+            self.builtins[name] = lambda args, h=h: h(self, args)
+
+        # url_decode: coerce to str (no auto-str), just unquote
+        def _url_decode(self_inner, args):
+            self_inner._expect_args('url_decode', args, 1)
+            s = args[0]
+            if not isinstance(s, str):
+                raise RuntimeError("url_decode expects a string argument")
+            return unquote(s)
+        self.builtins['url_decode'] = lambda args: _url_decode(self, args)
+
+    # ── Shared statistics validation ──────────────────
+
+    def _validate_number_list(self, name, args):
+        """Validate and return a non-empty list of numbers.
+
+        Shared by mean, median, stdev, variance, mode, and percentile
+        to eliminate duplicated validation code.
+        """
+        self._expect_args(name, args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError(f"{name} expects a list argument")
+        if len(lst) == 0:
+            raise RuntimeError(f"{name}: empty list")
+        for v in lst:
+            if not isinstance(v, (int, float)):
+                raise RuntimeError(f"{name}: all elements must be numbers")
+        return lst
 
     # --- String built-ins ---
     def _builtin_upper(self, args):
@@ -2309,17 +2388,7 @@ class Interpreter:
             raise RuntimeError(f"read_lines: error reading file: {e}")
 
     # --- Date/Time built-ins ---
-    def _builtin_now(self, args):
-        """now() → return current date/time as ISO 8601 string."""
-        if len(args) != 0:
-            raise RuntimeError("now expects 0 arguments")
-        return _datetime.now().isoformat()
-
-    def _builtin_timestamp(self, args):
-        """timestamp() → return current Unix timestamp as a float."""
-        if len(args) != 0:
-            raise RuntimeError("timestamp expects 0 arguments")
-        return _time.time()
+    # now() and timestamp() are registered via _register_zero_arg_builtins()
 
     def _builtin_date_format(self, args):
         """date_format(iso_string, format) → format a date/time string.
@@ -2488,18 +2557,7 @@ class Interpreter:
         return 0.0
 
     # --- Math constants ---
-    def _builtin_pi(self, args):
-        """pi() → return the mathematical constant π (3.14159...)."""
-        if len(args) != 0:
-            raise RuntimeError("pi expects 0 arguments")
-        return math.pi
-
-    def _builtin_euler(self, args):
-        """euler() → return Euler's number e (2.71828...)."""
-        if len(args) != 0:
-            raise RuntimeError("euler expects 0 arguments")
-        return math.e
-
+    # pi() and euler() are registered via _register_zero_arg_builtins()
     # sin, cos, tan, log10 are registered via _register_math_builtins()
 
     def _builtin_log(self, args):
@@ -2692,29 +2750,11 @@ class Interpreter:
     # — Statistics builtins ————————————————————————
 
     def _builtin_mean(self, args):
-        self._expect_args('mean', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("mean expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("mean: empty list")
-        total = 0.0
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("mean: all elements must be numbers")
-            total += v
-        return total / len(lst)
+        lst = self._validate_number_list('mean', args)
+        return sum(lst) / len(lst)
 
     def _builtin_median(self, args):
-        self._expect_args('median', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("median expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("median: empty list")
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("median: all elements must be numbers")
+        lst = self._validate_number_list('median', args)
         s = sorted(lst)
         n = len(s)
         mid = n // 2
@@ -2723,36 +2763,15 @@ class Interpreter:
         return (s[mid - 1] + s[mid]) / 2.0
 
     def _builtin_stdev(self, args):
-        self._expect_args('stdev', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("stdev expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("stdev: empty list")
-        import math
-        m = self._builtin_mean([lst])
-        variance = 0.0
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("stdev: all elements must be numbers")
-            variance += (v - m) ** 2
-        variance /= len(lst)
+        lst = self._validate_number_list('stdev', args)
+        m = sum(lst) / len(lst)
+        variance = sum((v - m) ** 2 for v in lst) / len(lst)
         return math.sqrt(variance)
 
     def _builtin_variance(self, args):
-        self._expect_args('variance', args, 1)
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("variance expects a list argument")
-        if len(lst) == 0:
-            raise RuntimeError("variance: empty list")
-        m = self._builtin_mean([lst])
-        total = 0.0
-        for v in lst:
-            if not isinstance(v, (int, float)):
-                raise RuntimeError("variance: all elements must be numbers")
-            total += (v - m) ** 2
-        return total / len(lst)
+        lst = self._validate_number_list('variance', args)
+        m = sum(lst) / len(lst)
+        return sum((v - m) ** 2 for v in lst) / len(lst)
 
     def _builtin_mode(self, args):
         self._expect_args('mode', args, 1)
@@ -2970,32 +2989,8 @@ class Interpreter:
 
     # — Hash & encoding builtins ————————————————————
 
-    def _builtin_md5(self, args):
-        """md5(string) -> MD5 hex digest of the input string."""
-        self._expect_args('md5', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            s = str(s)
-        import hashlib
-        return hashlib.md5(s.encode('utf-8')).hexdigest()
-
-    def _builtin_sha256(self, args):
-        """sha256(string) -> SHA-256 hex digest of the input string."""
-        self._expect_args('sha256', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            s = str(s)
-        import hashlib
-        return hashlib.sha256(s.encode('utf-8')).hexdigest()
-
-    def _builtin_sha1(self, args):
-        """sha1(string) -> SHA-1 hex digest of the input string."""
-        self._expect_args('sha1', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            s = str(s)
-        import hashlib
-        return hashlib.sha1(s.encode('utf-8')).hexdigest()
+    # md5, sha256, sha1, crc32, url_encode, hex_encode, url_decode
+    # are registered via _register_hash_builtins()
 
     def _builtin_base64_encode(self, args):
         """base64_encode(string) -> Base64 encoded string."""
@@ -3018,14 +3013,6 @@ class Interpreter:
         except Exception as e:
             raise RuntimeError(f"base64_decode: invalid input: {e}")
 
-    def _builtin_hex_encode(self, args):
-        """hex_encode(string) -> hex-encoded string."""
-        self._expect_args('hex_encode', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            s = str(s)
-        return s.encode('utf-8').hex()
-
     def _builtin_hex_decode(self, args):
         """hex_decode(hex_string) -> decoded string from hex."""
         self._expect_args('hex_decode', args, 1)
@@ -3037,32 +3024,8 @@ class Interpreter:
         except Exception as e:
             raise RuntimeError(f"hex_decode: invalid hex string: {e}")
 
-    def _builtin_crc32(self, args):
-        """crc32(string) -> CRC-32 checksum as unsigned integer."""
-        self._expect_args('crc32', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            s = str(s)
-        import binascii
-        return float(binascii.crc32(s.encode('utf-8')) & 0xFFFFFFFF)
-
-    def _builtin_url_encode(self, args):
-        """url_encode(string) -> percent-encoded string for URLs."""
-        self._expect_args('url_encode', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            s = str(s)
-        from urllib.parse import quote
-        return quote(s, safe='')
-
-    def _builtin_url_decode(self, args):
-        """url_decode(string) -> decoded string from percent-encoding."""
-        self._expect_args('url_decode', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            raise RuntimeError("url_decode expects a string argument")
-        from urllib.parse import unquote
-        return unquote(s)
+    # hex_encode, crc32, url_encode, url_decode are registered via
+    # _register_hash_builtins()
 
     # — String padding & char builtins ———————————————
 
