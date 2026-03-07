@@ -5,6 +5,7 @@ import math
 import random
 import time as _time
 import contextlib
+from collections import ChainMap
 from datetime import datetime as _datetime, timezone as _timezone
 
 # Debug flag — enabled with --debug command-line argument
@@ -3182,16 +3183,20 @@ class Interpreter:
 
     @contextlib.contextmanager
     def _scoped_env(self):
-        """Context manager: saves self.variables on entry, restores on exit.
+        """Context manager: pushes a new scope on entry, pops on exit.
 
-        Eliminates the repeated saved_env = self.variables.copy() / restore
-        pattern used across execute_function, _call_lambda, _eval_pipe, etc.
+        Uses ``collections.ChainMap`` for O(1) scope push/pop instead of
+        copying the entire variable dict on every function call.  Reads
+        fall through to the parent scope, writes stay local — identical
+        semantics to the old ``dict.copy()`` / restore pattern, but
+        much faster for programs with deep recursion or many calls.
         """
-        saved = self.variables.copy()
+        parent = self.variables
+        self.variables = ChainMap({}, parent)
         try:
             yield
         finally:
-            self.variables = saved
+            self.variables = parent
 
     def _expect_args(self, name, args, count):
         if len(args) != count:
@@ -3389,7 +3394,7 @@ class Interpreter:
                 f"iterations ({MAX_LOOP_ITERATIONS:,})"
             )
         for i in range(start, end):
-            self.variables[node.var] = float(i)
+            self.variables[node.var] = i
             try:
                 self.execute_body(node.body)
             except BreakSignal:
