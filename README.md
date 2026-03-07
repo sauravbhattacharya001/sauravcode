@@ -48,16 +48,23 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Dual execution** — interpreted (`saurav.py`) or compiled to native (`sauravcc.py`)
 - **Interactive REPL** — experiment with sauravcode in real-time
 - **Functions & recursion** — with clean call syntax
+- **Lambda expressions** — `lambda x -> x * 2` for inline functions
+- **Pipe operator** — `"hello" |> upper |> reverse` for chaining
 - **Dynamic typing** — integers, floats, booleans, strings, lists, maps
-- **Control flow** — if/else if/else, while loops, range-based for loops, break/continue
+- **Control flow** — if/else if/else, while, range-based for, for-each, break/continue
+- **Pattern matching** — `match` expressions with wildcard and literal patterns
+- **Generators** — functions with `yield` for lazy sequences
+- **Enums** — named constant groups with dot access
 - **Classes** — with fields, methods, and `self`
-- **Error handling** — try/catch blocks
-- **Lists** — dynamic arrays with append, len, indexing
+- **Error handling** — try/catch/throw blocks
+- **Import system** — `import "module.srv"` with closure scoping
+- **Lists** — dynamic arrays with append, pop, len, indexing, slicing, comprehensions
 - **Maps** — key-value dictionaries with `{}` syntax, bracket access, and built-in functions
-- **Standard library** — 30 built-in functions for strings, math, maps, and utilities
+- **95 built-in functions** — strings, math, stats, regex, date/time, JSON, encoding, hashing, I/O
 - **String interpolation** — `f"Hello {name}, you are {age} years old"` f-strings
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
+- **Developer tooling** — formatter, linter, profiler, coverage, benchmarks, AST visualizer, playground
 - **VS Code extension** — syntax highlighting, 25 snippets, and language configuration
 
 ## 🚀 Quick Start
@@ -277,7 +284,7 @@ catch err
 
 ### Standard Library
 
-Sauravcode includes 27 built-in functions — no imports needed:
+Sauravcode includes **95 built-in functions** — no imports needed. See the full [Standard Library Reference](STDLIB.md).
 
 ```
 # String functions
@@ -300,13 +307,26 @@ print floor 3.7                  # 3
 print ceil 3.2                   # 4
 print abs (-42)                  # 42
 
-# Utility functions
-print type_of 42                 # number
-x = to_string 42                # "42"
-y = to_number "3.14"            # 3.14
-nums = range 1 6                # [1, 2, 3, 4, 5]
-print reverse "hello"           # olleh
-print sort [3, 1, 2]            # [1, 2, 3]
+# Statistics
+print mean [1, 2, 3, 4, 5]      # 3.0
+print median [1, 3, 5, 7]       # 4.0
+print stdev [2, 4, 4, 4, 5]     # 0.894...
+
+# Regex
+print regex_match "^\d+$" "42"   # true
+print regex_replace "\s+" "-" "a b c"  # a-b-c
+
+# Date/Time
+print now                        # 2026-03-07T15:...
+d = date_add (now) 7 "days"     # one week from now
+
+# JSON
+data = json_parse "{\"x\": 1}"   # {"x": 1}
+print json_pretty data           # formatted
+
+# Hashing & Encoding
+print sha256 "hello"             # 2cf24dba...
+print base64_encode "hello"      # aGVsbG8=
 
 # Map functions
 m = {"a": 1, "b": 2}
@@ -430,13 +450,16 @@ sauravcode/
 ├── saurav.py           # Interpreter + interactive REPL
 ├── sauravcc.py         # Compiler (.srv → C → native)
 ├── sauravast.py        # AST visualizer (tree, JSON, DOT, stats)
-├── hello.srv           # Hello World example
-├── a.srv               # Function composition example
-├── test.srv            # Basic test
-├── test_all.srv        # Comprehensive feature test
-├── stdlib_demo.srv     # Standard library demo
-├── map_demo.srv        # Map/dictionary demo
-├── fstring_demo.srv    # String interpolation demo
+├── sauravbench.py      # Benchmark runner (fib, sort, recursion, etc.)
+├── sauravcov.py        # Code coverage analysis
+├── sauravdb.py         # Interactive debugger
+├── sauravdiff.py       # Semantic diff between .srv files
+├── sauravdoc.py        # Documentation generator
+├── sauravfmt.py        # Code formatter
+├── sauravlint.py       # Linter (style, complexity, bugs)
+├── sauravplay.py       # Interactive playground
+├── sauravprof.py       # Execution profiler
+├── tests/              # 2100+ pytest tests
 ├── editors/
 │   └── vscode/         # VS Code extension (syntax, snippets)
 ├── docs/
@@ -447,7 +470,9 @@ sauravcode/
 │   └── index.html      # Documentation website
 ├── .github/
 │   └── workflows/      # CI/CD (CodeQL, Pages)
+├── STDLIB.md           # Standard library reference (95 functions)
 ├── CHANGELOG.md        # Version history
+├── CONTRIBUTING.md     # Contribution guidelines
 └── LICENSE             # MIT License
 ```
 
@@ -483,6 +508,7 @@ The result is code that reads almost like pseudocode but actually runs.
 
 | Document | Description |
 |----------|-------------|
+| [Standard Library](STDLIB.md) | All 95 built-in functions with signatures and examples |
 | [Language Reference](docs/LANGUAGE.md) | Complete spec with EBNF grammar, types, operators, precedence |
 | [Architecture Guide](docs/ARCHITECTURE.md) | How the tokenizer, parser, interpreter, and compiler work |
 | [Examples](docs/EXAMPLES.md) | Annotated programs covering all features |
@@ -520,11 +546,11 @@ Contributions are welcome! Here's how to get started:
 ### Ideas for Contributions
 
 - Additional data structures (sets, tuples)
-- Import/module system
-- Standard library functions
+- Compiler support for maps, f-strings, generators, and pattern matching
 - Editor support for more editors (Sublime Text, Vim, Emacs, JetBrains)
 - Optimization passes in the compiler
-- Map support in the compiler (`sauravcc.py`)
+- Async/concurrent execution
+- Package manager for .srv modules
 
 ## 📄 License
 
