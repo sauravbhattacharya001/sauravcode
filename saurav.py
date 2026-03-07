@@ -2876,6 +2876,54 @@ class Interpreter:
 
     # --- Regex built-ins ---
 
+    # --- Regex built-ins (with ReDoS protection) ---
+
+    # Maximum allowed regex pattern length.  Excessively long patterns
+    # can be used to craft exponential-backtracking attacks even before
+    # the match is attempted.
+    _REGEX_MAX_PATTERN_LEN = 1000
+
+    # Patterns that indicate potential ReDoS (nested quantifiers).
+    # These catch constructs like (a+)+, (a*)+, (a+)*, (a?){N}, etc.
+    _REGEX_DANGEROUS_PATTERNS = re.compile(
+        r'(\([^)]*[+*][^)]*\))[+*]'   # (X+)+ or (X*)+ or (X+)* etc.
+        r'|(\([^)]*[+*?][^)]*\))\{'    # (X+){N} or (X?){N}
+        r'|(\([^)]*\{[^)]*\))[+*]'    # (X{N})+ etc.
+    )
+
+    def _regex_validate(self, func_name, pattern):
+        """Validate a regex pattern for length and dangerous constructs.
+
+        Checks:
+        1. Pattern length <= _REGEX_MAX_PATTERN_LEN
+        2. Pattern compiles (valid syntax)
+        3. No nested quantifiers that cause exponential backtracking
+
+        Args:
+            func_name: Name of the calling builtin (for error messages).
+            pattern:   The regex pattern string.
+
+        Raises:
+            RuntimeError: On invalid, oversized, or dangerous pattern.
+        """
+        if len(pattern) > self._REGEX_MAX_PATTERN_LEN:
+            raise RuntimeError(
+                f"{func_name}: regex pattern too long "
+                f"({len(pattern)} chars, max {self._REGEX_MAX_PATTERN_LEN})"
+            )
+
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            raise RuntimeError(f"{func_name}: invalid regex pattern: {e}")
+
+        if self._REGEX_DANGEROUS_PATTERNS.search(pattern):
+            raise RuntimeError(
+                f"{func_name}: regex pattern rejected — nested quantifiers "
+                f"detected (potential ReDoS). Simplify the pattern to avoid "
+                f"exponential backtracking."
+            )
+
     def _builtin_regex_match(self, args):
         """regex_match(pattern, string) -> true if the entire string matches the pattern."""
         self._expect_args('regex_match', args, 2)
@@ -2884,10 +2932,8 @@ class Interpreter:
             raise RuntimeError("regex_match expects a string pattern as first argument")
         if not isinstance(string, str):
             raise RuntimeError("regex_match expects a string as second argument")
-        try:
-            return re.fullmatch(pattern, string) is not None
-        except re.error as e:
-            raise RuntimeError(f"regex_match: invalid regex pattern: {e}")
+        self._regex_validate('regex_match', pattern)
+        return re.fullmatch(pattern, string) is not None
 
     def _builtin_regex_find(self, args):
         """regex_find(pattern, string) -> map with 'match', 'start', 'end', 'groups' or null."""
@@ -2897,10 +2943,8 @@ class Interpreter:
             raise RuntimeError("regex_find expects a string pattern as first argument")
         if not isinstance(string, str):
             raise RuntimeError("regex_find expects a string as second argument")
-        try:
-            m = re.search(pattern, string)
-        except re.error as e:
-            raise RuntimeError(f"regex_find: invalid regex pattern: {e}")
+        self._regex_validate('regex_find', pattern)
+        m = re.search(pattern, string)
         if m is None:
             return None
         groups = list(m.groups()) if m.groups() else []
@@ -2919,10 +2963,8 @@ class Interpreter:
             raise RuntimeError("regex_find_all expects a string pattern as first argument")
         if not isinstance(string, str):
             raise RuntimeError("regex_find_all expects a string as second argument")
-        try:
-            results = re.findall(pattern, string)
-        except re.error as e:
-            raise RuntimeError(f"regex_find_all: invalid regex pattern: {e}")
+        self._regex_validate('regex_find_all', pattern)
+        results = re.findall(pattern, string)
         # re.findall returns strings when no groups, tuples when groups
         # Convert tuples to lists for sauravcode consistency
         return [list(r) if isinstance(r, tuple) else r for r in results]
@@ -2937,10 +2979,8 @@ class Interpreter:
             raise RuntimeError("regex_replace expects a string replacement as second argument")
         if not isinstance(string, str):
             raise RuntimeError("regex_replace expects a string as third argument")
-        try:
-            return re.sub(pattern, replacement, string)
-        except re.error as e:
-            raise RuntimeError(f"regex_replace: invalid regex pattern: {e}")
+        self._regex_validate('regex_replace', pattern)
+        return re.sub(pattern, replacement, string)
 
     def _builtin_regex_split(self, args):
         """regex_split(pattern, string) -> list of substrings split by pattern matches."""
@@ -2950,10 +2990,8 @@ class Interpreter:
             raise RuntimeError("regex_split expects a string pattern as first argument")
         if not isinstance(string, str):
             raise RuntimeError("regex_split expects a string as second argument")
-        try:
-            return re.split(pattern, string)
-        except re.error as e:
-            raise RuntimeError(f"regex_split: invalid regex pattern: {e}")
+        self._regex_validate('regex_split', pattern)
+        return re.split(pattern, string)
 
     # --- JSON built-ins ---
     def _builtin_json_parse(self, args):
