@@ -3285,8 +3285,10 @@ class Interpreter:
         value = self.evaluate(ast.value)
         if isinstance(collection, list):
             idx = int(idx_or_key)
+            if idx < 0:
+                idx += len(collection)
             if idx < 0 or idx >= len(collection):
-                raise RuntimeError(f"Index {idx} out of bounds (size {len(collection)})")
+                raise RuntimeError(f"Index {int(idx_or_key)} out of bounds (size {len(collection)})")
             collection[idx] = value
         elif isinstance(collection, dict):
             collection[idx_or_key] = value

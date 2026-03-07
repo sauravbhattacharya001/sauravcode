@@ -613,6 +613,22 @@ class TestLists:
         with pytest.raises(RuntimeError, match="out of bounds"):
             run_code("nums = [1, 2]\nprint nums[-3]\n")
 
+    def test_list_negative_index_assignment_last(self):
+        output = run_code("nums = [10, 20, 30]\nnums[-1] = 99\nprint nums\n")
+        assert output.strip() == "[10, 20, 99]"
+
+    def test_list_negative_index_assignment_second(self):
+        output = run_code("nums = [10, 20, 30]\nnums[-2] = 88\nprint nums\n")
+        assert output.strip() == "[10, 88, 30]"
+
+    def test_list_negative_index_assignment_first(self):
+        output = run_code("nums = [10, 20, 30]\nnums[-3] = 77\nprint nums\n")
+        assert output.strip() == "[77, 20, 30]"
+
+    def test_list_negative_index_assignment_out_of_bounds(self):
+        with pytest.raises(RuntimeError, match="out of bounds"):
+            run_code("nums = [1, 2]\nnums[-3] = 99\n")
+
     def test_string_index(self):
         output = run_code('s = "hello"\nprint s[0]\n')
         assert output.strip() == "h"
