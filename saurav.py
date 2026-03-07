@@ -2185,14 +2185,57 @@ class Interpreter:
         return result
 
     # --- File I/O built-ins ---
+
+    def _validate_file_path(self, func_name, path):
+        """Validate a file path against the interpreter's sandbox root.
+
+        When the interpreter has a _source_dir (i.e. running from a file),
+        file I/O is restricted to the source directory tree — consistent
+        with the import path traversal guard. This prevents sauravcode
+        programs from reading/writing arbitrary files outside their project.
+
+        When _source_dir is None (REPL/interactive), no restriction is
+        applied — the user is directly controlling the interpreter.
+
+        Null bytes are always blocked regardless of mode.
+        """
+        # Block null bytes (path injection)
+        if '\x00' in path:
+            raise RuntimeError(f"{func_name}: null bytes are not allowed in file paths")
+
+        # Block empty paths
+        if not path.strip():
+            raise RuntimeError(f"{func_name}: empty file path")
+
+        # When running from a file, enforce path traversal protection
+        if self._source_dir is not None:
+            allowed_root = os.path.abspath(self._source_dir)
+
+            if os.path.isabs(path):
+                full_path = os.path.abspath(path)
+            else:
+                full_path = os.path.abspath(os.path.join(allowed_root, path))
+
+            # Path traversal check — must resolve within allowed root
+            if not full_path.startswith(allowed_root + os.sep) and full_path != allowed_root:
+                raise RuntimeError(
+                    f"{func_name}: path traversal outside project directory "
+                    f"is not allowed ('{path}' resolves outside '{allowed_root}')"
+                )
+            return full_path
+
+        # Interactive/REPL mode: resolve but don't restrict
+        return os.path.abspath(path)
+
     def _builtin_read_file(self, args):
         """read_file path → return file contents as a string."""
         self._expect_args('read_file', args, 1)
         path = args[0]
         if not isinstance(path, str):
             raise RuntimeError("read_file expects a string path")
+        full_path = self._validate_file_path('read_file', path)
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(full_path, 'r', encoding='utf-8') as f:
                 return f.read()
         except FileNotFoundError:
             raise RuntimeError(f"read_file: file not found: {path}")
@@ -2210,8 +2253,9 @@ class Interpreter:
             raise RuntimeError("write_file expects a string path as first argument")
         if not isinstance(content, str):
             content = str(content)
+        full_path = self._validate_file_path('write_file', path)
         try:
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             return True
         except PermissionError:
@@ -2228,8 +2272,9 @@ class Interpreter:
             raise RuntimeError("append_file expects a string path as first argument")
         if not isinstance(content, str):
             content = str(content)
+        full_path = self._validate_file_path('append_file', path)
         try:
-            with open(path, 'a', encoding='utf-8') as f:
+            with open(full_path, 'a', encoding='utf-8') as f:
                 f.write(content)
             return True
         except PermissionError:
@@ -2243,7 +2288,8 @@ class Interpreter:
         path = args[0]
         if not isinstance(path, str):
             raise RuntimeError("file_exists expects a string path")
-        return os.path.isfile(path)
+        full_path = self._validate_file_path('file_exists', path)
+        return os.path.isfile(full_path)
 
     def _builtin_read_lines(self, args):
         """read_lines path → return file contents as a list of lines."""
@@ -2251,8 +2297,9 @@ class Interpreter:
         path = args[0]
         if not isinstance(path, str):
             raise RuntimeError("read_lines expects a string path")
+        full_path = self._validate_file_path('read_lines', path)
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(full_path, 'r', encoding='utf-8') as f:
                 return [line.rstrip('\n').rstrip('\r') for line in f.readlines()]
         except FileNotFoundError:
             raise RuntimeError(f"read_lines: file not found: {path}")
