@@ -1150,6 +1150,67 @@ class CCodeGenerator:
             self.emit("#include <setjmp.h>")
         self.emit("")
 
+        # Emit checked-malloc helper (used by list/map runtimes)
+        self.emit("/* Checked allocation — aborts on OOM */")
+        self.emit("static void* srv_checked_malloc(size_t n) {")
+        self.emit("    void* p = malloc(n);")
+        self.emit('    if (!p) { fprintf(stderr, "Out of memory (requested %zu bytes)\\n", n); exit(1); }')
+        self.emit("    return p;")
+        self.emit("}")
+        self.emit("static void* srv_checked_realloc(void* ptr, size_t n) {")
+        self.emit("    void* p = realloc(ptr, n);")
+        self.emit('    if (!p) { fprintf(stderr, "Out of memory (realloc %zu bytes)\\n", n); exit(1); }')
+        self.emit("    return p;")
+        self.emit("}")
+        self.emit("")
+
+        # Emit arena allocator for string memory management
+        if self.uses_string_helpers or getattr(self, 'uses_fstring', False):
+            self.emit("/* Arena allocator — all string allocations go through here */")
+            self.emit("/* and are freed in one shot at program exit.              */")
+            self.emit("#define SRV_ARENA_BLOCK_SIZE (64 * 1024)  /* 64 KB blocks */")
+            self.emit("typedef struct SrvArenaBlock {")
+            self.emit("    struct SrvArenaBlock* next;")
+            self.emit("    size_t used;")
+            self.emit("    size_t capacity;")
+            self.emit("    char data[];  /* flexible array member */")
+            self.emit("} SrvArenaBlock;")
+            self.emit("")
+            self.emit("static SrvArenaBlock* __arena_head = NULL;")
+            self.emit("")
+            self.emit("static SrvArenaBlock* srv_arena_new_block(size_t min_size) {")
+            self.emit("    size_t cap = min_size > SRV_ARENA_BLOCK_SIZE ? min_size : SRV_ARENA_BLOCK_SIZE;")
+            self.emit("    SrvArenaBlock* b = (SrvArenaBlock*)malloc(sizeof(SrvArenaBlock) + cap);")
+            self.emit('    if (!b) { fprintf(stderr, "Out of memory (arena block %zu bytes)\\n", cap); exit(1); }')
+            self.emit("    b->next = __arena_head;")
+            self.emit("    b->used = 0;")
+            self.emit("    b->capacity = cap;")
+            self.emit("    __arena_head = b;")
+            self.emit("    return b;")
+            self.emit("}")
+            self.emit("")
+            self.emit("static void* srv_arena_alloc(size_t n) {")
+            self.emit("    /* Align to 8 bytes */")
+            self.emit("    n = (n + 7) & ~(size_t)7;")
+            self.emit("    SrvArenaBlock* b = __arena_head;")
+            self.emit("    if (!b || b->used + n > b->capacity)")
+            self.emit("        b = srv_arena_new_block(n);")
+            self.emit("    void* p = b->data + b->used;")
+            self.emit("    b->used += n;")
+            self.emit("    return p;")
+            self.emit("}")
+            self.emit("")
+            self.emit("static void srv_arena_free_all(void) {")
+            self.emit("    SrvArenaBlock* b = __arena_head;")
+            self.emit("    while (b) {")
+            self.emit("        SrvArenaBlock* next = b->next;")
+            self.emit("        free(b);")
+            self.emit("        b = next;")
+            self.emit("    }")
+            self.emit("    __arena_head = NULL;")
+            self.emit("}")
+            self.emit("")
+
         # Emit dynamic list support if needed
         if self.uses_lists:
             self.emit_list_runtime()
@@ -1200,6 +1261,10 @@ class CCodeGenerator:
         for stmt in top_level:
             self.compile_statement(stmt, scope='main', is_top_level=True)
 
+        # Free arena memory before exit
+        if self.uses_string_helpers or getattr(self, 'uses_fstring', False):
+            self.emit("srv_arena_free_all();")
+
         self.emit("return 0;")
         self.indent_level -= 1
         self.emit("}")
@@ -1220,14 +1285,14 @@ class CCodeGenerator:
         self.emit("    SrvList l;")
         self.emit("    l.capacity = 8;")
         self.emit("    l.size = 0;")
-        self.emit("    l.data = (double*)malloc(sizeof(double) * l.capacity);")
+        self.emit("    l.data = (double*)srv_checked_malloc(sizeof(double) * l.capacity);")
         self.emit("    return l;")
         self.emit("}")
         self.emit("")
         self.emit("void srv_list_append(SrvList *l, double val) {")
         self.emit("    if (l->size >= l->capacity) {")
         self.emit("        l->capacity *= 2;")
-        self.emit("        l->data = (double*)realloc(l->data, sizeof(double) * l->capacity);")
+        self.emit("        l->data = (double*)srv_checked_realloc(l->data, sizeof(double) * l->capacity);")
         self.emit("    }")
         self.emit("    l->data[l->size++] = val;")
         self.emit("}")
@@ -1300,6 +1365,7 @@ class CCodeGenerator:
         self.emit("    m.capacity = 16;")
         self.emit("    m.size = 0;")
         self.emit("    m.entries = (SrvMapEntry*)calloc(m.capacity, sizeof(SrvMapEntry));")
+        self.emit('    if (!m.entries) { fprintf(stderr, "Out of memory\\n"); exit(1); }')
         self.emit("    return m;")
         self.emit("}")
         self.emit("")
@@ -1309,6 +1375,7 @@ class CCodeGenerator:
         self.emit("    SrvMapEntry *old = m->entries;")
         self.emit("    m->capacity *= 2;")
         self.emit("    m->entries = (SrvMapEntry*)calloc(m->capacity, sizeof(SrvMapEntry));")
+        self.emit('    if (!m->entries) { fprintf(stderr, "Out of memory\\n"); exit(1); }')
         self.emit("    m->size = 0;")
         self.emit("    for (int i = 0; i < old_cap; i++) {")
         self.emit("        if (old[i].occupied) {")
@@ -1414,25 +1481,25 @@ class CCodeGenerator:
         self.emit("/* ---- String / conversion helpers ---- */")
         self.emit("#include <ctype.h>")
         self.emit("")
-        # srv_upper: returns a malloc'd uppercase copy
+        # srv_upper: returns an arena-allocated uppercase copy
         self.emit("static char* srv_upper(const char* s) {")
         self.emit("    size_t len = strlen(s);")
-        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    char* out = (char*)srv_arena_alloc(len + 1);")
         self.emit("    for (size_t i = 0; i <= len; i++) out[i] = toupper((unsigned char)s[i]);")
         self.emit("    return out;")
         self.emit("}")
         self.emit("")
-        # srv_lower: returns a malloc'd lowercase copy
+        # srv_lower: returns an arena-allocated lowercase copy
         self.emit("static char* srv_lower(const char* s) {")
         self.emit("    size_t len = strlen(s);")
-        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    char* out = (char*)srv_arena_alloc(len + 1);")
         self.emit("    for (size_t i = 0; i <= len; i++) out[i] = tolower((unsigned char)s[i]);")
         self.emit("    return out;")
         self.emit("}")
         self.emit("")
         # srv_to_string: converts a double to a string
         self.emit("static char* srv_to_string(double val) {")
-        self.emit("    char* buf = (char*)malloc(64);")
+        self.emit("    char* buf = (char*)srv_arena_alloc(64);")
         self.emit("    if (val == (long long)val)")
         self.emit('        snprintf(buf, 64, "%lld", (long long)val);')
         self.emit("    else")
@@ -1446,28 +1513,28 @@ class CCodeGenerator:
         self.emit('    return "number";  /* compiled mode only has doubles */')
         self.emit("}")
         self.emit("")
-        # srv_trim: returns a malloc'd trimmed copy (strips leading/trailing whitespace)
+        # srv_trim: returns an arena-allocated trimmed copy (strips leading/trailing whitespace)
         self.emit("static char* srv_trim(const char* s) {")
         self.emit("    while (*s && isspace((unsigned char)*s)) s++;")
-        self.emit("    if (*s == '\\0') { char* out = (char*)malloc(1); out[0] = '\\0'; return out; }")
+        self.emit("    if (*s == '\\0') { char* out = (char*)srv_arena_alloc(1); out[0] = '\\0'; return out; }")
         self.emit("    const char* end = s + strlen(s) - 1;")
         self.emit("    while (end > s && isspace((unsigned char)*end)) end--;")
         self.emit("    size_t len = (size_t)(end - s + 1);")
-        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    char* out = (char*)srv_arena_alloc(len + 1);")
         self.emit("    memcpy(out, s, len);")
         self.emit("    out[len] = '\\0';")
         self.emit("    return out;")
         self.emit("}")
         self.emit("")
-        # srv_replace: returns a malloc'd string with all occurrences of old replaced by new
+        # srv_replace: returns an arena-allocated string with all occurrences of old replaced by new
         self.emit("static char* srv_replace(const char* s, const char* old, const char* neww) {")
         self.emit("    size_t slen = strlen(s), olen = strlen(old), nlen = strlen(neww);")
-        self.emit("    if (olen == 0) { char* out = (char*)malloc(slen + 1); memcpy(out, s, slen + 1); return out; }")
+        self.emit("    if (olen == 0) { char* out = (char*)srv_arena_alloc(slen + 1); memcpy(out, s, slen + 1); return out; }")
         self.emit("    size_t count = 0;")
         self.emit("    const char* p = s;")
         self.emit("    while ((p = strstr(p, old)) != NULL) { count++; p += olen; }")
         self.emit("    size_t rlen = slen + count * (nlen - olen);")
-        self.emit("    char* out = (char*)malloc(rlen + 1);")
+        self.emit("    char* out = (char*)srv_arena_alloc(rlen + 1);")
         self.emit("    char* w = out;")
         self.emit("    p = s;")
         self.emit("    while (*p) {")
@@ -1494,8 +1561,8 @@ class CCodeGenerator:
         self.emit("static char* srv_char_at(const char* s, double idx) {")
         self.emit("    int i = (int)idx;")
         self.emit("    size_t len = strlen(s);")
-        self.emit('    if (i < 0 || (size_t)i >= len) { char* out = (char*)malloc(1); out[0] = \'\\0\'; return out; }')
-        self.emit("    char* out = (char*)malloc(2);")
+        self.emit('    if (i < 0 || (size_t)i >= len) { char* out = (char*)srv_arena_alloc(1); out[0] = \'\\0\'; return out; }')
+        self.emit("    char* out = (char*)srv_arena_alloc(2);")
         self.emit("    out[0] = s[i]; out[1] = '\\0';")
         self.emit("    return out;")
         self.emit("}")
@@ -1506,18 +1573,18 @@ class CCodeGenerator:
         self.emit("    size_t len = strlen(s);")
         self.emit("    if (st < 0) st = 0;")
         self.emit("    if ((size_t)en > len) en = (int)len;")
-        self.emit("    if (st >= en) { char* out = (char*)malloc(1); out[0] = '\\0'; return out; }")
+        self.emit("    if (st >= en) { char* out = (char*)srv_arena_alloc(1); out[0] = '\\0'; return out; }")
         self.emit("    size_t rlen = (size_t)(en - st);")
-        self.emit("    char* out = (char*)malloc(rlen + 1);")
+        self.emit("    char* out = (char*)srv_arena_alloc(rlen + 1);")
         self.emit("    memcpy(out, s + st, rlen);")
         self.emit("    out[rlen] = '\\0';")
         self.emit("    return out;")
         self.emit("}")
         self.emit("")
-        # srv_reverse: returns a malloc'd reversed copy
+        # srv_reverse: returns an arena-allocated reversed copy
         self.emit("static char* srv_reverse(const char* s) {")
         self.emit("    size_t len = strlen(s);")
-        self.emit("    char* out = (char*)malloc(len + 1);")
+        self.emit("    char* out = (char*)srv_arena_alloc(len + 1);")
         self.emit("    for (size_t i = 0; i < len; i++) out[i] = s[len - 1 - i];")
         self.emit("    out[len] = '\\0';")
         self.emit("    return out;")
@@ -1531,7 +1598,7 @@ class CCodeGenerator:
         self.emit("        /* Split into individual characters */")
         self.emit("        size_t slen = strlen(s);")
         self.emit("        for (size_t i = 0; i < slen; i++) {")
-        self.emit("            char* ch = (char*)malloc(2); ch[0] = s[i]; ch[1] = '\\0';")
+        self.emit("            char* ch = (char*)srv_arena_alloc(2); ch[0] = s[i]; ch[1] = '\\0';")
         self.emit("            union { char* p; double d; } u; u.p = ch;")
         self.emit("            srv_list_append(&list, u.d);")
         self.emit("        }")
@@ -1541,14 +1608,14 @@ class CCodeGenerator:
         self.emit("    while (*p) {")
         self.emit("        const char* found = strstr(p, delim);")
         self.emit("        size_t partlen = found ? (size_t)(found - p) : strlen(p);")
-        self.emit("        char* part = (char*)malloc(partlen + 1);")
+        self.emit("        char* part = (char*)srv_arena_alloc(partlen + 1);")
         self.emit("        memcpy(part, p, partlen); part[partlen] = '\\0';")
         self.emit("        union { char* ptr; double d; } u; u.ptr = part;")
         self.emit("        srv_list_append(&list, u.d);")
         self.emit("        if (!found) break;")
         self.emit("        p = found + dlen;")
         self.emit("        if (*p == '\\0') {")
-        self.emit("            char* empty = (char*)malloc(1); empty[0] = '\\0';")
+        self.emit("            char* empty = (char*)srv_arena_alloc(1); empty[0] = '\\0';")
         self.emit("            union { char* ptr; double d; } u2; u2.ptr = empty;")
         self.emit("            srv_list_append(&list, u2.d);")
         self.emit("            break;")
@@ -1559,7 +1626,7 @@ class CCodeGenerator:
         self.emit("")
         # srv_join: joins a SrvList of strings with a delimiter
         self.emit("static char* srv_join(const char* delim, SrvList* list) {")
-        self.emit("    if (list->size == 0) { char* out = (char*)malloc(1); out[0] = '\\0'; return out; }")
+        self.emit("    if (list->size == 0) { char* out = (char*)srv_arena_alloc(1); out[0] = '\\0'; return out; }")
         self.emit("    size_t dlen = strlen(delim);")
         self.emit("    size_t total = 0;")
         self.emit("    for (int i = 0; i < list->size; i++) {")
@@ -1567,7 +1634,7 @@ class CCodeGenerator:
         self.emit("        total += strlen(u.p);")
         self.emit("        if (i > 0) total += dlen;")
         self.emit("    }")
-        self.emit("    char* out = (char*)malloc(total + 1);")
+        self.emit("    char* out = (char*)srv_arena_alloc(total + 1);")
         self.emit("    char* w = out;")
         self.emit("    for (int i = 0; i < list->size; i++) {")
         self.emit("        if (i > 0) { memcpy(w, delim, dlen); w += dlen; }")
@@ -2100,11 +2167,11 @@ class CCodeGenerator:
         return f"{safe_name}({args_c})"
 
     def compile_fstring(self, node):
-        """Compile an f-string to C using snprintf into a malloc'd buffer.
+        """Compile an f-string to C using snprintf into an arena-allocated buffer.
 
         Generates a GCC statement-expression ({ ... }) that:
         1. Calculates the required buffer size via snprintf(NULL, 0, ...)
-        2. Allocates a buffer with malloc
+        2. Allocates a buffer from the arena (NULL-safe)
         3. Writes the formatted string into it
         """
         self.uses_fstring = True
@@ -2149,7 +2216,7 @@ class CCodeGenerator:
         # Use a statement-expression to allocate and format
         return (
             f'({{ int __n = snprintf(NULL, 0, "{fmt_str}"{args_str}); '
-            f'char* __s = (char*)malloc(__n + 1); '
+            f'char* __s = (char*)srv_arena_alloc(__n + 1); '
             f'snprintf(__s, __n + 1, "{fmt_str}"{args_str}); __s; }})'
         )
 
