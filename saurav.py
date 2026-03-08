@@ -3616,12 +3616,21 @@ class Interpreter:
             self.interpret(stmt)
 
     def _is_truthy(self, value):
-        """Determine truthiness of a value."""
+        """Determine truthiness of a value.
+
+        Falsy values: ``false``, ``0``, ``""``, ``[]``, ``{}``, ``None``.
+        Everything else (non-zero numbers, non-empty strings/lists/maps,
+        generators, etc.) is truthy.
+        """
         if isinstance(value, bool):
             return value
         if isinstance(value, (int, float)):
             return value != 0
         if isinstance(value, str):
+            return len(value) > 0
+        if isinstance(value, list):
+            return len(value) > 0
+        if isinstance(value, dict):
             return len(value) > 0
         if value is None:
             return False
@@ -3934,18 +3943,31 @@ class Interpreter:
         return LambdaValue(node.params, node.body_expr, self.variables.copy())
 
     def _call_lambda(self, lam, args):
-        """Call a LambdaValue with the given arguments."""
+        """Call a LambdaValue with the given arguments.
+
+        Uses ``ChainMap`` over the captured closure instead of copying
+        the closure dict.  This avoids an O(n) ``dict.copy()`` on every
+        lambda invocation — a significant win when higher-order
+        functions (map, filter, reduce, each) invoke a lambda once per
+        element.  Parameters are written into the child map so they
+        shadow any same-named closure variables without mutating the
+        original closure.
+        """
         if len(args) != len(lam.params):
             raise RuntimeError(
                 f"Lambda expects {len(lam.params)} argument(s), "
                 f"got {len(args)}"
             )
-        # Set up lambda scope: closure + params
-        with self._scoped_env():
-            self.variables = lam.closure.copy()
-            for param, val in zip(lam.params, args):
-                self.variables[param] = val
+        # Save and restore variables manually (skip _scoped_env which
+        # would create an unused intermediate ChainMap).
+        saved = self.variables
+        self.variables = ChainMap({}, lam.closure)
+        for param, val in zip(lam.params, args):
+            self.variables[param] = val
+        try:
             return self.evaluate(lam.body_expr)
+        finally:
+            self.variables = saved
 
     def _eval_ternary(self, node):
         condition = self.evaluate(node.condition)

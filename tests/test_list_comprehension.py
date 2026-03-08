@@ -342,17 +342,19 @@ class TestComprehensionIsTruthyConsistency:
     """Verify list comprehension 'if' uses sauravcode's _is_truthy,
     not Python's native truthiness."""
 
-    def test_empty_list_is_truthy(self):
-        """Empty list [] is truthy in sauravcode — should NOT filter."""
+    def test_empty_list_is_falsy(self):
+        """Empty list [] is now falsy in sauravcode — consistent with
+        Python, JavaScript, Ruby, and most languages.  An empty collection
+        should filter out all elements in a comprehension guard."""
         result = evaluate_expr("[x for x in [1, 2, 3] if []]")
-        assert result == [1.0, 2.0, 3.0], "Empty list should be truthy in sauravcode"
+        assert result == [], "Empty list should be falsy in sauravcode"
 
     def test_zero_is_falsy(self):
-        """Zero is falsy in both sauravcode and Python — should filter all."""
+        """Zero is falsy in both sauravcode and Python - should filter all."""
         result = evaluate_expr("[x for x in [1, 2, 3] if 0]")
         assert result == []
 
     def test_nonempty_list_is_truthy(self):
-        """Non-empty list is truthy — should keep all elements."""
+        """Non-empty list is truthy - should keep all elements."""
         result = evaluate_expr("[x for x in [1, 2, 3] if [99]]")
         assert result == [1.0, 2.0, 3.0]
