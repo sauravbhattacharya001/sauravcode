@@ -1220,7 +1220,11 @@ class CCodeGenerator:
             self.emit_map_runtime()
 
         # Emit string helper functions if needed
+        # String helpers (srv_split/srv_join) depend on SrvList, so force list runtime
         if self.uses_string_helpers:
+            if not self.uses_lists:
+                self.uses_lists = True
+                self.emit_list_runtime()
             self.emit_string_helpers()
 
         # Emit try/catch support if needed
@@ -1592,7 +1596,7 @@ class CCodeGenerator:
         self.emit("")
         # srv_split: splits string by delimiter, returns SrvList of string pointers stored as doubles
         self.emit("static SrvList srv_split(const char* s, const char* delim) {")
-        self.emit("    SrvList list; srv_list_init(&list);")
+        self.emit("    SrvList list = srv_list_new();")
         self.emit("    size_t dlen = strlen(delim);")
         self.emit("    if (dlen == 0) {")
         self.emit("        /* Split into individual characters */")
