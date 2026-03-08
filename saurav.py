@@ -3634,8 +3634,16 @@ class Interpreter:
             if DEBUG:
                 debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
 
-            # Check if this is a generator function (cached on first definition)
-            if getattr(func, '_is_generator', False) or self._has_yield(func.body):
+            # Check if this is a generator function.
+            # Use the cached _is_generator attribute (set at definition time
+            # in _interp_function).  If the attribute is missing (e.g. the
+            # function was injected via closure_scope or imported without
+            # passing through _interp_function), cache it now to avoid
+            # paying the O(body_size) _has_yield AST walk on every
+            # subsequent call.
+            if not hasattr(func, '_is_generator'):
+                func._is_generator = self._has_yield(func.body)
+            if func._is_generator:
                 debug(f"Function {call_node.name} is a generator — returning GeneratorValue")
                 evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
                 return GeneratorValue(self, func, evaluated_args)
