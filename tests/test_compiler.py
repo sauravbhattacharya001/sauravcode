@@ -564,6 +564,24 @@ class TestFStringCodeGen:
         assert "snprintf" in c_code
         assert "Hello %s" in c_code
 
+    def test_fstring_with_string_param(self):
+        """Fix for issue #40: string params in f-strings use %s, not %.10g."""
+        code = 'function greet name\n    print f"Hello, {name}!"\n\ngreet "World"\n'
+        c_code = compile_to_c(code)
+        # Function should accept const char* for string param
+        assert "const char *name" in c_code or "const char * name" in c_code
+        # F-string should use %s for string param
+        assert "%s!" in c_code or "Hello, %s" in c_code
+        # Should NOT use %.10g for the string param
+        assert "%.10g!" not in c_code
+
+    def test_fstring_with_mixed_params(self):
+        """String and numeric params both handled correctly."""
+        code = 'function show name age\n    print f"{name} is {age}"\n\nshow "Bob" 30\n'
+        c_code = compile_to_c(code)
+        assert "const char *name" in c_code or "const char * name" in c_code
+        assert "double age" in c_code
+
 
 # ============================================================
 # String builtin compilation (Phase 4: split, join, replace, etc.)

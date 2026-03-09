@@ -983,6 +983,7 @@ class CCodeGenerator:
         self.enums = {}           # name -> {variant: index}
         self.declared_vars = {}   # scope -> set of var names
         self.string_vars = set()  # track which vars hold strings
+        self.string_params = {}   # func_name -> set of param indices that receive strings
         self.list_vars = set()    # track which vars hold lists
         self.map_vars = set()     # track which vars hold maps
         self.output_lines = []
@@ -1239,10 +1240,20 @@ class CCodeGenerator:
         for name, cls in self.classes.items():
             self.emit_class_struct(cls)
 
+        # Infer which function parameters receive string arguments
+        self._infer_string_params(top_level)
+
         # Emit forward declarations for functions
         for name, func in self.functions.items():
             safe_name = self._safe_ident(name)
-            params = ", ".join("double " + self._safe_ident(p) for p in func.params)
+            param_parts = []
+            string_indices = self.string_params.get(name, set())
+            for i, p in enumerate(func.params):
+                if i in string_indices:
+                    param_parts.append("const char *" + self._safe_ident(p))
+                else:
+                    param_parts.append("double " + self._safe_ident(p))
+            params = ", ".join(param_parts) if param_parts else "void"
             if not params:
                 params = "void"
             self.emit(f"double {safe_name}({params});")
@@ -1694,15 +1705,136 @@ class CCodeGenerator:
                 self.emit("}")
                 self.emit("")
 
+    def _infer_string_params(self, top_level_stmts):
+        """Pre-scan all call sites to infer which function parameters receive strings.
+
+        Walks all statements (top-level + function bodies) looking for
+        FunctionCallNode where arguments are string-typed. Records the
+        parameter index in self.string_params[func_name].
+        """
+        def is_string_expr(expr):
+            """Check if an expression is known to produce a string."""
+            if isinstance(expr, StringNode):
+                return True
+            if isinstance(expr, FStringNode):
+                return True
+            if isinstance(expr, IdentifierNode) and expr.name in self.string_vars:
+                return True
+            if isinstance(expr, FunctionCallNode) and expr.name in self.STRING_RETURNING_BUILTINS:
+                return True
+            return False
+
+        def scan_call(node):
+            """If node is a function call to a user-defined function, check args."""
+            if isinstance(node, FunctionCallNode) and node.name in self.functions:
+                func = self.functions[node.name]
+                for i, arg in enumerate(node.arguments):
+                    if i < len(func.params) and is_string_expr(arg):
+                        if node.name not in self.string_params:
+                            self.string_params[node.name] = set()
+                        self.string_params[node.name].add(i)
+
+        def walk_expr(expr):
+            """Walk an expression tree looking for function calls."""
+            if expr is None:
+                return
+            scan_call(expr)
+            if isinstance(expr, BinaryOpNode):
+                walk_expr(expr.left)
+                walk_expr(expr.right)
+            elif isinstance(expr, UnaryOpNode):
+                walk_expr(expr.operand)
+            elif isinstance(expr, FunctionCallNode):
+                for a in expr.arguments:
+                    walk_expr(a)
+            elif isinstance(expr, FStringNode):
+                for p in expr.parts:
+                    walk_expr(p)
+            elif isinstance(expr, ListNode):
+                for e in expr.elements:
+                    walk_expr(e)
+            elif isinstance(expr, MapNode):
+                for k, v in expr.pairs:
+                    walk_expr(k)
+                    walk_expr(v)
+            elif isinstance(expr, IndexNode):
+                walk_expr(expr.obj)
+                walk_expr(expr.index)
+            elif isinstance(expr, LenNode):
+                walk_expr(expr.expression)
+            elif isinstance(expr, TernaryNode):
+                walk_expr(expr.condition)
+                walk_expr(expr.true_expr)
+                walk_expr(expr.false_expr)
+
+        def walk_stmts(stmts):
+            """Walk a list of statements looking for function calls."""
+            for stmt in stmts:
+                if isinstance(stmt, AssignmentNode):
+                    walk_expr(stmt.expression)
+                elif isinstance(stmt, FunctionCallNode):
+                    scan_call(stmt)
+                    for a in stmt.arguments:
+                        walk_expr(a)
+                elif isinstance(stmt, PrintNode):
+                    walk_expr(stmt.expression)
+                elif isinstance(stmt, ReturnNode) and stmt.expression:
+                    walk_expr(stmt.expression)
+                elif isinstance(stmt, IfNode):
+                    walk_expr(stmt.condition)
+                    walk_stmts(stmt.body)
+                    for elif_cond, elif_body in (stmt.elif_branches or []):
+                        walk_expr(elif_cond)
+                        walk_stmts(elif_body)
+                    if stmt.else_body:
+                        walk_stmts(stmt.else_body)
+                elif isinstance(stmt, WhileNode):
+                    walk_expr(stmt.condition)
+                    walk_stmts(stmt.body)
+                elif isinstance(stmt, ForNode):
+                    walk_expr(stmt.start)
+                    walk_expr(stmt.end)
+                    walk_stmts(stmt.body)
+                elif isinstance(stmt, ForEachNode):
+                    walk_expr(stmt.iterable)
+                    walk_stmts(stmt.body)
+                elif isinstance(stmt, TryCatchNode):
+                    walk_stmts(stmt.try_body)
+                    walk_stmts(stmt.catch_body)
+                elif isinstance(stmt, IndexedAssignmentNode):
+                    walk_expr(stmt.index)
+                    walk_expr(stmt.value)
+                elif isinstance(stmt, AppendNode):
+                    walk_expr(stmt.value)
+                elif isinstance(stmt, AssertNode):
+                    walk_expr(stmt.condition)
+
+        # Scan top-level code
+        walk_stmts(top_level_stmts)
+        # Scan inside function bodies
+        for func in self.functions.values():
+            walk_stmts(func.body)
+
     def compile_function(self, func):
         """Emit a C function definition."""
         safe_name = self._safe_ident(func.name)
-        params = ", ".join(f"double {self._safe_ident(p)}" for p in func.params)
-        if not params:
-            params = "void"
+        string_indices = self.string_params.get(func.name, set())
+        param_parts = []
+        for i, p in enumerate(func.params):
+            if i in string_indices:
+                param_parts.append("const char *" + self._safe_ident(p))
+            else:
+                param_parts.append("double " + self._safe_ident(p))
+        params = ", ".join(param_parts) if param_parts else "void"
         self.emit(f"double {safe_name}({params}) {{")
         self.indent_level += 1
         self.declared_vars[func.name] = set(func.params)
+
+        # Mark string parameters in string_vars for correct f-string formatting
+        saved_string_vars = set(self.string_vars)
+        for i, p in enumerate(func.params):
+            if i in string_indices:
+                self.string_vars.add(p)
 
         for stmt in func.body:
             self.compile_statement(stmt, scope=func.name)
@@ -1714,6 +1846,9 @@ class CCodeGenerator:
 
         self.indent_level -= 1
         self.emit("}")
+
+        # Restore string_vars to avoid leaking function-scope info
+        self.string_vars = saved_string_vars
 
     def compile_statement(self, stmt, scope='main', is_top_level=False):
         """Compile a single statement to C."""
