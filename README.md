@@ -64,7 +64,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **String interpolation** — `f"Hello {name}, you are {age} years old"` f-strings
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
-- **Developer tooling** — formatter, linter, profiler, coverage, benchmarks, AST visualizer, playground
+- **Developer tooling** — formatter, linter, profiler, debugger, coverage, benchmarks, AST visualizer, playground, dependency graph, complexity analyzer, notebook runner, watch mode, snapshot testing
 - **VS Code extension** — syntax highlighting, 25 snippets, and language configuration
 
 ## 🚀 Quick Start
@@ -386,6 +386,12 @@ python sauravcc.py program.srv -v
 | Lists (dynamic arrays) | ✅ | ✅ |
 | Maps (dictionaries) | ✅ | — |
 | String interpolation (f-strings) | ✅ | — |
+| Lambda expressions | ✅ | — |
+| Pipe operator | ✅ | — |
+| Pattern matching | ✅ | — |
+| Generators (yield) | ✅ | — |
+| Enums | ✅ | — |
+| Import system | ✅ | — |
 | Classes | ✅ | ✅ |
 | Try / catch | ✅ | ✅ |
 | Parenthesized expressions | ✅ | ✅ |
@@ -432,6 +438,130 @@ Program
     └── name: 'greet'
 ```
 
+## 🔥 Advanced Features
+
+### Lambda Expressions
+
+Inline anonymous functions for quick transformations:
+
+```
+double = lambda x -> x * 2
+print double 5                # 10
+
+# With higher-order functions
+nums = [1, 2, 3, 4, 5]
+doubled = map (lambda x -> x * 2) nums
+print doubled                 # [2, 4, 6, 8, 10]
+
+filtered = filter (lambda x -> x > 3) nums
+print filtered                # [4, 5]
+```
+
+### Pipe Operator
+
+Chain transformations left-to-right for readable data pipelines:
+
+```
+result = "hello world" |> upper |> reverse
+print result                  # DLROW OLLEH
+
+# Multi-step pipelines
+"  Hello, World!  " |> trim |> lower |> print
+# hello, world!
+```
+
+### Pattern Matching
+
+Declarative branching with `match` expressions:
+
+```
+function describe x
+    match x
+        1 -> print "one"
+        2 -> print "two"
+        3 -> print "three"
+        _ -> print "something else"
+
+describe 2                    # two
+describe 99                   # something else
+```
+
+### Generators
+
+Lazy sequences with `yield` for memory-efficient iteration:
+
+```
+function countdown n
+    while n > 0
+        yield n
+        n = n - 1
+
+gen = countdown 5
+print next gen                # 5
+print next gen                # 4
+print next gen                # 3
+```
+
+### Enums
+
+Named constant groups with dot-notation access:
+
+```
+enum Color
+    RED
+    GREEN
+    BLUE
+
+c = Color.RED
+print c                       # Color.RED
+
+match c
+    Color.RED -> print "red!"
+    Color.GREEN -> print "green!"
+    _ -> print "other"
+```
+
+### Imports
+
+Modular code with file-based imports:
+
+```
+# math_utils.srv
+function square x
+    return x * x
+
+function cube x
+    return x * x * x
+
+# main.srv
+import "math_utils.srv"
+print square 5                # 25
+print cube 3                  # 27
+```
+
+## 🛠️ Developer Tooling
+
+Sauravcode ships with a comprehensive suite of developer tools:
+
+| Tool | Command | Description |
+|------|---------|-------------|
+| **Formatter** | `python sauravfmt.py file.srv` | Auto-format code with consistent indentation and spacing |
+| **Linter** | `python sauravlint.py file.srv` | Static analysis for style, complexity, and potential bugs |
+| **Profiler** | `python sauravprof.py file.srv` | Execution profiling with call counts and timing |
+| **Debugger** | `python sauravdb.py file.srv` | Interactive debugger with breakpoints and step-through |
+| **Coverage** | `python sauravcov.py file.srv` | Code coverage analysis (line-level hit/miss) |
+| **Benchmarks** | `python sauravbench.py` | Performance benchmarks (fibonacci, sort, recursion, etc.) |
+| **AST Viewer** | `python sauravast.py file.srv` | Parse tree visualization (text, JSON, Graphviz DOT) |
+| **Playground** | `python sauravplay.py` | Interactive sandbox for experimenting |
+| **Semantic Diff** | `python sauravdiff.py a.srv b.srv` | Structural diff between sauravcode files |
+| **Doc Generator** | `python sauravdoc.py file.srv` | Extract documentation from source files |
+| **Dependency Graph** | `python sauravdeps.py file.srv` | Visualize import dependencies between modules |
+| **Complexity** | `python sauravcomplex.py file.srv` | Cyclomatic complexity analysis per function |
+| **Notebook** | `python sauravnb.py file.srvnb` | Jupyter-style notebook for literate sauravcode |
+| **Watch Mode** | `python sauravwatch.py file.srv` | Auto-rerun on file changes (live reload) |
+| **Snapshot Test** | `python sauravsnap.py file.srv` | Snapshot testing for output verification |
+| **Enhanced REPL** | `python sauravrepl.py` | REPL with history, multi-line editing, and syntax hints |
+
 ## 🏗️ Architecture
 
 The codebase has two execution paths sharing a common tokenizer design:
@@ -459,7 +589,13 @@ sauravcode/
 ├── sauravlint.py       # Linter (style, complexity, bugs)
 ├── sauravplay.py       # Interactive playground
 ├── sauravprof.py       # Execution profiler
-├── tests/              # 2100+ pytest tests
+├── sauravcomplex.py    # Cyclomatic complexity analyzer
+├── sauravdeps.py       # Import dependency graph
+├── sauravnb.py         # Jupyter-style notebook runner
+├── sauravrepl.py       # Enhanced REPL with history
+├── sauravsnap.py       # Snapshot testing
+├── sauravwatch.py      # File watcher (live reload)
+├── tests/              # 2,300+ pytest tests (40 test modules)
 ├── editors/
 │   └── vscode/         # VS Code extension (syntax, snippets)
 ├── docs/
