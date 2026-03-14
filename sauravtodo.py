@@ -37,7 +37,7 @@ import re
 import subprocess
 import sys
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Set, Tuple
 

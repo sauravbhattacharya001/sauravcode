@@ -45,7 +45,6 @@ import subprocess
 import time
 import difflib
 import argparse
-from pathlib import Path
 from datetime import datetime
 
 # Fix Windows console encoding for emoji output

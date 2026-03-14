@@ -30,9 +30,7 @@ import os
 import shutil
 import sys
 import tarfile
-import tempfile
 import time
-from io import BytesIO
 from pathlib import Path
 
 __version__ = "1.0.0"

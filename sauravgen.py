@@ -27,8 +27,6 @@ import argparse
 import os
 import sys
 import textwrap
-from datetime import datetime
-
 __version__ = "1.0.0"
 
 # ─── Template generators ──────────────────────────────────────────

@@ -41,7 +41,6 @@ import argparse
 import os
 import subprocess
 import sys
-import textwrap
 
 # Import parser and AST nodes from the interpreter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -73,7 +72,7 @@ import time as _time
 import hashlib as _hashlib
 import base64 as _base64
 from enum import IntEnum as _IntEnum
-from datetime import datetime as _datetime, timedelta as _timedelta
+from datetime import datetime as _datetime
 
 
 def _srv_contains(s, sub):

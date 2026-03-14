@@ -6,7 +6,7 @@ import random
 import time as _time
 import contextlib
 from collections import ChainMap
-from datetime import datetime as _datetime, timezone as _timezone
+from datetime import datetime as _datetime
 
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
