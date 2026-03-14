@@ -296,7 +296,7 @@ def query_conditions(ast, filename, min_depth=None):
             has_else = getattr(node, 'else_body', None) is not None
             elif_count = 0
             # Count elif branches
-            elifs = getattr(node, 'elif_branches', getattr(node, 'elifs', []))
+            elifs = getattr(node, 'elif_chains', getattr(node, 'elifs', []))
             if isinstance(elifs, list):
                 elif_count = len(elifs)
             line = getattr(node, 'line_num', '?')

@@ -1783,7 +1783,7 @@ class CCodeGenerator:
                 elif isinstance(stmt, IfNode):
                     walk_expr(stmt.condition)
                     walk_stmts(stmt.body)
-                    for elif_cond, elif_body in (stmt.elif_branches or []):
+                    for elif_cond, elif_body in (stmt.elif_chains or []):
                         walk_expr(elif_cond)
                         walk_stmts(elif_body)
                     if stmt.else_body:
