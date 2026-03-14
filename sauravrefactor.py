@@ -33,7 +33,6 @@ import json as _json
 import os
 import re
 import sys
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import tokenize, Parser, ASTNode
