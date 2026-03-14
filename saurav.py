@@ -2130,10 +2130,37 @@ class Interpreter:
         func_ref can be:
         - A string (function name to look up)
         - A LambdaValue (anonymous function)
+        - A FunctionNode (closure / first-class function value)
         """
         # Lambda value — call directly
         if isinstance(func_ref, LambdaValue):
             return self._call_lambda(func_ref, evaluated_args)
+
+        # FunctionNode value (closure returned from higher-order function)
+        if isinstance(func_ref, FunctionNode):
+            self._call_depth += 1
+            if self._call_depth > MAX_RECURSION_DEPTH:
+                self._call_depth -= 1
+                raise RuntimeError(
+                    f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
+                    f"in function '{func_ref.name}'"
+                )
+            result = None
+            with self._scoped_env():
+                if hasattr(func_ref, 'closure_scope') and func_ref.closure_scope:
+                    for cname, cval in func_ref.closure_scope.items():
+                        if cname not in self.variables:
+                            self.variables[cname] = cval
+                for param, val in zip(func_ref.params, evaluated_args):
+                    self.variables[param] = val
+                try:
+                    for stmt in func_ref.body:
+                        self.interpret(stmt)
+                except ReturnSignal as ret:
+                    result = ret.value
+                finally:
+                    self._call_depth -= 1
+            return result
         
         # Named function
         func_name = func_ref
@@ -2160,6 +2187,35 @@ class Interpreter:
             return result
         if func_name in self.builtins:
             return self.builtins[func_name](evaluated_args)
+        # Check if the name refers to a variable holding a callable
+        if func_name in self.variables:
+            var_val = self.variables[func_name]
+            if isinstance(var_val, FunctionNode):
+                self._call_depth += 1
+                if self._call_depth > MAX_RECURSION_DEPTH:
+                    self._call_depth -= 1
+                    raise RuntimeError(
+                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
+                        f"in function '{func_name}'"
+                    )
+                result = None
+                with self._scoped_env():
+                    if hasattr(var_val, 'closure_scope') and var_val.closure_scope:
+                        for cname, cval in var_val.closure_scope.items():
+                            if cname not in self.variables:
+                                self.variables[cname] = cval
+                    for param, val in zip(var_val.params, evaluated_args):
+                        self.variables[param] = val
+                    try:
+                        for stmt in var_val.body:
+                            self.interpret(stmt)
+                    except ReturnSignal as ret:
+                        result = ret.value
+                    finally:
+                        self._call_depth -= 1
+                return result
+            elif isinstance(var_val, LambdaValue):
+                return self._call_lambda(var_val, evaluated_args)
         raise RuntimeError(f"Function '{func_name}' is not defined.")
 
     def _builtin_map(self, args):
@@ -3700,6 +3756,40 @@ class Interpreter:
                 return self.variables[call_node.name]
             return self.builtins[call_node.name](evaluated_args)
 
+        # Check if the name refers to a variable holding a callable value
+        # (e.g. a closure returned from a higher-order function)
+        if call_node.name in self.variables:
+            var_val = self.variables[call_node.name]
+            if isinstance(var_val, FunctionNode):
+                # Treat as a function call — evaluate args and invoke
+                evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+                self._call_depth += 1
+                if self._call_depth > MAX_RECURSION_DEPTH:
+                    self._call_depth -= 1
+                    raise RuntimeError(
+                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
+                        f"in function '{call_node.name}'"
+                    )
+                result = None
+                with self._scoped_env():
+                    if hasattr(var_val, 'closure_scope') and var_val.closure_scope:
+                        for cname, cval in var_val.closure_scope.items():
+                            if cname not in self.variables:
+                                self.variables[cname] = cval
+                    for param, arg_val in zip(var_val.params, evaluated_args):
+                        self.variables[param] = arg_val
+                    try:
+                        for stmt in var_val.body:
+                            self.interpret(stmt)
+                    except ReturnSignal as ret:
+                        result = ret.value
+                    finally:
+                        self._call_depth -= 1
+                return result
+            elif isinstance(var_val, LambdaValue):
+                evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+                return self._call_lambda(var_val, evaluated_args)
+
         raise RuntimeError(f"Function {call_node.name} is not defined.")
 
     def evaluate(self, node):
@@ -3731,6 +3821,14 @@ class Interpreter:
         elif node.name in self.functions:
             if DEBUG:
                 debug(f"Identifier '{node.name}' is a function name")
+            # If we're inside a function scope (call_depth > 0), return the
+            # actual FunctionNode with captured closure scope so it can be
+            # used as a first-class value (closures, higher-order returns).
+            if self._call_depth > 0:
+                import copy
+                func_node = copy.copy(self.functions[node.name])
+                func_node.closure_scope = dict(self.variables)
+                return func_node
             return node.name
         elif node.name in self.builtins:
             if DEBUG:
