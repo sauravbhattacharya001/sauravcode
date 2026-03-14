@@ -15,6 +15,8 @@
   - [Match / Case](#match--case-pattern-matching)
 - [Functions](#functions)
   - [Lambda Expressions](#lambda-expressions)
+  - [Closures & First-Class Functions](#closures--first-class-functions)
+  - [Generators](#generators)
 - [Imports](#imports)
 - [Classes](#classes)
 - [Lists](#lists)
@@ -426,6 +428,145 @@ Lambdas can also be used with the pipe operator:
 result = 5 |> lambda x -> x + 1 |> lambda y -> y * 2
 print result    # 12
 ```
+
+### Closures & First-Class Functions
+
+Functions are first-class values in sauravcode. A function can return another function, and the returned function captures variables from its enclosing scope (a *closure*):
+
+```
+function make_adder x
+    function inner y
+        return x + y
+    return inner
+
+add5 = make_adder 5
+print add5 3       # 8
+print add5 10      # 15
+```
+
+Each call to `make_adder` creates a new closure that remembers its own `x`:
+
+```
+function make_multiplier factor
+    function multiply n
+        return n * factor
+    return multiply
+
+double = make_multiplier 2
+triple = make_multiplier 3
+
+print double 7     # 14
+print triple 7     # 21
+```
+
+Closures compose naturally with other language features:
+
+```
+function make_greeter greeting
+    function greet name
+        return f"{greeting}, {name}!"
+    return greet
+
+hello = make_greeter "Hello"
+howdy = make_greeter "Howdy"
+
+print hello "Alice"    # Hello, Alice!
+print howdy "Bob"      # Howdy, Bob!
+```
+
+**Key behaviors:**
+
+- Named functions can be returned from other functions and stored in variables
+- The returned function captures the *current* variable values at the time of the `return`
+- Calling a variable that holds a function works the same as calling a named function
+- Lambdas also capture their enclosing scope (see [Lambda Expressions](#lambda-expressions))
+
+### Generators
+
+A generator is a function that uses `yield` instead of (or in addition to) `return`. When called, it produces values lazily — one at a time — rather than computing everything up front.
+
+```
+function count_up_to n
+    i = 1
+    while i <= n
+        yield i
+        i = i + 1
+
+gen = count_up_to 5
+for val in gen
+    print val
+# prints 1, 2, 3, 4, 5
+```
+
+**How it works:**
+
+1. Calling a generator function returns a *generator object* (not the values themselves)
+2. The generator pauses at each `yield`, producing one value
+3. Iteration (via `for..in`) resumes execution until the next `yield` or the function ends
+
+#### Collecting Values
+
+Use `collect` to eagerly consume a generator into a list:
+
+```
+function squares n
+    for i 1 (n + 1)
+        yield i * i
+
+result = collect (squares 5)
+print result    # [1, 4, 9, 16, 25]
+```
+
+#### Generator Builtins
+
+| Function | Description |
+|----------|-------------|
+| `collect gen` | Consume generator into a list |
+| `is_generator val` | Check if a value is a generator |
+
+#### Fibonacci Example
+
+Generators are ideal for sequences that could be infinite:
+
+```
+function fibonacci
+    a = 0
+    b = 1
+    while true
+        yield a
+        temp = a + b
+        a = b
+        b = temp
+
+# Take the first 10 Fibonacci numbers
+gen = fibonacci
+results = []
+count = 0
+for val in gen
+    append results val
+    count = count + 1
+    if count == 10
+        break
+print results    # [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+```
+
+#### Generator with Conditionals
+
+Generators can include any control flow:
+
+```
+function even_numbers limit
+    i = 0
+    while i <= limit
+        if i % 2 == 0
+            yield i
+        i = i + 1
+
+evens = collect (even_numbers 10)
+print evens    # [0, 2, 4, 6, 8, 10]
+```
+
+> **Note:** Generators are supported in the interpreter only; the compiler does not currently support `yield`.
 
 ## Imports
 
