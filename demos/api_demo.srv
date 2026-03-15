@@ -1,0 +1,27 @@
+# API Demo — serves these functions as REST endpoints
+# Usage: python sauravapi.py demos/api_demo.srv
+
+function add x y
+    return x + y
+
+function multiply x y
+    return x * y
+
+function factorial n
+    if n <= 1
+        return 1
+    return n * factorial n - 1
+
+function greet name
+    return f"Hello {name}!"
+
+function reverse_text text
+    result = ""
+    i = len text - 1
+    while i >= 0
+        result = result + text[i]
+        i = i - 1
+    return result
+
+function _helper x
+    return x

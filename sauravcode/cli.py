@@ -82,3 +82,24 @@ def main_snap():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.main()
+
+
+def main_api():
+    """Entry point for the ``sauravcode-api`` console script (REST API server)."""
+    root = _project_root()
+    script = os.path.join(root, "sauravapi.py")
+
+    if os.path.isfile(script):
+        if root not in sys.path:
+            sys.path.insert(0, root)
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("sauravapi", script)
+    if spec is None or spec.loader is None:
+        print("Error: Cannot locate sauravapi.py API server", file=sys.stderr)
+        sys.exit(1)
+
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.main()

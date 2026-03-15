@@ -49,6 +49,7 @@ Issues = "https://github.com/sauravbhattacharya001/sauravcode/issues"
 sauravcode = "sauravcode.cli:main_interpret"
 sauravcode-compile = "sauravcode.cli:main_compile"
 sauravcode-snap = "sauravcode.cli:main_snap"
+sauravcode-api = "sauravcode.cli:main_api"
 
 [tool.setuptools.packages.find]
 include = ["sauravcode*"]
