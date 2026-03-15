@@ -17,6 +17,15 @@ MAX_LOOP_ITERATIONS = 10_000_000  # Maximum iterations per loop
 MAX_ALLOC_SIZE = 10_000_000    # Maximum elements in a single allocation (list/string repeat/range)
 MAX_EXPONENT = 10_000          # Maximum exponent to prevent memory exhaustion via huge integers
 
+# ── Parser hot-path lookup sets (frozenset for O(1) membership) ──────
+_FUNC_CALL_ARG_TOKENS = frozenset({
+    'NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN', 'LBRACKET', 'LBRACE', 'KEYWORD'
+})
+_ATOM_KEYWORDS = frozenset({'true', 'false', 'not', 'len', 'lambda', 'pop'})
+_COMPARISON_OPS = frozenset({'EQ', 'NEQ', 'LT', 'GT', 'LTE', 'GTE'})
+_PRIMARY_TOKENS = frozenset({'NUMBER', 'STRING', 'FSTRING', 'LPAREN'})
+_TYPE_KEYWORDS = frozenset({'int', 'float', 'bool', 'string'})
+
 def debug(msg):
     """Print debug message only when DEBUG mode is enabled."""
     if DEBUG:
@@ -679,7 +688,7 @@ class Parser:
             self.advance()
             return None
         # Skip type annotations
-        elif token_type == 'KEYWORD' and value in ('int', 'float', 'bool', 'string'):
+        elif token_type == 'KEYWORD' and value in _TYPE_KEYWORDS:
             self.advance()
             return None
         else:
@@ -1012,9 +1021,9 @@ class Parser:
         if DEBUG:
             debug(f"Parsing function call for: {name}")
         arguments = []
-        while self.peek()[0] in ('NUMBER', 'IDENT', 'STRING', 'FSTRING', 'LPAREN', 'LBRACKET', 'LBRACE', 'KEYWORD'):
+        while self.peek()[0] in _FUNC_CALL_ARG_TOKENS:
             pk = self.peek()
-            if pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'lambda', 'pop'):
+            if pk[0] == 'KEYWORD' and pk[1] in _ATOM_KEYWORDS:
                 arguments.append(self.parse_atom())
             elif pk[0] == 'KEYWORD':
                 break  # Don't consume control flow keywords as arguments
@@ -1080,7 +1089,7 @@ class Parser:
 
     def parse_comparison(self):
         left = self.parse_expression()
-        if self.peek()[0] in ('EQ', 'NEQ', 'LT', 'GT', 'LTE', 'GTE'):
+        if self.peek()[0] in _COMPARISON_OPS:
             _, op_val, *_ = self.advance()
             right = self.parse_expression()
             return CompareNode(left, op_val, right)
@@ -1212,7 +1221,7 @@ class Parser:
                 func_call = self.parse_function_call(value)
                 return func_call
             # Check if next token could be a function argument
-            if pk[0] in ('NUMBER', 'STRING', 'FSTRING', 'LPAREN'):
+            if pk[0] in _PRIMARY_TOKENS:
                 func_call = self.parse_function_call(value)
                 if DEBUG:
                     debug(f"parse_atom returning FunctionCallNode: {func_call}")
@@ -1222,7 +1231,7 @@ class Parser:
                 if DEBUG:
                     debug(f"parse_atom returning FunctionCallNode: {func_call}")
                 return func_call
-            elif pk[0] == 'KEYWORD' and pk[1] in ('true', 'false', 'not', 'len', 'pop'):
+            elif pk[0] == 'KEYWORD' and pk[1] in _ATOM_KEYWORDS:
                 func_call = self.parse_function_call(value)
                 return func_call
             elif pk[0] == 'LBRACE':
