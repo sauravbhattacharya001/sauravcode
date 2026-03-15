@@ -502,3 +502,38 @@ def run_tests():
 if __name__ == '__main__':
     success = run_tests()
     sys.exit(0 if success else 1)
+
+
+def test_loop_depth_tracks_correctly():
+    """E005 should fire after loop ends, not inside it."""
+    code = '''
+for i in range 5
+    break
+
+break
+'''
+    report = SauravLinter().lint(code)
+    e005 = [i for i in report.issues if i.rule == "E005"]
+    # Only the second break is outside the loop
+    assert len(e005) == 1
+    assert e005[0].line == 5  # line 5 because triple-quoted string adds leading newline
+
+
+def test_nesting_depth_resets_after_block():
+    """W008 should not fire on shallow blocks after a deep one."""
+    code = '''
+if true
+    if true
+        if true
+            if true
+                if true
+                    if true
+                        print "deep"
+
+if true
+    print "shallow"
+'''
+    report = SauravLinter().lint(code)
+    w008 = [i for i in report.issues if i.rule == "W008"]
+    # Only the deeply nested blocks should trigger, not the final shallow if
+    assert all(issue.line <= 7 for issue in w008)
