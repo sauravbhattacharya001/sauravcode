@@ -2242,7 +2242,7 @@ class Interpreter:
         """
         self._expect_args('map', args, 2)
         func_ref, lst = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("map expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("map expects a list as second argument")
@@ -2257,7 +2257,7 @@ class Interpreter:
         """
         self._expect_args('filter', args, 2)
         func_ref, lst = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("filter expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("filter expects a list as second argument")
@@ -2273,7 +2273,7 @@ class Interpreter:
         """
         self._expect_args('reduce', args, 3)
         func_ref, lst, init = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("reduce expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("reduce expects a list as second argument")
@@ -2292,7 +2292,7 @@ class Interpreter:
         """
         self._expect_args('each', args, 2)
         func_ref, lst = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("each expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("each expects a list as second argument")
@@ -3928,15 +3928,15 @@ class Interpreter:
         elif node.name in self.functions:
             if DEBUG:
                 debug(f"Identifier '{node.name}' is a function name")
-            # If we're inside a function scope (call_depth > 0), return the
-            # actual FunctionNode with captured closure scope so it can be
-            # used as a first-class value (closures, higher-order returns).
-            if self._call_depth > 0:
-                import copy
-                func_node = copy.copy(self.functions[node.name])
-                func_node.closure_scope = dict(self.variables)
-                return func_node
-            return node.name
+            # Return the actual FunctionNode with captured closure scope so
+            # it can be used as a first-class value at any call depth.
+            # Previously gated on `_call_depth > 0`, which meant top-level
+            # code returned a bare string name and lost closure semantics
+            # (see issue #62).
+            import copy
+            func_node = copy.copy(self.functions[node.name])
+            func_node.closure_scope = dict(self.variables)
+            return func_node
         elif node.name in self.builtins:
             if DEBUG:
                 debug(f"Identifier '{node.name}' is a built-in function")
