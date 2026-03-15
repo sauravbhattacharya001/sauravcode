@@ -27,7 +27,6 @@ Rules:
     W009  Unused import
     W010  Reassignment before use (variable assigned twice without read)
     W011  Inconsistent indentation (mixed tabs/spaces)
-    S001  Magic number (numeric literal > 1 outside of assignment/comparison)
     S002  Too long line (>120 chars)
     S003  Trailing whitespace
     S004  Missing newline at end of file
@@ -249,12 +248,13 @@ class SauravLinter:
         func_defs: Dict[str, List[int]] = {}  # name -> [line numbers]
         imports: Dict[str, int] = {}  # module -> line
         all_idents: Set[str] = set()
-        indent_stack = [0]
         in_terminated = False
         terminated_indent = -1
         loop_depth = 0
+        loop_indents = []  # stack of indent levels where loops started
         nesting_depth = 0
         max_nesting = 5
+        block_indents = []  # stack of indent levels where blocks started
 
         for lineno_0, raw in enumerate(lines):
             lineno = lineno_0 + 1
@@ -308,6 +308,16 @@ class SauravLinter:
                 self._emit(report, "E003", Severity.ERROR, lineno, col,
                            "Division by zero", raw)
 
+            # Pop closed loops when we dedent
+            while loop_indents and indent <= loop_indents[-1]:
+                loop_indents.pop()
+                loop_depth -= 1
+
+            # Pop closed blocks from nesting stack when we dedent
+            while block_indents and indent <= block_indents[-1]:
+                block_indents.pop()
+                nesting_depth -= 1
+
             # Break/continue outside loop (E005)
             if kw in ("break", "continue") and loop_depth == 0:
                 self._emit(report, "E005", Severity.ERROR, lineno, 1,
@@ -331,10 +341,12 @@ class SauravLinter:
             # Track loop depth for break/continue checking
             if kw in _LOOP_KEYWORDS:
                 loop_depth += 1
+                loop_indents.append(indent)
 
             # Track nesting
             if kw in _BLOCK_STARTERS:
                 nesting_depth += 1
+                block_indents.append(indent)
                 if nesting_depth > max_nesting:
                     self._emit(report, "W008", Severity.WARNING, lineno, 1,
                                f"Nesting depth {nesting_depth} exceeds maximum ({max_nesting})", raw)
@@ -387,7 +399,6 @@ class SauravLinter:
         func_body_idents: Dict[str, Set[str]] = {}  # func -> identifiers used in body
         current_func: Optional[str] = None
         current_func_indent = -1
-        shadow_outer: Dict[str, int] = {}  # for shadow detection
 
         for lineno_0, raw in enumerate(lines):
             lineno = lineno_0 + 1
