@@ -1,0 +1,58 @@
+# http_demo.srv — Demonstrates HTTP request builtins
+# Fetches data from public APIs using http_get and http_post
+
+print "=== HTTP Request Demo ==="
+print ""
+
+# GET request — fetch data from httpbin
+print "Sending GET request..."
+resp = http_get "https://httpbin.org/get"
+print f"Status: {resp[\"status\"]}"
+body = resp["body"]
+print f"Origin IP: {body[\"origin\"]}"
+print f"URL: {body[\"url\"]}"
+
+print ""
+
+# GET with custom headers
+print "GET with custom headers..."
+custom_headers = {"X-Custom": "sauravcode", "Accept": "application/json"}
+resp2 = http_get "https://httpbin.org/headers" custom_headers
+body2 = resp2["body"]
+received = body2["headers"]
+print f"X-Custom header echoed: {received[\"X-Custom\"]}"
+
+print ""
+
+# POST request — send JSON data
+print "Sending POST request..."
+post_data = {"name": "sauravcode", "version": "1.0", "features": ["http", "json", "maps"]}
+resp3 = http_post "https://httpbin.org/post" post_data
+body3 = resp3["body"]
+print f"Status: {resp3[\"status\"]}"
+print f"Echoed JSON: {body3[\"json\"]}"
+
+print ""
+
+# PUT request
+print "Sending PUT request..."
+put_data = {"updated": true, "value": 42}
+resp4 = http_put "https://httpbin.org/put" put_data
+print f"PUT status: {resp4[\"status\"]}"
+
+print ""
+
+# DELETE request
+print "Sending DELETE request..."
+resp5 = http_delete "https://httpbin.org/delete"
+print f"DELETE status: {resp5[\"status\"]}"
+
+print ""
+
+# Error handling — non-existent endpoint
+print "Testing 404 response..."
+resp6 = http_get "https://httpbin.org/status/404"
+print f"Status: {resp6[\"status\"]}"
+
+print ""
+print "=== Done ==="

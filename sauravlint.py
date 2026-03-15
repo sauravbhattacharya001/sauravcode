@@ -129,6 +129,7 @@ _BUILTIN_FUNCTIONS = {
     "now", "format_date", "random_int", "random_float", "seed",
     "json_parse", "json_stringify", "sqrt", "pow", "log", "sin",
     "cos", "tan", "floor", "ceil", "pi", "e", "next",
+    "http_get", "http_post", "http_put", "http_delete",
 }
 
 _BLOCK_STARTERS = {"if", "else", "while", "for", "try", "catch", "function", "match", "case", "enum"}

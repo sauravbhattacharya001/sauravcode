@@ -579,6 +579,7 @@ class Parser:
         'hex_encode', 'hex_decode', 'crc32', 'url_encode', 'url_decode',
         'mean', 'median', 'stdev', 'variance', 'mode', 'percentile',
         'clamp', 'lerp', 'remap',
+        'http_get', 'http_post', 'http_put', 'http_delete',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1734,6 +1735,11 @@ class Interpreter:
             # --- Generator functions ---
             'collect':        self._builtin_collect,
             'is_generator':   self._builtin_is_generator,
+            # --- HTTP functions ---
+            'http_get':       self._builtin_http_get,
+            'http_post':      self._builtin_http_post,
+            'http_put':       self._builtin_http_put,
+            'http_delete':    self._builtin_http_delete,
         }
         self._register_math_builtins()
         self._register_zero_arg_builtins()
@@ -2443,6 +2449,98 @@ class Interpreter:
             raise RuntimeError(f"read_lines: permission denied: {path}")
         except OSError as e:
             raise RuntimeError(f"read_lines: error reading file: {e}")
+
+    # --- HTTP built-ins ---
+
+    def _http_request(self, method, url, body=None, headers=None):
+        """Perform an HTTP request and return a map with status, body, and headers."""
+        import urllib.request
+        import urllib.error
+
+        if not isinstance(url, str):
+            raise RuntimeError(f"http_{method.lower()} expects a string URL")
+        if not url.startswith(('http://', 'https://')):
+            raise RuntimeError(f"http_{method.lower()}: URL must start with http:// or https://")
+
+        req_headers = {'User-Agent': 'sauravcode/1.0'}
+        if headers and isinstance(headers, dict):
+            for k, v in headers.items():
+                req_headers[str(k)] = str(v)
+
+        data = None
+        if body is not None:
+            if isinstance(body, str):
+                data = body.encode('utf-8')
+            elif isinstance(body, dict) or isinstance(body, list):
+                import json as _json
+                data = _json.dumps(body).encode('utf-8')
+                if 'Content-Type' not in req_headers:
+                    req_headers['Content-Type'] = 'application/json'
+            else:
+                data = str(body).encode('utf-8')
+
+        req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp_body = resp.read().decode('utf-8', errors='replace')
+                resp_headers = {k: v for k, v in resp.getheaders()}
+                # Try to auto-parse JSON responses
+                content_type = resp.getheader('Content-Type', '')
+                if 'application/json' in content_type:
+                    try:
+                        import json as _json
+                        resp_body = _json.loads(resp_body)
+                    except Exception:
+                        pass
+                return {
+                    'status': float(resp.status),
+                    'body': resp_body,
+                    'headers': resp_headers,
+                }
+        except urllib.error.HTTPError as e:
+            resp_body = e.read().decode('utf-8', errors='replace') if e.fp else ''
+            return {
+                'status': float(e.code),
+                'body': resp_body,
+                'headers': {k: v for k, v in e.headers.items()} if e.headers else {},
+            }
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"http_{method.lower()}: connection error: {e.reason}")
+        except Exception as e:
+            raise RuntimeError(f"http_{method.lower()}: request failed: {e}")
+
+    def _builtin_http_get(self, args):
+        """http_get url [headers_map] — perform an HTTP GET request."""
+        if len(args) < 1 or len(args) > 2:
+            raise RuntimeError("http_get expects 1-2 arguments: url [headers]")
+        url = args[0]
+        headers = args[1] if len(args) > 1 else None
+        return self._http_request('GET', url, headers=headers)
+
+    def _builtin_http_post(self, args):
+        """http_post url body [headers_map] — perform an HTTP POST request."""
+        if len(args) < 2 or len(args) > 3:
+            raise RuntimeError("http_post expects 2-3 arguments: url body [headers]")
+        url, body = args[0], args[1]
+        headers = args[2] if len(args) > 2 else None
+        return self._http_request('POST', url, body, headers)
+
+    def _builtin_http_put(self, args):
+        """http_put url body [headers_map] — perform an HTTP PUT request."""
+        if len(args) < 2 or len(args) > 3:
+            raise RuntimeError("http_put expects 2-3 arguments: url body [headers]")
+        url, body = args[0], args[1]
+        headers = args[2] if len(args) > 2 else None
+        return self._http_request('PUT', url, body, headers)
+
+    def _builtin_http_delete(self, args):
+        """http_delete url [headers_map] — perform an HTTP DELETE request."""
+        if len(args) < 1 or len(args) > 2:
+            raise RuntimeError("http_delete expects 1-2 arguments: url [headers]")
+        url = args[0]
+        headers = args[1] if len(args) > 1 else None
+        return self._http_request('DELETE', url, headers=headers)
 
     # --- Date/Time built-ins ---
     # now() and timestamp() are registered via _register_zero_arg_builtins()
@@ -4273,6 +4371,10 @@ def repl():
                 'repeat':         'repeat str n           — repeat string n times',
                 'char_code':      'char_code str          — Unicode code point of first char',
                 'from_char_code': 'from_char_code n       — character from Unicode code point',
+                'http_get':       'http_get url [headers] — HTTP GET, returns {status, body, headers}',
+                'http_post':      'http_post url body [h] — HTTP POST, returns {status, body, headers}',
+                'http_put':       'http_put url body [h]  — HTTP PUT, returns {status, body, headers}',
+                'http_delete':    'http_delete url [h]    — HTTP DELETE, returns {status, body, headers}',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):

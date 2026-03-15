@@ -149,7 +149,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.sauravcode",
-          "match": "\\b(print|append|len|pop|assert|upper|lower|trim|replace|split|join|contains|starts_with|ends_with|substring|index_of|char_at|abs|round|floor|ceil|sqrt|power|type_of|to_string|to_number|input|range|reverse|sort|keys|values|has_key|map|filter|reduce|each|regex_match|regex_find|regex_find_all|regex_replace|regex_split|json_parse|json_stringify|json_pretty|pad_left|pad_right|repeat|char_code|from_char_code)\\b"
+          "match": "\\b(print|append|len|pop|assert|upper|lower|trim|replace|split|join|contains|starts_with|ends_with|substring|index_of|char_at|abs|round|floor|ceil|sqrt|power|type_of|to_string|to_number|input|range|reverse|sort|keys|values|has_key|map|filter|reduce|each|regex_match|regex_find|regex_find_all|regex_replace|regex_split|json_parse|json_stringify|json_pretty|pad_left|pad_right|repeat|char_code|from_char_code|http_get|http_post|http_put|http_delete)\\b"
         }
       ]
     },
