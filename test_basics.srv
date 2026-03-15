@@ -1,0 +1,100 @@
+# test_basics.srv — Verify core sauravcode features
+# Run: python sauravtest.py test_basics.srv
+
+function test_arithmetic
+    assert 1 + 1 == 2
+    assert 10 - 3 == 7
+    assert 4 * 5 == 20
+    assert 10 / 2 == 5
+    assert 10 % 3 == 1
+
+function test_string_operations
+    name = "sauravcode"
+    assert len(name) == 10
+    greeting = f"Hello {name}"
+    assert len(greeting) == 16
+
+function test_boolean_logic
+    assert true and true
+    assert true or false
+    assert not false
+    assert not (true and false)
+
+function test_comparison
+    assert 5 > 3
+    assert 3 < 5
+    assert 5 >= 5
+    assert 3 <= 3
+    assert 5 != 3
+    assert 5 == 5
+
+function test_list_create
+    items = [1, 2, 3]
+    assert len(items) == 3
+
+function test_list_append
+    items = [10, 20]
+    append items 30
+    assert len(items) == 3
+
+function test_list_index
+    items = ["a", "b", "c"]
+    assert items[0] == "a"
+    assert items[2] == "c"
+
+function test_conditional
+    x = 10
+    if x > 5
+        result = "big"
+    else
+        result = "small"
+    assert result == "big"
+
+function test_for_loop
+    total = 0
+    for i 1 5
+        total = total + i
+    assert total == 10
+
+function test_while_loop
+    count = 0
+    while count < 5
+        count = count + 1
+    assert count == 5
+
+function test_function_return
+    result = double(4)
+    assert result == 8
+
+function double x
+    return x * 2
+
+function test_multi_arg_function
+    result = add 2 3
+    assert result == 5
+
+function add a b
+    return a + b
+
+function test_lambda
+    square = lambda x -> x * x
+    result = square(5)
+    assert result == 25
+
+function test_map
+    nums = [1, 2, 3, 4, 5]
+    doubled = map (lambda x -> x * 2) nums
+    assert doubled[0] == 2
+    assert doubled[4] == 10
+
+function test_try_catch
+    caught = false
+    try
+        throw "oops"
+    catch e
+        caught = true
+    assert caught
+
+function test_assert_pass
+    # Meta test — assert itself works
+    assert true "this should always pass"
