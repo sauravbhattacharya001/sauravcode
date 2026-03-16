@@ -1,3 +1,15 @@
+"""saurav — The sauravcode language interpreter.
+
+A complete interpreter for the sauravcode (.srv) programming language,
+including tokenizer, parser, and tree-walking interpreter. Supports
+functions, classes, closures, pattern matching, enums, list comprehensions,
+generators, f-strings, pipe operator, imports, and comprehensive built-in
+functions for strings, math, collections, file I/O, dates, and regex.
+
+Usage:
+    python saurav.py <filename>.srv [--debug]
+"""
+
 import re
 import sys
 import os
@@ -108,6 +120,18 @@ def process_escapes(s):
     return ''.join(result)
 
 def tokenize(code):
+    """Tokenize sauravcode source into a list of (type, value, line) tuples.
+
+    Handles indentation-based block structure by emitting INDENT/DEDENT
+    tokens, similar to Python's tokenizer. Comments and whitespace are
+    consumed but not emitted. Returns a flat token list ready for parsing.
+
+    Args:
+        code: Source code string to tokenize.
+
+    Returns:
+        List of (token_type, token_value, line_number) tuples.
+    """
     if DEBUG:
         debug("Tokenizing code...")
     tokens = []
@@ -167,9 +191,16 @@ def tokenize(code):
 
 # AST Node Classes with __repr__ for Debugging
 class ASTNode:
+    """Base class for all Abstract Syntax Tree nodes.
+
+    Every node in the parsed AST inherits from this class. The optional
+    ``line_num`` attribute tracks the source line for error reporting
+    and debugger integration.
+    """
     line_num = None  # Source line number (optionally set by debugger/tooling)
 
 class AssignmentNode(ASTNode):
+    """Variable assignment: ``name = expression``."""
     def __init__(self, name, expression):
         self.name = name
         self.expression = expression
@@ -178,6 +209,7 @@ class AssignmentNode(ASTNode):
         return f"AssignmentNode(name={self.name}, expression={self.expression})"
 
 class FunctionNode(ASTNode):
+    """Function definition: ``function name(params) body``."""
     def __init__(self, name, params, body):
         self.name = name
         self.params = params
@@ -187,6 +219,7 @@ class FunctionNode(ASTNode):
         return f"FunctionNode(name={self.name}, params={self.params}, body={self.body})"
 
 class ReturnNode(ASTNode):
+    """Return statement: ``return expression``."""
     def __init__(self, expression):
         self.expression = expression
 
@@ -202,6 +235,7 @@ class YieldNode(ASTNode):
         return f"YieldNode(expression={self.expression})"
 
 class BinaryOpNode(ASTNode):
+    """Binary arithmetic operation: ``left operator right`` (+, -, *, /, %)."""
     def __init__(self, left, operator, right):
         self.left = left
         self.operator = operator
@@ -211,6 +245,7 @@ class BinaryOpNode(ASTNode):
         return f"BinaryOpNode(left={self.left}, operator='{self.operator}', right={self.right})"
 
 class NumberNode(ASTNode):
+    """Numeric literal (integer or float)."""
     def __init__(self, value):
         self.value = value
 
@@ -218,6 +253,7 @@ class NumberNode(ASTNode):
         return f"NumberNode(value={self.value})"
 
 class StringNode(ASTNode):
+    """String literal with escape sequence support."""
     def __init__(self, value):
         self.value = value
 
@@ -225,6 +261,7 @@ class StringNode(ASTNode):
         return f"StringNode(value={self.value!r})"
 
 class IdentifierNode(ASTNode):
+    """Variable or function name reference."""
     def __init__(self, name):
         self.name = name
 
@@ -232,6 +269,7 @@ class IdentifierNode(ASTNode):
         return f"IdentifierNode(name={self.name})"
 
 class PrintNode(ASTNode):
+    """Print statement: ``print expression``."""
     def __init__(self, expression):
         self.expression = expression
 
@@ -239,6 +277,7 @@ class PrintNode(ASTNode):
         return f"PrintNode(expression={self.expression})"
 
 class FunctionCallNode(ASTNode):
+    """Function call: ``name(arguments)`` or built-in call."""
     def __init__(self, name, arguments):
         self.name = name
         self.arguments = arguments
@@ -276,6 +315,7 @@ class UnaryOpNode(ASTNode):
         return f"UnaryOpNode(operator='{self.operator}', operand={self.operand})"
 
 class BoolNode(ASTNode):
+    """Boolean literal: ``true`` or ``false``."""
     def __init__(self, value):
         self.value = value
 
@@ -283,6 +323,7 @@ class BoolNode(ASTNode):
         return f"BoolNode(value={self.value})"
 
 class IfNode(ASTNode):
+    """Conditional: ``if condition body [else if ... else ...]``."""
     def __init__(self, condition, body, elif_chains=None, else_body=None):
         self.condition = condition
         self.body = body
@@ -293,6 +334,7 @@ class IfNode(ASTNode):
         return f"IfNode(condition={self.condition}, body={self.body})"
 
 class WhileNode(ASTNode):
+    """While loop: ``while condition body``."""
     def __init__(self, condition, body):
         self.condition = condition
         self.body = body
@@ -301,6 +343,7 @@ class WhileNode(ASTNode):
         return f"WhileNode(condition={self.condition}, body={self.body})"
 
 class ForNode(ASTNode):
+    """Range-based for loop: ``for var in start to end body``."""
     def __init__(self, var, start, end, body):
         self.var = var
         self.start = start
@@ -311,6 +354,7 @@ class ForNode(ASTNode):
         return f"ForNode(var={self.var}, start={self.start}, end={self.end})"
 
 class ListNode(ASTNode):
+    """List literal: ``[elem1, elem2, ...]``."""
     def __init__(self, elements):
         self.elements = elements
 
@@ -318,6 +362,7 @@ class ListNode(ASTNode):
         return f"ListNode(elements={self.elements})"
 
 class IndexNode(ASTNode):
+    """Index access: ``obj[index]``."""
     def __init__(self, obj, index):
         self.obj = obj
         self.index = index
@@ -326,6 +371,7 @@ class IndexNode(ASTNode):
         return f"IndexNode(obj={self.obj}, index={self.index})"
 
 class AppendNode(ASTNode):
+    """Append to a list: ``append(list_name, value)``."""
     def __init__(self, list_name, value):
         self.list_name = list_name
         self.value = value
@@ -334,6 +380,7 @@ class AppendNode(ASTNode):
         return f"AppendNode(list_name={self.list_name}, value={self.value})"
 
 class PopNode(ASTNode):
+    """Pop from a list: ``pop(list_name)``."""
     def __init__(self, list_name):
         self.list_name = list_name
 
@@ -341,6 +388,7 @@ class PopNode(ASTNode):
         return f"PopNode(list_name={self.list_name})"
 
 class LenNode(ASTNode):
+    """Length of a collection or string: ``len(expression)``."""
     def __init__(self, expression):
         self.expression = expression
 
@@ -348,6 +396,7 @@ class LenNode(ASTNode):
         return f"LenNode(expression={self.expression})"
 
 class MapNode(ASTNode):
+    """Map (dictionary) literal: ``{key: value, ...}``."""
     def __init__(self, pairs):
         self.pairs = pairs  # list of (key_expr, value_expr) tuples
 
@@ -565,6 +614,16 @@ class TernaryNode(ASTNode):
 
 # Parser Class with Block Parsing and Full Control Flow
 class Parser:
+    """Recursive-descent parser for sauravcode.
+
+    Converts a flat token list from ``tokenize()`` into an Abstract Syntax
+    Tree (AST). Handles indentation-based blocks (INDENT/DEDENT tokens),
+    operator precedence, and all language constructs including functions,
+    classes, control flow, pattern matching, enums, and comprehensions.
+
+    Args:
+        tokens: List of (type, value, line) tuples from the tokenizer.
+    """
     # Builtin function names that accept arguments.
     # When one of these is followed by '[', the '[' starts a list literal
     # argument rather than an index operation.  (Fixes #18)
@@ -1569,6 +1628,16 @@ class LambdaValue:
         return self.__repr__()
 
 class Interpreter:
+    """Tree-walking interpreter for sauravcode ASTs.
+
+    Evaluates an AST produced by the Parser. Maintains a scope chain
+    (via ``ChainMap``) for variables and functions, supports closures,
+    classes with methods, generators, and 80+ built-in functions for
+    strings, math, collections, file I/O, dates, regex, and more.
+
+    Includes DoS guards (recursion depth, loop iteration, and allocation
+    limits) to prevent runaway programs.
+    """
     def __init__(self):
         self.functions = {}  # Store function definitions
         self.variables = {}  # Store variable values
@@ -4493,6 +4562,12 @@ def _repl_execute(code, interpreter):
 
 # Main Execution Code
 def main():
+    """Entry point for the sauravcode interpreter CLI.
+
+    Parses command-line arguments and either starts the interactive REPL
+    (no arguments) or executes the specified .srv file. Supports ``--debug``
+    flag for verbose tokenizer/parser output.
+    """
     global DEBUG
 
     # Parse --debug flag before filename
