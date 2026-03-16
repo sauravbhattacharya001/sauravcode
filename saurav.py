@@ -3928,10 +3928,12 @@ class Interpreter:
         elif node.name in self.functions:
             if DEBUG:
                 debug(f"Identifier '{node.name}' is a function name")
-            # Return the actual FunctionNode with captured closure scope so
-            # it can be used as a first-class value at any call depth.
-            import copy
-            func_node = copy.copy(self.functions[node.name])
+            # Return a lightweight FunctionNode copy with captured closure
+            # scope so it can be used as a first-class value at any call
+            # depth.  Avoids per-call ``import copy`` and ``copy.copy()``
+            # overhead by constructing a new node directly.
+            orig = self.functions[node.name]
+            func_node = FunctionNode(orig.name, orig.params, orig.body)
             func_node.closure_scope = dict(self.variables)
             return func_node
         elif node.name in self.builtins:
