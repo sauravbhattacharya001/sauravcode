@@ -10,6 +10,7 @@ Usage:
     python saurav.py <filename>.srv [--debug]
 """
 
+import copy
 import re
 import sys
 import os
@@ -3999,9 +4000,11 @@ class Interpreter:
                 debug(f"Identifier '{node.name}' is a function name")
             # Return the actual FunctionNode with captured closure scope so
             # it can be used as a first-class value at any call depth.
-            import copy
+            # Uses a shallow copy of the FunctionNode and a lazy ChainMap
+            # snapshot of the current scope — O(1) capture instead of O(n)
+            # dict copy on every function-as-value reference.
             func_node = copy.copy(self.functions[node.name])
-            func_node.closure_scope = dict(self.variables)
+            func_node.closure_scope = ChainMap({}, self.variables)
             return func_node
         elif node.name in self.builtins:
             if DEBUG:
