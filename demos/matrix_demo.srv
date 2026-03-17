@@ -1,0 +1,53 @@
+# Matrix Operations Demo — sauravcode built-in matrix/2D array functions
+
+print "=== Matrix Builtins Demo ==="
+
+# Create a 3x3 zero matrix
+m = matrix_create (3) (3) (0)
+print m
+
+# Identity matrix
+id3 = matrix_identity 3
+print id3
+
+# Dimensions
+print matrix_rows id3
+print matrix_cols id3
+
+# Build a matrix via list literal
+a = [[1, 2], [3, 4]]
+print a
+
+# Scalar multiply
+scaled = matrix_scalar (a) (10)
+print scaled
+
+# Transpose
+t = matrix_transpose a
+print t
+
+# Addition
+b = [[5, 5], [5, 5]]
+added = matrix_add (a) (b)
+print added
+
+# Matrix multiply — A * A^T
+c = matrix_multiply (a) (t)
+print c
+
+# Determinant of 2x2
+det = matrix_determinant a
+print det
+
+# 3x3 determinant
+m3 = [[1, 2, 3], [0, 1, 4], [5, 6, 0]]
+print matrix_determinant m3
+
+# Get element — a[0][1] = 2
+print matrix_get (a) (0) (1)
+
+# Set element — immutable update
+a2 = matrix_set (a) (0) (0) (99)
+print a2
+
+print "=== Done ==="

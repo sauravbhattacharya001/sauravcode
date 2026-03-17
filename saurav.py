@@ -651,6 +651,9 @@ class Parser:
         'http_get', 'http_post', 'http_put', 'http_delete',
         'bit_and', 'bit_or', 'bit_xor', 'bit_not', 'bit_lshift', 'bit_rshift',
         'group_by', 'take_while', 'drop_while', 'scan', 'zip_with',
+        'matrix_create', 'matrix_identity', 'matrix_transpose',
+        'matrix_add', 'matrix_multiply', 'matrix_scalar',
+        'matrix_determinant', 'matrix_rows', 'matrix_cols', 'matrix_get', 'matrix_set',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1823,6 +1826,18 @@ class Interpreter:
             'drop_while':     self._builtin_drop_while,
             'scan':           self._builtin_scan,
             'zip_with':       self._builtin_zip_with,
+            # --- Matrix / 2D array builtins ---
+            'matrix_create':     self._builtin_matrix_create,
+            'matrix_identity':   self._builtin_matrix_identity,
+            'matrix_transpose':  self._builtin_matrix_transpose,
+            'matrix_add':        self._builtin_matrix_add,
+            'matrix_multiply':   self._builtin_matrix_multiply,
+            'matrix_scalar':     self._builtin_matrix_scalar,
+            'matrix_determinant': self._builtin_matrix_determinant,
+            'matrix_rows':       self._builtin_matrix_rows,
+            'matrix_cols':       self._builtin_matrix_cols,
+            'matrix_get':        self._builtin_matrix_get,
+            'matrix_set':        self._builtin_matrix_set,
             # --- String padding & char functions ---
             'pad_left':       self._builtin_pad_left,
             'pad_right':      self._builtin_pad_right,
@@ -3144,6 +3159,132 @@ class Interpreter:
             raise RuntimeError("zip_with expects lists as second and third arguments")
         return [self._call_function_with_args(fn, [a, b])
                 for a, b in zip(lst1, lst2)]
+
+    # — Matrix / 2D array builtins ————————————————
+
+    def _validate_matrix(self, name, m):
+        """Validate that m is a list of lists (2D) with consistent row lengths."""
+        if not isinstance(m, list) or len(m) == 0:
+            raise RuntimeError(f"{name}: expected a non-empty 2D list (matrix)")
+        for i, row in enumerate(m):
+            if not isinstance(row, list):
+                raise RuntimeError(f"{name}: row {i} is not a list")
+        cols = len(m[0])
+        for i, row in enumerate(m):
+            if len(row) != cols:
+                raise RuntimeError(f"{name}: inconsistent row lengths (row 0 has {cols}, row {i} has {len(row)})")
+        return len(m), cols
+
+    def _builtin_matrix_create(self, args):
+        """matrix_create(rows, cols, fill?) -> 2D list filled with fill (default 0)."""
+        if len(args) < 2 or len(args) > 3:
+            raise RuntimeError("matrix_create expects 2-3 arguments: rows, cols, [fill]")
+        rows, cols = int(args[0]), int(args[1])
+        if rows <= 0 or cols <= 0:
+            raise RuntimeError("matrix_create: rows and cols must be positive")
+        if rows * cols > MAX_ALLOC_SIZE:
+            raise RuntimeError(f"matrix_create: size {rows}x{cols} exceeds limit")
+        fill = args[2] if len(args) == 3 else 0
+        return [[fill for _ in range(cols)] for _ in range(rows)]
+
+    def _builtin_matrix_identity(self, args):
+        """matrix_identity(n) -> n×n identity matrix."""
+        self._expect_args('matrix_identity', args, 1)
+        n = int(args[0])
+        if n <= 0:
+            raise RuntimeError("matrix_identity: size must be positive")
+        if n * n > MAX_ALLOC_SIZE:
+            raise RuntimeError(f"matrix_identity: size {n}x{n} exceeds limit")
+        return [[1 if i == j else 0 for j in range(n)] for i in range(n)]
+
+    def _builtin_matrix_transpose(self, args):
+        """matrix_transpose(m) -> transposed matrix."""
+        self._expect_args('matrix_transpose', args, 1)
+        m = args[0]
+        rows, cols = self._validate_matrix('matrix_transpose', m)
+        return [[m[r][c] for r in range(rows)] for c in range(cols)]
+
+    def _builtin_matrix_add(self, args):
+        """matrix_add(a, b) -> element-wise sum of two matrices."""
+        self._expect_args('matrix_add', args, 2)
+        a, b = args[0], args[1]
+        ra, ca = self._validate_matrix('matrix_add', a)
+        rb, cb = self._validate_matrix('matrix_add', b)
+        if ra != rb or ca != cb:
+            raise RuntimeError(f"matrix_add: dimension mismatch ({ra}x{ca} vs {rb}x{cb})")
+        return [[a[r][c] + b[r][c] for c in range(ca)] for r in range(ra)]
+
+    def _builtin_matrix_multiply(self, args):
+        """matrix_multiply(a, b) -> matrix product."""
+        self._expect_args('matrix_multiply', args, 2)
+        a, b = args[0], args[1]
+        ra, ca = self._validate_matrix('matrix_multiply', a)
+        rb, cb = self._validate_matrix('matrix_multiply', b)
+        if ca != rb:
+            raise RuntimeError(f"matrix_multiply: inner dimensions mismatch ({ca} vs {rb})")
+        return [[sum(a[r][k] * b[k][c] for k in range(ca)) for c in range(cb)] for r in range(ra)]
+
+    def _builtin_matrix_scalar(self, args):
+        """matrix_scalar(m, s) -> matrix with every element multiplied by s."""
+        self._expect_args('matrix_scalar', args, 2)
+        m, s = args[0], args[1]
+        rows, cols = self._validate_matrix('matrix_scalar', m)
+        return [[m[r][c] * s for c in range(cols)] for r in range(rows)]
+
+    def _builtin_matrix_determinant(self, args):
+        """matrix_determinant(m) -> determinant of a square matrix (recursive cofactor expansion)."""
+        self._expect_args('matrix_determinant', args, 1)
+        m = args[0]
+        rows, cols = self._validate_matrix('matrix_determinant', m)
+        if rows != cols:
+            raise RuntimeError(f"matrix_determinant: matrix must be square ({rows}x{cols})")
+        return self._det(m, rows)
+
+    def _det(self, m, n):
+        if n == 1:
+            return m[0][0]
+        if n == 2:
+            return m[0][0] * m[1][1] - m[0][1] * m[1][0]
+        det = 0
+        for c in range(n):
+            sub = [[m[r][j] for j in range(n) if j != c] for r in range(1, n)]
+            det += ((-1) ** c) * m[0][c] * self._det(sub, n - 1)
+        return det
+
+    def _builtin_matrix_rows(self, args):
+        """matrix_rows(m) -> number of rows."""
+        self._expect_args('matrix_rows', args, 1)
+        m = args[0]
+        self._validate_matrix('matrix_rows', m)
+        return len(m)
+
+    def _builtin_matrix_cols(self, args):
+        """matrix_cols(m) -> number of columns."""
+        self._expect_args('matrix_cols', args, 1)
+        m = args[0]
+        self._validate_matrix('matrix_cols', m)
+        return len(m[0])
+
+    def _builtin_matrix_get(self, args):
+        """matrix_get(m, row, col) -> element at (row, col)."""
+        self._expect_args('matrix_get', args, 3)
+        m, r, c = args[0], int(args[1]), int(args[2])
+        self._validate_matrix('matrix_get', m)
+        if r < 0 or r >= len(m) or c < 0 or c >= len(m[0]):
+            raise RuntimeError(f"matrix_get: index ({r},{c}) out of bounds for {len(m)}x{len(m[0])} matrix")
+        return m[r][c]
+
+    def _builtin_matrix_set(self, args):
+        """matrix_set(m, row, col, val) -> new matrix with element at (row, col) set to val."""
+        if len(args) != 4:
+            raise RuntimeError("matrix_set expects 4 arguments: matrix, row, col, value")
+        m, r, c, val = args[0], int(args[1]), int(args[2]), args[3]
+        self._validate_matrix('matrix_set', m)
+        if r < 0 or r >= len(m) or c < 0 or c >= len(m[0]):
+            raise RuntimeError(f"matrix_set: index ({r},{c}) out of bounds for {len(m)}x{len(m[0])} matrix")
+        result = [row[:] for row in m]
+        result[r][c] = val
+        return result
 
     # — Statistics builtins ————————————————————————
 
