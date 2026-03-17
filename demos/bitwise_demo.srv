@@ -1,0 +1,46 @@
+# Bitwise Operations Demo
+# sauravcode supports bitwise operations on integers
+
+print "=== Bitwise Operations ==="
+
+# AND, OR, XOR with literal values
+print "bit_and 12 10:"
+print bit_and 12 10
+
+print "bit_or 12 10:"
+print bit_or 12 10
+
+print "bit_xor 12 10:"
+print bit_xor 12 10
+
+print "bit_not 12:"
+print bit_not 12
+
+# Shift operations
+print ""
+print "=== Shift Operations ==="
+print "bit_lshift 1 4:"
+print bit_lshift 1 4
+
+print "bit_rshift 16 2:"
+print bit_rshift 16 2
+
+# Using variables (wrap in parentheses)
+print ""
+print "=== With Variables ==="
+flags = 6
+mask = 3
+result = bit_and (flags) (mask)
+print f"bit_and 6 3 = {result}"
+
+# Build permissions with OR
+perms = bit_or 4 2
+print f"read + write = {perms}"
+
+# Check flag with AND
+check = bit_and (perms) 1
+print f"has execute? {check}"
+
+# XOR toggle
+toggled = bit_xor (perms) 2
+print f"toggle write on {perms} = {toggled}"

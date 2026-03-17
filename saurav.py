@@ -649,6 +649,7 @@ class Parser:
         'mean', 'median', 'stdev', 'variance', 'mode', 'percentile',
         'clamp', 'lerp', 'remap',
         'http_get', 'http_post', 'http_put', 'http_delete',
+        'bit_and', 'bit_or', 'bit_xor', 'bit_not', 'bit_lshift', 'bit_rshift',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1859,6 +1860,7 @@ class Interpreter:
         self._register_math_builtins()
         self._register_zero_arg_builtins()
         self._register_hash_builtins()
+        self._register_bitwise_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -1983,6 +1985,48 @@ class Interpreter:
                 raise RuntimeError("url_decode expects a string argument")
             return unquote(s)
         self.builtins['url_decode'] = lambda args: _url_decode(self, args)
+
+    # ── Data-driven bitwise builtins ─────────────────
+
+    def _register_bitwise_builtins(self):
+        """Register bitwise operation builtins.
+
+        Provides bit_and, bit_or, bit_xor (2-arg), bit_not (1-arg),
+        bit_lshift, bit_rshift (2-arg) for integer bitwise operations.
+        """
+        def _require_int(name, val):
+            if not isinstance(val, (int, float)):
+                raise RuntimeError(f"{name} expects integer arguments")
+            if isinstance(val, float) and val != int(val):
+                raise RuntimeError(f"{name} expects integer arguments, got float {val}")
+            return int(val)
+
+        _TWO_ARG_TABLE = {
+            'bit_and':    lambda a, b: a & b,
+            'bit_or':     lambda a, b: a | b,
+            'bit_xor':    lambda a, b: a ^ b,
+            'bit_lshift': lambda a, b: a << b,
+            'bit_rshift': lambda a, b: a >> b,
+        }
+        for name, fn in _TWO_ARG_TABLE.items():
+            def make_handler(n, f):
+                def handler(self_inner, args):
+                    self_inner._expect_args(n, args, 2)
+                    a = _require_int(n, args[0])
+                    b = _require_int(n, args[1])
+                    if n in ('bit_lshift', 'bit_rshift') and (b < 0 or b > 64):
+                        raise RuntimeError(f"{n}: shift amount must be 0-64, got {b}")
+                    return float(f(a, b))
+                return handler
+            h = make_handler(name, fn)
+            self.builtins[name] = lambda args, h=h: h(self, args)
+
+        # bit_not: 1-arg
+        def _bit_not(self_inner, args):
+            self_inner._expect_args('bit_not', args, 1)
+            a = _require_int('bit_not', args[0])
+            return float(~a)
+        self.builtins['bit_not'] = lambda args: _bit_not(self, args)
 
     # ── Shared statistics validation ──────────────────
 

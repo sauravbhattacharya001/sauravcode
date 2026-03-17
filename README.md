@@ -60,7 +60,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Import system** — `import "module.srv"` with closure scoping
 - **Lists** — dynamic arrays with append, pop, len, indexing, slicing, comprehensions
 - **Maps** — key-value dictionaries with `{}` syntax, bracket access, and built-in functions
-- **99 built-in functions** — strings, math, stats, regex, date/time, JSON, encoding, hashing, HTTP, I/O
+- **105 built-in functions** — strings, math, stats, regex, date/time, JSON, encoding, hashing, HTTP, I/O, bitwise
 - **String interpolation** — `f"Hello {name}, you are {age} years old"` f-strings
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
