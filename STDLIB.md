@@ -73,6 +73,11 @@ range 1 5               // → [1, 2, 3, 4]
 | `chunk` | `chunk list size` | Split list into chunks |
 | `find` | `find func list` | First element where func returns truthy |
 | `find_index` | `find_index func list` | Index of first match (-1 if not found) |
+| `group_by` | `group_by func list` | Group elements by function result into a map |
+| `take_while` | `take_while func list` | Take elements from start while func returns true |
+| `drop_while` | `drop_while func list` | Drop elements from start while func returns true |
+| `scan` | `scan func initial list` | Like reduce but returns list of intermediate results |
+| `zip_with` | `zip_with func list1 list2` | Combine two lists element-wise using func |
 
 ## Map (Dictionary) Functions
 

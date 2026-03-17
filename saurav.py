@@ -650,6 +650,7 @@ class Parser:
         'clamp', 'lerp', 'remap',
         'http_get', 'http_post', 'http_put', 'http_delete',
         'bit_and', 'bit_or', 'bit_xor', 'bit_not', 'bit_lshift', 'bit_rshift',
+        'group_by', 'take_while', 'drop_while', 'scan', 'zip_with',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1817,6 +1818,11 @@ class Interpreter:
             'chunk':          self._builtin_chunk,
             'find':           self._builtin_find,
             'find_index':     self._builtin_find_index,
+            'group_by':       self._builtin_group_by,
+            'take_while':     self._builtin_take_while,
+            'drop_while':     self._builtin_drop_while,
+            'scan':           self._builtin_scan,
+            'zip_with':       self._builtin_zip_with,
             # --- String padding & char functions ---
             'pad_left':       self._builtin_pad_left,
             'pad_right':      self._builtin_pad_right,
@@ -3060,6 +3066,84 @@ class Interpreter:
             if result:
                 return i
         return -1
+
+    # — Functional collection builtins ————————————————
+
+    def _builtin_group_by(self, args):
+        """group_by(fn, list) -> map of key -> [elements] grouped by fn result."""
+        self._expect_args('group_by', args, 2)
+        fn, lst = args[0], args[1]
+        if not isinstance(fn, (str, LambdaValue)):
+            raise RuntimeError("group_by expects a function name or lambda as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("group_by expects a list as second argument")
+        result = {}
+        for item in lst:
+            key = self._call_function_with_args(fn, [item])
+            str_key = str(key) if not isinstance(key, str) else key
+            if str_key not in result:
+                result[str_key] = []
+            result[str_key].append(item)
+        return result
+
+    def _builtin_take_while(self, args):
+        """take_while(fn, list) -> elements from start while fn returns true."""
+        self._expect_args('take_while', args, 2)
+        fn, lst = args[0], args[1]
+        if not isinstance(fn, (str, LambdaValue)):
+            raise RuntimeError("take_while expects a function name or lambda as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("take_while expects a list as second argument")
+        result = []
+        for item in lst:
+            if self._call_function_with_args(fn, [item]):
+                result.append(item)
+            else:
+                break
+        return result
+
+    def _builtin_drop_while(self, args):
+        """drop_while(fn, list) -> elements after first element where fn returns false."""
+        self._expect_args('drop_while', args, 2)
+        fn, lst = args[0], args[1]
+        if not isinstance(fn, (str, LambdaValue)):
+            raise RuntimeError("drop_while expects a function name or lambda as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("drop_while expects a list as second argument")
+        dropping = True
+        result = []
+        for item in lst:
+            if dropping and self._call_function_with_args(fn, [item]):
+                continue
+            dropping = False
+            result.append(item)
+        return result
+
+    def _builtin_scan(self, args):
+        """scan(fn, initial, list) -> list of intermediate reduce results."""
+        self._expect_args('scan', args, 3)
+        fn, init, lst = args[0], args[1], args[2]
+        if not isinstance(fn, (str, LambdaValue)):
+            raise RuntimeError("scan expects a function name or lambda as first argument")
+        if not isinstance(lst, list):
+            raise RuntimeError("scan expects a list as third argument")
+        acc = init
+        result = [acc]
+        for item in lst:
+            acc = self._call_function_with_args(fn, [acc, item])
+            result.append(acc)
+        return result
+
+    def _builtin_zip_with(self, args):
+        """zip_with(fn, list1, list2) -> list of fn(a, b) for each pair."""
+        self._expect_args('zip_with', args, 3)
+        fn, lst1, lst2 = args[0], args[1], args[2]
+        if not isinstance(fn, (str, LambdaValue)):
+            raise RuntimeError("zip_with expects a function name or lambda as first argument")
+        if not isinstance(lst1, list) or not isinstance(lst2, list):
+            raise RuntimeError("zip_with expects lists as second and third arguments")
+        return [self._call_function_with_args(fn, [a, b])
+                for a, b in zip(lst1, lst2)]
 
     # — Statistics builtins ————————————————————————
 

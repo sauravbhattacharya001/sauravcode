@@ -1,0 +1,36 @@
+# Functional Collection Builtins Demo
+# ====================================
+# New builtins: group_by, take_while, drop_while, scan, zip_with
+
+print "=== group_by ==="
+# group_by(fn, list) -> map of key -> [elements]
+numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+grouped = group_by (lambda x -> x % 2) numbers
+print grouped
+
+print "=== take_while ==="
+# take_while(fn, list) -> elements from start while fn is true
+ascending = [1, 2, 3, 5, 1, 2]
+taken = take_while (lambda x -> x < 5) ascending
+print taken
+
+print "=== drop_while ==="
+# drop_while(fn, list) -> elements after fn becomes false
+dropped = drop_while (lambda x -> x < 5) ascending
+print dropped
+
+print "=== scan ==="
+# scan(fn, initial, list) -> list of intermediate reduce results
+nums = [1, 2, 3, 4, 5]
+running_sum = scan (lambda a b -> a + b) (0) (nums)
+print running_sum
+
+print "=== zip_with ==="
+# zip_with(fn, list1, list2) -> [fn(a,b) for a,b in zip(list1,list2)]
+a = [1, 2, 3]
+b = [10, 20, 30]
+sums = zip_with (lambda x y -> x + y) (a) (b)
+print sums
+
+products = zip_with (lambda x y -> x * y) (a) (b)
+print products
