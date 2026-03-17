@@ -1706,6 +1706,42 @@ class Interpreter:
             TernaryNode:      self._eval_ternary,
         }
 
+        # ── Operator dispatch tables for O(1) lookup in hot paths ────
+        # Replaces if/elif chains in _eval_binary_op and _eval_compare
+        # with dict-based dispatch for measurable speedup in tight loops.
+        import operator as _op
+        self._binary_op_dispatch = {
+            '+': _op.add,
+            '-': _op.sub,
+        }
+        self._compare_op_dispatch = {
+            '==': _op.eq,
+            '!=': _op.ne,
+            '<':  _op.lt,
+            '>':  _op.gt,
+            '<=': _op.le,
+            '>=': _op.ge,
+        }
+
+    @staticmethod
+    def _type_name(value):
+        """Return a human-friendly type name for error messages.
+
+        Centralizes the isinstance-chain type naming that was previously
+        duplicated in _eval_binary_op and _eval_compare.
+        """
+        if isinstance(value, str):
+            return 'string'
+        if isinstance(value, list):
+            return 'list'
+        if isinstance(value, bool):
+            return 'bool'
+        if isinstance(value, dict):
+            return 'map'
+        if isinstance(value, (int, float)):
+            return 'number'
+        return type(value).__name__
+
     def _init_builtins(self):
         """Register built-in standard library functions."""
         self.builtins = {
@@ -4019,38 +4055,31 @@ class Interpreter:
         if DEBUG:
             debug(f"Performing operation: {left} {node.operator} {right}")
         try:
-            if node.operator == '+':
-                return left + right
-            elif node.operator == '-':
-                return left - right
-            elif node.operator == '*':
-                # Guard against memory exhaustion via string/list repetition
+            # Multiplication needs special handling for repetition guards
+            if node.operator == '*':
                 if isinstance(left, (str, list)) and isinstance(right, (int, float)):
                     return self._guarded_repeat(left, int(right))
                 elif isinstance(right, (str, list)) and isinstance(left, (int, float)):
                     return self._guarded_repeat(right, int(left))
                 return left * right
-            elif node.operator == '/':
+            # O(1) dispatch for +, -
+            op_fn = self._binary_op_dispatch.get(node.operator)
+            if op_fn is not None:
+                return op_fn(left, right)
+            # Division and modulo need zero-checks
+            if node.operator == '/':
                 if right == 0:
                     raise RuntimeError("Division by zero")
                 return left / right
-            elif node.operator == '%':
+            if node.operator == '%':
                 if right == 0:
                     raise RuntimeError("Modulo by zero")
                 return left % right
-            else:
-                raise ValueError(f'Unknown operator: {node.operator}')
+            raise ValueError(f'Unknown operator: {node.operator}')
         except TypeError:
-            left_type = 'string' if isinstance(left, str) else \
-                        'list' if isinstance(left, list) else \
-                        'bool' if isinstance(left, bool) else \
-                        'number' if isinstance(left, (int, float)) else type(left).__name__
-            right_type = 'string' if isinstance(right, str) else \
-                         'list' if isinstance(right, list) else \
-                         'bool' if isinstance(right, bool) else \
-                         'number' if isinstance(right, (int, float)) else type(right).__name__
             raise RuntimeError(
-                f"Cannot use '{node.operator}' on {left_type} and {right_type}"
+                f"Cannot use '{node.operator}' on "
+                f"{self._type_name(left)} and {self._type_name(right)}"
             )
 
     def _eval_compare(self, node):
@@ -4058,34 +4087,15 @@ class Interpreter:
         right = self.evaluate(node.right)
         if DEBUG:
             debug(f"Comparing: {left} {node.operator} {right}")
-        if node.operator == '==':
-            return left == right
-        elif node.operator == '!=':
-            return left != right
         try:
-            if node.operator == '<':
-                return left < right
-            elif node.operator == '>':
-                return left > right
-            elif node.operator == '<=':
-                return left <= right
-            elif node.operator == '>=':
-                return left >= right
-            else:
-                raise ValueError(f'Unknown comparison operator: {node.operator}')
+            cmp_fn = self._compare_op_dispatch.get(node.operator)
+            if cmp_fn is not None:
+                return cmp_fn(left, right)
+            raise ValueError(f'Unknown comparison operator: {node.operator}')
         except TypeError:
-            left_type = 'string' if isinstance(left, str) else \
-                        'list' if isinstance(left, list) else \
-                        'bool' if isinstance(left, bool) else \
-                        'map' if isinstance(left, dict) else \
-                        'number' if isinstance(left, (int, float)) else type(left).__name__
-            right_type = 'string' if isinstance(right, str) else \
-                         'list' if isinstance(right, list) else \
-                         'bool' if isinstance(right, bool) else \
-                         'map' if isinstance(right, dict) else \
-                         'number' if isinstance(right, (int, float)) else type(right).__name__
             raise RuntimeError(
-                f"Cannot compare {left_type} and {right_type} with '{node.operator}'"
+                f"Cannot compare {self._type_name(left)} and "
+                f"{self._type_name(right)} with '{node.operator}'"
             )
 
     def _eval_logical(self, node):
