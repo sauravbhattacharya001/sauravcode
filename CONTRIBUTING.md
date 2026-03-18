@@ -28,17 +28,78 @@ python -m pytest tests/ -v
 
 ```
 sauravcode/
-├── saurav.py          # Tree-walk interpreter
-├── sauravcc.py        # Compiler (.srv → C → native executable)
-├── tests/
-│   ├── test_interpreter.py   # Interpreter tests
-│   └── test_compiler.py      # Compiler/codegen tests
-├── docs/                     # MkDocs documentation source
-├── *.srv                     # Example sauravcode programs
-├── pyproject.toml            # pytest + coverage config
-├── .codecov.yml              # Codecov settings
-└── .github/workflows/        # CI/CD pipelines
+├── saurav.py              # Tree-walk interpreter (core)
+├── sauravcc.py            # Compiler (.srv → C → native executable)
+├── sauravcode/            # Installable package (CLI entry points)
+│   └── cli.py             # Entry points: sauravcode, sauravcode-compile, etc.
+├── tests/                 # pytest test suite
+│   ├── test_interpreter.py
+│   ├── test_compiler.py
+│   └── test_saurav*.py    # Tool-specific test files
+├── docs/                  # MkDocs documentation source
+├── editors/               # Editor integrations
+├── demos/                 # Demo programs
+├── *.srv                  # Example sauravcode programs
+├── pyproject.toml         # Build config, pytest + coverage settings
+├── .codecov.yml           # Codecov settings
+├── Dockerfile             # Container build
+├── CHANGELOG.md           # Release history
+└── .github/workflows/     # CI/CD pipelines
 ```
+
+### The Extended Toolchain
+
+Beyond the interpreter and compiler, sauravcode includes a rich set of developer tools. Each is a standalone Python module:
+
+| Module | Purpose |
+|---|---|
+| `sauravlint.py` | Linter — static analysis and style checks |
+| `sauravfmt.py` | Formatter — auto-format `.srv` files |
+| `sauravtest.py` | Test runner for `.srv` test files |
+| `sauravdbg.py` | Interactive debugger |
+| `sauravprof.py` | Profiler — execution timing |
+| `sauravdoc.py` | Documentation generator |
+| `sauravsec.py` | Security scanner |
+| `sauravfuzz.py` | Fuzzer — random program generation + testing |
+| `sauravrepl.py` | Interactive REPL |
+| `sauravplay.py` | Playground / sandbox |
+| `sauravast.py` | AST visualizer |
+| `sauravapi.py` | REST API server |
+| `sauravhl.py` | Syntax highlighter |
+| `sauravflow.py` | Control flow analyzer |
+| `sauravtype.py` | Type checker |
+| `sauravrefactor.py` | Automated refactoring |
+| `sauravquery.py` | Code search / query tool |
+| `sauravwatch.py` | File watcher — auto-run on save |
+| `sauravbench.py` | Benchmarking suite |
+| `sauravcov.py` | Coverage analysis |
+| `sauravmetrics.py` | Code metrics (complexity, etc.) |
+| `sauravdeps.py` | Dependency analyzer |
+| `sauravdiff.py` | AST-level diff tool |
+| `sauravsnap.py` | Snapshot testing |
+| `sauravsnippet.py` | Snippet manager |
+| `sauravstats.py` | Codebase statistics |
+| `sauravtodo.py` | TODO/FIXME tracker |
+| `sauravtrace.py` | Execution tracer |
+| `sauravmigrate.py` | Version migration tool |
+| `sauravmin.py` | Minifier |
+| `sauravobf.py` | Obfuscator |
+| `sauravver.py` | Version manager |
+| `sauravgen.py` | Code generator |
+| `sauravexplain.py` | Code explainer (educational) |
+| `sauravlearn.py` | Interactive tutorials |
+| `sauravci.py` | CI helper utilities |
+| `sauravdb.py` | Database integration |
+| `sauravembed.py` | Embedding / integration tools |
+| `sauravcomplex.py` | Complexity analysis |
+| `sauravscaffold.py` | Project scaffolding |
+| `sauravpkg.py` | Package manager |
+| `sauravbundle.py` | Bundler |
+| `sauravchallenge.py` | Coding challenges |
+| `sauravnb.py` | Notebook support (`.srvnb`) |
+| `sauravtranspile.py` | Transpiler to other languages |
+
+When contributing to any tool module, look at related test files (`test_saurav*.py`) and follow existing patterns.
 
 ## How to Contribute
 
@@ -147,6 +208,41 @@ python sauravcc.py my_feature.srv
 3. Describe what you changed and why
 4. Reference any related issues (`Fixes #123`)
 5. CI will run tests automatically — make sure they pass
+
+## Development with the Package
+
+sauravcode is also an installable Python package. For development:
+
+```bash
+# Install in editable mode (so changes are picked up immediately)
+pip install -e .
+
+# This provides CLI commands:
+sauravcode hello.srv           # Run via interpreter
+sauravcode-compile hello.srv   # Compile to native binary
+sauravcode-snap hello.srv      # Snapshot testing
+sauravcode-api                 # Start REST API server
+```
+
+When adding new CLI entry points, register them in `pyproject.toml` under `[project.scripts]` and implement in `sauravcode/cli.py`.
+
+### Running the Full CI Locally
+
+Before submitting a PR, replicate what CI does:
+
+```bash
+# Lint (if applicable)
+python sauravlint.py your_file.srv
+
+# Format check
+python sauravfmt.py --check your_file.srv
+
+# Full test suite with coverage
+python -m pytest tests/ --cov=. --cov-report=term-missing
+
+# Security scan
+python sauravsec.py your_file.srv
+```
 
 ## Code Style
 
