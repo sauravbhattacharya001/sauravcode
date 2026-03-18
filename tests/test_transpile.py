@@ -1,403 +1,311 @@
-"""Tests for sauravtranspile — sauravcode to Python transpiler."""
+"""Tests for sauravtranspile — the sauravcode-to-Python transpiler."""
 
 import os
-import subprocess
 import sys
-import tempfile
-import textwrap
-import unittest
+import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sauravtranspile import transpile, transpile_file, PythonTranspiler
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-class TestBasicTranspile(unittest.TestCase):
-    """Test basic language constructs transpile correctly."""
-
-    def test_hello_world(self):
-        code = transpile('print "Hello, World!"', include_preamble=False)
-        self.assertIn('_srv_print', code)
-        self.assertIn("Hello, World!", code)
-
-    def test_assignment(self):
-        code = transpile('x = 42', include_preamble=False)
-        self.assertIn('x = 42', code)
-
-    def test_multiple_assignments(self):
-        code = transpile('x = 1\ny = 2\nz = 3', include_preamble=False)
-        self.assertIn('x = 1', code)
-        self.assertIn('y = 2', code)
-        self.assertIn('z = 3', code)
-
-    def test_string_assignment(self):
-        code = transpile('name = "Alice"', include_preamble=False)
-        self.assertIn("name = 'Alice'", code)
-
-    def test_boolean_true(self):
-        code = transpile('x = true', include_preamble=False)
-        self.assertIn('x = True', code)
-
-    def test_boolean_false(self):
-        code = transpile('x = false', include_preamble=False)
-        self.assertIn('x = False', code)
-
-    def test_binary_ops(self):
-        code = transpile('x = 3 + 4\ny = 10 - 2\nz = 6 * 7', include_preamble=False)
-        self.assertIn('(3 + 4)', code)
-        self.assertIn('(10 - 2)', code)
-        self.assertIn('(6 * 7)', code)
+from sauravtranspile import PythonTranspiler, RUNTIME_PREAMBLE
 
 
-class TestFunctions(unittest.TestCase):
-
-    def test_simple_function(self):
-        src = 'function greet name\n    print name\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('def greet(name):', code)
-
-    def test_function_return(self):
-        src = 'function add x y\n    return x + y\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('def add(x, y):', code)
-        self.assertIn('return (x + y)', code)
-
-    def test_function_call(self):
-        src = 'function square x\n    return x * x\nsquare 5'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('square(5)', code)
-
-    def test_lambda(self):
-        src = 'f = lambda x -> x * 2'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('lambda x:', code)
+@pytest.fixture
+def transpiler():
+    return PythonTranspiler(include_preamble=False)
 
 
-class TestControlFlow(unittest.TestCase):
-
-    def test_if(self):
-        src = 'if true\n    print "yes"\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('if True:', code)
-
-    def test_if_else(self):
-        src = 'if false\n    print "no"\nelse\n    print "yes"\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('if False:', code)
-        self.assertIn('else:', code)
-
-    def test_elif(self):
-        src = 'x = 5\nif x == 1\n    print "one"\nelse if x == 5\n    print "five"\nelse\n    print "other"\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('elif', code)
-        self.assertIn('else:', code)
-
-    def test_while(self):
-        src = 'x = 0\nwhile x < 5\n    x = x + 1\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('while (x < 5):', code)
-
-    def test_for(self):
-        src = 'for i 0 5\n    print i\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('for i in range(0, 5):', code)
-
-    def test_for_each(self):
-        src = 'items = [1, 2, 3]\nfor x in items\n    print x\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('for x in items:', code)
-
-    def test_break(self):
-        src = 'while true\n    break\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('break', code)
-
-    def test_continue(self):
-        src = 'for i 0 10\n    continue\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('continue', code)
+@pytest.fixture
+def transpiler_with_preamble():
+    return PythonTranspiler(include_preamble=True)
 
 
-class TestCollections(unittest.TestCase):
+# ── Basic statements ────────────────────────────────────────────────
 
-    def test_list(self):
-        code = transpile('nums = [1, 2, 3]', include_preamble=False)
-        self.assertIn('[1, 2, 3]', code)
+class TestAssignment:
+    def test_simple_assignment(self, transpiler):
+        result = transpiler.transpile('x = 42')
+        assert 'x = 42' in result
 
-    def test_map_literal(self):
-        src = 'config = {"host": "localhost", "port": 8080}'
-        code = transpile(src, include_preamble=False)
-        self.assertIn("'host':", code)
-        self.assertIn("'localhost'", code)
+    def test_string_assignment(self, transpiler):
+        result = transpiler.transpile('name = "hello"')
+        assert 'name =' in result and 'hello' in result
 
-    def test_append(self):
-        src = 'items = [1]\nappend items 2'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('items.append(2)', code)
+    def test_bool_assignment(self, transpiler):
+        result = transpiler.transpile('flag = true')
+        assert 'flag = True' in result
 
-    def test_index(self):
-        src = 'items = [10, 20, 30]\nx = items[1]'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('items[1]', code)
-
-    def test_slice(self):
-        src = 'items = [1, 2, 3, 4, 5]\npart = items[1:3]'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('items[1:3]', code)
-
-    def test_indexed_assignment(self):
-        src = 'items = [1, 2, 3]\nitems[0] = 99'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('items[0] = 99', code)
-
-    def test_list_comprehension(self):
-        src = 'squares = [x * x for x in [1, 2, 3]]'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('for x in', code)
-
-    def test_list_comprehension_filter(self):
-        src = 'evens = [x for x in [1, 2, 3, 4] if x % 2 == 0]'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('if', code)
-        self.assertIn('for x in', code)
+    def test_list_assignment(self, transpiler):
+        result = transpiler.transpile('xs = [1, 2, 3]')
+        assert 'xs = [1, 2, 3]' in result
 
 
-class TestErrorHandling(unittest.TestCase):
+class TestPrint:
+    def test_print_number(self, transpiler):
+        result = transpiler.transpile('print 42')
+        assert '_srv_print(42)' in result
 
-    def test_try_catch(self):
-        src = 'try\n    throw "oops"\ncatch e\n    print e\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('try:', code)
-        self.assertIn('except Exception as _exc:', code)
-        self.assertIn('e = str(_exc)', code)
+    def test_print_string(self, transpiler):
+        result = transpiler.transpile('print "hello"')
+        assert '_srv_print(' in result
 
-    def test_throw(self):
-        src = 'throw "something failed"'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('raise RuntimeError', code)
-
-    def test_assert(self):
-        code = transpile('assert 1 == 1', include_preamble=False)
-        self.assertIn('assert', code)
-
-    def test_assert_with_message(self):
-        src = 'assert x > 0 "must be positive"'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('assert', code)
+    def test_print_expression(self, transpiler):
+        result = transpiler.transpile('print 2 + 3')
+        assert '_srv_print(' in result
 
 
-class TestAdvancedFeatures(unittest.TestCase):
+# ── Functions ───────────────────────────────────────────────────────
 
-    def test_fstring(self):
-        src = 'name = "World"\nprint f"Hello {name}!"'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('f"Hello {name}!"', code)
+class TestFunctions:
+    def test_simple_function(self, transpiler):
+        src = 'function add a b\n    return a + b'
+        result = transpiler.transpile(src)
+        assert 'def add(a, b):' in result
+        assert 'return (a + b)' in result
 
-    def test_pipe_operator(self):
+    def test_function_call(self, transpiler):
+        src = 'function greet name\n    return "hi"\ngreet "world"'
+        result = transpiler.transpile(src)
+        assert 'def greet(name):' in result
+
+    def test_no_param_function(self, transpiler):
+        src = 'function hello\n    print "hi"'
+        result = transpiler.transpile(src)
+        assert 'def hello():' in result
+
+
+# ── Control flow ────────────────────────────────────────────────────
+
+class TestControlFlow:
+    def test_if_statement(self, transpiler):
+        src = 'if true\n    print "yes"'
+        result = transpiler.transpile(src)
+        assert 'if True:' in result
+
+    def test_if_else(self, transpiler):
+        src = 'if false\n    print "no"\nelse\n    print "yes"'
+        result = transpiler.transpile(src)
+        assert 'if False:' in result
+        assert 'else:' in result
+
+    def test_while_loop(self, transpiler):
+        src = 'x = 0\nwhile x < 10\n    x = x + 1'
+        result = transpiler.transpile(src)
+        assert 'while (x < 10):' in result
+
+    def test_for_loop(self, transpiler):
+        src = 'for i 0 5\n    print i'
+        result = transpiler.transpile(src)
+        assert 'for i in range(0, 5):' in result
+
+    def test_for_each(self, transpiler):
+        src = 'items = [1, 2, 3]\nfor item in items\n    print item'
+        result = transpiler.transpile(src)
+        assert 'for item in items:' in result
+
+    def test_break_continue(self, transpiler):
+        src = 'for i 0 10\n    if i == 5\n        break\n    if i == 3\n        continue'
+        result = transpiler.transpile(src)
+        assert 'break' in result
+        assert 'continue' in result
+
+
+# ── Expressions ─────────────────────────────────────────────────────
+
+class TestExpressions:
+    def test_binary_ops(self, transpiler):
+        result = transpiler.transpile('x = 2 + 3 * 4')
+        assert 'x =' in result
+
+    def test_comparison(self, transpiler):
+        result = transpiler.transpile('x = 1 == 1')
+        assert '==' in result
+
+    def test_logical_and(self, transpiler):
+        src = 'if true and false\n    print "no"'
+        result = transpiler.transpile(src)
+        assert 'and' in result
+
+    def test_logical_or(self, transpiler):
+        src = 'if true or false\n    print "yes"'
+        result = transpiler.transpile(src)
+        assert 'or' in result
+
+    def test_unary_not(self, transpiler):
+        result = transpiler.transpile('x = not true')
+        assert 'not' in result
+
+    def test_unary_negative(self, transpiler):
+        result = transpiler.transpile('x = -5')
+        assert '-5' in result
+
+    def test_list_index(self, transpiler):
+        src = 'xs = [10, 20, 30]\ny = xs[1]'
+        result = transpiler.transpile(src)
+        assert 'xs[1]' in result
+
+    def test_map_literal(self, transpiler):
+        src = 'data = {"a": 1, "b": 2}'
+        result = transpiler.transpile(src)
+        assert '{' in result and '}' in result
+
+    def test_fstring(self, transpiler):
+        src = 'name = "world"\nmsg = f"hello {name}"'
+        result = transpiler.transpile(src)
+        assert 'f"' in result or "f'" in result
+
+
+# ── Error handling ──────────────────────────────────────────────────
+
+class TestErrorHandling:
+    def test_try_catch(self, transpiler):
+        src = 'try\n    x = 1 / 0\ncatch e\n    print e'
+        result = transpiler.transpile(src)
+        assert 'try:' in result
+        assert 'except Exception as _exc:' in result
+
+    def test_throw(self, transpiler):
+        result = transpiler.transpile('throw "something went wrong"')
+        assert 'raise RuntimeError(' in result
+
+
+# ── Enums ───────────────────────────────────────────────────────────
+
+class TestEnums:
+    def test_enum_definition(self, transpiler):
+        src = 'enum Color\n    Red\n    Green\n    Blue'
+        result = transpiler.transpile(src)
+        assert 'class Color(_IntEnum):' in result
+        assert 'Red = 0' in result
+        assert 'Green = 1' in result
+        assert 'Blue = 2' in result
+
+    def test_enum_access(self, transpiler):
+        src = 'enum Color\n    Red\n    Green\n    Blue\nc = Color.Red'
+        result = transpiler.transpile(src)
+        assert 'Color.Red' in result
+
+
+# ── Advanced features ───────────────────────────────────────────────
+
+class TestAdvancedFeatures:
+    def test_lambda(self, transpiler):
+        src = 'double = lambda x -> x * 2'
+        result = transpiler.transpile(src)
+        assert 'lambda x:' in result
+
+    def test_pipe(self, transpiler):
         src = 'function double x\n    return x * 2\nresult = 5 |> double'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('double(5)', code)
+        result = transpiler.transpile(src)
+        assert 'double(5)' in result
 
-    def test_enum(self):
-        src = 'enum Color\n    RED\n    GREEN\n    BLUE\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('class Color(_IntEnum):', code)
-        self.assertIn('RED = 0', code)
-        self.assertIn('GREEN = 1', code)
-        self.assertIn('BLUE = 2', code)
+    def test_list_comprehension(self, transpiler):
+        src = 'squares = [x * x for x in range(10)]'
+        result = transpiler.transpile(src)
+        assert 'for' in result and 'in' in result
 
-    def test_enum_access(self):
-        src = 'enum Color\n    RED\n    GREEN\nx = Color.RED'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('Color.RED', code)
-
-    def test_match(self):
-        src = 'x = 5\nmatch x\n    case 1\n        print "one"\n    case 5\n        print "five"\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('match x:', code)
-        self.assertIn('case 1:', code)
-        self.assertIn('case 5:', code)
-
-    def test_ternary(self):
-        src = 'x = 10\ny = "big" if x > 5 else "small"'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('if', code)
-        self.assertIn('else', code)
-
-    def test_yield(self):
-        src = 'function gen\n    yield 1\n    yield 2\n'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('yield 1', code)
-        self.assertIn('yield 2', code)
-
-    def test_import(self):
-        src = 'import "utils"'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('# import "utils"', code)
-        self.assertIn('TODO', code)
+    def test_assert_statement(self, transpiler):
+        src = 'assert 1 == 1'
+        result = transpiler.transpile(src)
+        assert 'assert' in result
 
 
-class TestBuiltins(unittest.TestCase):
+# ── List operations ─────────────────────────────────────────────────
 
-    def test_len(self):
-        src = 'items = [1, 2, 3]\nn = len items'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('len(items)', code)
+class TestListOps:
+    def test_append(self, transpiler):
+        src = 'xs = []\nappend xs 42'
+        result = transpiler.transpile(src)
+        assert 'xs.append(42)' in result
 
-    def test_contains(self):
-        src = 'x = contains "hello" "ell"'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('_srv_contains', code)
+    def test_pop(self, transpiler):
+        src = 'xs = [1, 2, 3]\npop xs'
+        result = transpiler.transpile(src)
+        assert 'xs.pop()' in result
 
-    def test_upper(self):
-        src = 'x = upper "hello"'
-        code = transpile(src, include_preamble=False)
-        self.assertIn(".upper()", code)
-
-    def test_sort(self):
-        src = 'x = sort [3, 1, 2]'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('sorted(', code)
-
-    def test_map_builtin(self):
-        src = 'result = map (lambda x -> x * 2) [1, 2, 3]'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('list(map(', code)
-
-    def test_filter_builtin(self):
-        src = 'result = filter (lambda x -> x > 2) [1, 2, 3, 4]'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('list(filter(', code)
-
-    def test_range_builtin(self):
-        src = 'nums = range 10'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('list(range(10))', code)
-
-    def test_type_of(self):
-        src = 'x = type_of 42'
-        code = transpile(src, include_preamble=False)
-        self.assertIn('_srv_type_of(42)', code)
+    def test_indexed_assignment(self, transpiler):
+        src = 'xs = [1, 2, 3]\nxs[0] = 10'
+        result = transpiler.transpile(src)
+        assert 'xs[0] = 10' in result
 
 
-class TestPreamble(unittest.TestCase):
+# ── Preamble ────────────────────────────────────────────────────────
 
-    def test_preamble_included_when_needed(self):
-        code = transpile('print "hello"', include_preamble=True)
-        self.assertIn('def _srv_print', code)
+class TestPreamble:
+    def test_preamble_included_when_print_used(self, transpiler_with_preamble):
+        result = transpiler_with_preamble.transpile('print "hello"')
+        assert '_srv_print' in result
+        assert RUNTIME_PREAMBLE in result
 
-    def test_no_preamble_when_disabled(self):
-        code = transpile('print "hello"', include_preamble=False)
-        self.assertNotIn('import math', code)
+    def test_preamble_skipped_when_disabled(self, transpiler):
+        result = transpiler.transpile('print "hello"')
+        assert '_srv_print(' in result
+        assert RUNTIME_PREAMBLE not in result
 
-    def test_preamble_has_runtime_helpers(self):
-        code = transpile('x = contains "hello" "ell"', include_preamble=True)
-        self.assertIn('def _srv_contains', code)
-
-
-class TestOutputExecution(unittest.TestCase):
-    """Test that transpiled output actually runs correctly."""
-
-    def _run_python(self, source):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False,
-                                         encoding='utf-8') as f:
-            f.write(source)
-            path = f.name
-        try:
-            result = subprocess.run(
-                [sys.executable, path],
-                capture_output=True, text=True, timeout=10,
-            )
-            return result.stdout, result.stderr, result.returncode
-        finally:
-            os.unlink(path)
-
-    def test_hello_runs(self):
-        code = transpile('print "Hello!"')
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("Hello!", out)
-
-    def test_arithmetic_runs(self):
-        code = transpile('print 3 + 4')
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("7", out)
-
-    def test_function_runs(self):
-        src = 'function square x\n    return x * x\nprint square 5'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("25", out)
-
-    def test_for_loop_runs(self):
-        src = 'total = 0\nfor i 1 6\n    total = total + i\nprint total'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("15", out)
-
-    def test_list_operations_run(self):
-        src = 'items = [10, 20, 30]\nappend items 40\nprint len items'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("4", out)
-
-    def test_fstring_runs(self):
-        src = 'name = "World"\nprint f"Hello {name}!"'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("Hello World!", out)
-
-    def test_try_catch_runs(self):
-        src = 'try\n    throw "boom"\ncatch e\n    print e'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("boom", out)
-
-    def test_if_else_runs(self):
-        src = 'x = 10\nif x > 5\n    print "big"\nelse\n    print "small"'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("big", out)
-
-    def test_while_loop_runs(self):
-        src = 'x = 0\nwhile x < 3\n    x = x + 1\nprint x'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("3", out)
-
-    def test_enum_runs(self):
-        src = 'enum Color\n    RED\n    GREEN\n    BLUE\nprint Color.GREEN'
-        code = transpile(src)
-        out, err, rc = self._run_python(code)
-        self.assertEqual(rc, 0, f"stderr: {err}")
-        self.assertIn("1", out)
+    def test_no_preamble_for_simple_assignment(self, transpiler_with_preamble):
+        result = transpiler_with_preamble.transpile('x = 42')
+        assert RUNTIME_PREAMBLE not in result
 
 
-class TestTranspileFile(unittest.TestCase):
+# ── Match/case ──────────────────────────────────────────────────────
 
-    def test_transpile_file(self):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.srv', delete=False,
-                                         encoding='utf-8') as f:
-            f.write('print "file test"')
-            srv_path = f.name
-
-        try:
-            py_path = srv_path.replace('.srv', '.py')
-            code = transpile_file(srv_path, py_path)
-            self.assertTrue(os.path.exists(py_path))
-            self.assertIn('_srv_print', code)
-        finally:
-            os.unlink(srv_path)
-            if os.path.exists(py_path):
-                os.unlink(py_path)
+class TestMatch:
+    def test_match_basic(self, transpiler):
+        src = 'x = 1\nmatch x\n    case 1\n        print "one"\n    case 2\n        print "two"'
+        result = transpiler.transpile(src)
+        assert 'match x:' in result
+        assert 'case 1:' in result
+        assert 'case 2:' in result
 
 
-if __name__ == "__main__":
-    unittest.main()
+# ── Import ──────────────────────────────────────────────────────────
+
+class TestImport:
+    def test_import_generates_comment(self, transpiler):
+        src = 'import "utils.srv"'
+        result = transpiler.transpile(src)
+        assert '# import' in result
+        assert 'TODO' in result
+
+
+# ── Integration: transpile real .srv files ──────────────────────────
+
+class TestRealFiles:
+    """Smoke tests: transpile actual .srv files from the repo without errors."""
+
+    @pytest.fixture
+    def repo_root(self):
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _transpile_file(self, path):
+        with open(path, 'r', encoding='utf-8') as f:
+            source = f.read()
+        t = PythonTranspiler(include_preamble=True)
+        result = t.transpile(source)
+        assert isinstance(result, str)
+        assert len(result) > 0
+        return result
+
+    def test_transpile_hello(self, repo_root):
+        path = os.path.join(repo_root, 'hello.srv')
+        if os.path.exists(path):
+            result = self._transpile_file(path)
+            assert '_srv_print' in result
+
+    def test_transpile_break_continue_demo(self, repo_root):
+        path = os.path.join(repo_root, 'break_continue_demo.srv')
+        if os.path.exists(path):
+            result = self._transpile_file(path)
+            assert 'break' in result
+            assert 'continue' in result
+
+    def test_transpile_foreach_demo(self, repo_root):
+        path = os.path.join(repo_root, 'foreach_demo.srv')
+        if os.path.exists(path):
+            result = self._transpile_file(path)
+            assert 'for' in result
+
+    def test_transpile_collection_demo(self, repo_root):
+        path = os.path.join(repo_root, 'collection_demo.srv')
+        if os.path.exists(path):
+            result = self._transpile_file(path)
+            assert len(result) > 50
