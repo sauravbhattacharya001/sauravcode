@@ -654,6 +654,9 @@ class Parser:
         'group_by', 'take_while', 'drop_while', 'scan', 'zip_with',
         'str_reverse', 'str_chars', 'str_title', 'str_is_digit', 'str_is_alpha',
         'str_is_alnum', 'str_words', 'str_slug', 'str_count', 'str_wrap', 'str_center',
+        'sets_create', 'sets_add', 'sets_remove', 'sets_contains',
+        'sets_union', 'sets_intersection', 'sets_difference', 'sets_symmetric_diff',
+        'sets_size', 'sets_to_list', 'sets_is_subset', 'sets_is_superset',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1786,6 +1789,8 @@ class Interpreter:
             return 'bool'
         if isinstance(value, dict):
             return 'map'
+        if isinstance(value, set):
+            return 'set'
         if isinstance(value, (int, float)):
             return 'number'
         return type(value).__name__
@@ -2162,6 +2167,134 @@ class Interpreter:
             return s.center(width, fill)
 
         self.builtins['str_center'] = lambda args: _str_center(self, args)
+
+        # ── Set data structure builtins ──────────────────
+
+        # Sets are represented as Python frozensets internally.
+        # Users create them from lists and get lists back.
+
+        def _sets_create(self_inner, args):
+            """sets_create([1, 2, 3]) → set from list (or empty set)"""
+            if len(args) == 0:
+                return set()
+            self_inner._expect_args('sets_create', args, 1)
+            lst = args[0]
+            if not isinstance(lst, list):
+                raise RuntimeError("sets_create expects a list argument")
+            for item in lst:
+                if isinstance(item, (list, dict, set)):
+                    raise RuntimeError("sets_create: set elements must be hashable (numbers, strings, booleans)")
+            return set(lst)
+
+        def _sets_add(self_inner, args):
+            """sets_add(s, value) → new set with value added"""
+            self_inner._expect_args('sets_add', args, 2)
+            s, val = args
+            if not isinstance(s, set):
+                raise RuntimeError("sets_add expects a set as first argument")
+            if isinstance(val, (list, dict, set)):
+                raise RuntimeError("sets_add: value must be hashable (number, string, boolean)")
+            result = set(s)
+            result.add(val)
+            return result
+
+        def _sets_remove(self_inner, args):
+            """sets_remove(s, value) → new set with value removed"""
+            self_inner._expect_args('sets_remove', args, 2)
+            s, val = args
+            if not isinstance(s, set):
+                raise RuntimeError("sets_remove expects a set as first argument")
+            result = set(s)
+            result.discard(val)
+            return result
+
+        def _sets_contains(self_inner, args):
+            """sets_contains(s, value) → true/false"""
+            self_inner._expect_args('sets_contains', args, 2)
+            s, val = args
+            if not isinstance(s, set):
+                raise RuntimeError("sets_contains expects a set as first argument")
+            return val in s
+
+        def _sets_union(self_inner, args):
+            """sets_union(a, b) → union of two sets"""
+            self_inner._expect_args('sets_union', args, 2)
+            a, b = args
+            if not isinstance(a, set) or not isinstance(b, set):
+                raise RuntimeError("sets_union expects two sets")
+            return a | b
+
+        def _sets_intersection(self_inner, args):
+            """sets_intersection(a, b) → intersection of two sets"""
+            self_inner._expect_args('sets_intersection', args, 2)
+            a, b = args
+            if not isinstance(a, set) or not isinstance(b, set):
+                raise RuntimeError("sets_intersection expects two sets")
+            return a & b
+
+        def _sets_difference(self_inner, args):
+            """sets_difference(a, b) → elements in a but not in b"""
+            self_inner._expect_args('sets_difference', args, 2)
+            a, b = args
+            if not isinstance(a, set) or not isinstance(b, set):
+                raise RuntimeError("sets_difference expects two sets")
+            return a - b
+
+        def _sets_symmetric_diff(self_inner, args):
+            """sets_symmetric_diff(a, b) → elements in either but not both"""
+            self_inner._expect_args('sets_symmetric_diff', args, 2)
+            a, b = args
+            if not isinstance(a, set) or not isinstance(b, set):
+                raise RuntimeError("sets_symmetric_diff expects two sets")
+            return a ^ b
+
+        def _sets_size(self_inner, args):
+            """sets_size(s) → number of elements"""
+            self_inner._expect_args('sets_size', args, 1)
+            s = args[0]
+            if not isinstance(s, set):
+                raise RuntimeError("sets_size expects a set argument")
+            return len(s)
+
+        def _sets_to_list(self_inner, args):
+            """sets_to_list(s) → sorted list of set elements"""
+            self_inner._expect_args('sets_to_list', args, 1)
+            s = args[0]
+            if not isinstance(s, set):
+                raise RuntimeError("sets_to_list expects a set argument")
+            try:
+                return sorted(s)
+            except TypeError:
+                return list(s)
+
+        def _sets_is_subset(self_inner, args):
+            """sets_is_subset(a, b) → true if a ⊆ b"""
+            self_inner._expect_args('sets_is_subset', args, 2)
+            a, b = args
+            if not isinstance(a, set) or not isinstance(b, set):
+                raise RuntimeError("sets_is_subset expects two sets")
+            return a <= b
+
+        def _sets_is_superset(self_inner, args):
+            """sets_is_superset(a, b) → true if a ⊇ b"""
+            self_inner._expect_args('sets_is_superset', args, 2)
+            a, b = args
+            if not isinstance(a, set) or not isinstance(b, set):
+                raise RuntimeError("sets_is_superset expects two sets")
+            return a >= b
+
+        self.builtins['sets_create'] = lambda args: _sets_create(self, args)
+        self.builtins['sets_add'] = lambda args: _sets_add(self, args)
+        self.builtins['sets_remove'] = lambda args: _sets_remove(self, args)
+        self.builtins['sets_contains'] = lambda args: _sets_contains(self, args)
+        self.builtins['sets_union'] = lambda args: _sets_union(self, args)
+        self.builtins['sets_intersection'] = lambda args: _sets_intersection(self, args)
+        self.builtins['sets_difference'] = lambda args: _sets_difference(self, args)
+        self.builtins['sets_symmetric_diff'] = lambda args: _sets_symmetric_diff(self, args)
+        self.builtins['sets_size'] = lambda args: _sets_size(self, args)
+        self.builtins['sets_to_list'] = lambda args: _sets_to_list(self, args)
+        self.builtins['sets_is_subset'] = lambda args: _sets_is_subset(self, args)
+        self.builtins['sets_is_superset'] = lambda args: _sets_is_superset(self, args)
 
     # ── Shared statistics validation ──────────────────
 
@@ -3800,6 +3933,8 @@ class Interpreter:
             print(_format_list(value))
         elif isinstance(value, dict):
             print(_format_map(value))
+        elif isinstance(value, set):
+            print(_format_set(value))
         elif isinstance(value, GeneratorValue):
             print(repr(value))
         else:
@@ -4594,6 +4729,8 @@ def _format_list(lst):
             items.append(_format_map(v))
         elif isinstance(v, list):
             items.append(_format_list(v))
+        elif isinstance(v, set):
+            items.append(_format_set(v))
         else:
             items.append(str(v))
     return "[" + ", ".join(items) + "]"
@@ -4625,6 +4762,25 @@ def _format_map(m):
     return "{" + ", ".join(pairs) + "}"
 
 
+def _format_set(s):
+    """Format a set for display."""
+    try:
+        items = sorted(s)
+    except TypeError:
+        items = list(s)
+    formatted = []
+    for v in items:
+        if isinstance(v, str):
+            formatted.append(f'"{v}"')
+        elif isinstance(v, float) and v == int(v):
+            formatted.append(str(int(v)))
+        elif isinstance(v, bool):
+            formatted.append("true" if v else "false")
+        else:
+            formatted.append(str(v))
+    return "set(" + ", ".join(formatted) + ")"
+
+
 # REPL (Read-Eval-Print Loop)
 def format_value(value):
     """Format a value for REPL display."""
@@ -4641,6 +4797,8 @@ def format_value(value):
         return f"[{items}]"
     if isinstance(value, dict):
         return _format_map(value)
+    if isinstance(value, set):
+        return _format_set(value)
     return str(value)
 
 

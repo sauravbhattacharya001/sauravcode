@@ -1,0 +1,62 @@
+# Set Data Structure Demo for sauravcode
+# ========================================
+# 12 builtins: sets_create, sets_add, sets_remove, sets_contains,
+# sets_union, sets_intersection, sets_difference, sets_symmetric_diff,
+# sets_size, sets_to_list, sets_is_subset, sets_is_superset
+
+print "=== Create Sets ==="
+items = ["apple", "banana", "cherry", "apple"]
+fruits = sets_create items
+print fruits
+print sets_size fruits
+
+print "=== Set Operations ==="
+tropical_list = ["banana", "mango", "papaya"]
+tropical = sets_create tropical_list
+
+all_fruits = sets_union (fruits) (tropical)
+print all_fruits
+
+common = sets_intersection (fruits) (tropical)
+print common
+
+only_mine = sets_difference (fruits) (tropical)
+print only_mine
+
+either = sets_symmetric_diff (fruits) (tropical)
+print either
+
+print "=== Add and Remove ==="
+updated = sets_add (fruits) ("dragonfruit")
+print updated
+
+smaller = sets_remove (fruits) ("banana")
+print smaller
+
+print "=== Queries ==="
+print sets_contains (fruits) ("apple")
+print sets_contains (fruits) ("mango")
+
+print "=== Subset/Superset ==="
+small_list = ["apple", "cherry"]
+small = sets_create small_list
+print sets_is_subset (small) (fruits)
+print sets_is_superset (fruits) (small)
+
+print "=== Convert to List ==="
+fruit_list = sets_to_list fruits
+print fruit_list
+
+print "=== Numeric Sets ==="
+even_list = [2, 4, 6, 8, 10]
+prime_list = [2, 3, 5, 7, 11]
+evens = sets_create even_list
+primes = sets_create prime_list
+even_primes = sets_intersection (evens) (primes)
+print even_primes
+
+print "=== Empty Set ==="
+empty_list = []
+empty = sets_create empty_list
+print empty
+print sets_size empty

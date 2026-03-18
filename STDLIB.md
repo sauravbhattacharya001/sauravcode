@@ -1,6 +1,6 @@
 # Standard Library Reference
 
-Complete reference for all 95 built-in functions in sauravcode. No imports needed — all functions are available immediately.
+Complete reference for all 107 built-in functions in sauravcode. No imports needed — all functions are available immediately.
 
 Sauravcode uses space-separated arguments with no parentheses or commas:
 
@@ -195,6 +195,25 @@ reduce (lambda acc x -> acc + x) [1 2 3] 0  // → 6
 | `to_number` | `to_number val` | Convert string/bool to number |
 | `input` | `input [prompt]` | Read line from stdin |
 | `sleep` | `sleep ms` | Pause execution for milliseconds |
+
+## Set Data Structure
+
+Sets are unordered collections of unique, hashable values (numbers, strings, booleans). Created from lists, they support mathematical set operations.
+
+| Function | Usage | Description |
+|----------|-------|-------------|
+| `sets_create` | `sets_create list` | Create a set from a list (deduplicates) |
+| `sets_add` | `sets_add (s) (val)` | New set with value added |
+| `sets_remove` | `sets_remove (s) (val)` | New set with value removed (no error if missing) |
+| `sets_contains` | `sets_contains (s) (val)` | Check if value is in set → true/false |
+| `sets_union` | `sets_union (a) (b)` | Elements in either set |
+| `sets_intersection` | `sets_intersection (a) (b)` | Elements in both sets |
+| `sets_difference` | `sets_difference (a) (b)` | Elements in a but not b |
+| `sets_symmetric_diff` | `sets_symmetric_diff (a) (b)` | Elements in either but not both |
+| `sets_size` | `sets_size s` | Number of elements |
+| `sets_to_list` | `sets_to_list s` | Convert to sorted list |
+| `sets_is_subset` | `sets_is_subset (a) (b)` | True if a ⊆ b |
+| `sets_is_superset` | `sets_is_superset (a) (b)` | True if a ⊇ b |
 
 ## Operators
 
