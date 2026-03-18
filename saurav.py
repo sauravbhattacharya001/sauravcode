@@ -660,6 +660,19 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
 
+    def _current_line(self):
+        """Return the line number of the current token, or None."""
+        if self.pos < len(self.tokens) and len(self.tokens[self.pos]) >= 3:
+            return self.tokens[self.pos][2]
+        return None
+
+    def _tag(self, node):
+        """Attach the current source line number to an AST node and return it."""
+        line = self._current_line()
+        if line is not None:
+            node.line_num = line
+        return node
+
     def parse(self):
         if DEBUG:
             debug("Parsing tokens into AST...")
@@ -675,6 +688,13 @@ class Parser:
         return statements
 
     def parse_statement(self):
+        line = self._current_line()
+        node = self._parse_statement_inner()
+        if isinstance(node, ASTNode) and node.line_num is None and line is not None:
+            node.line_num = line
+        return node
+
+    def _parse_statement_inner(self):
         token_type, value, *_ = self.peek()
         if DEBUG:
             debug(f"Parsing statement: token_type={token_type}, value={repr(value)}")
@@ -1158,6 +1178,7 @@ class Parser:
         return left
 
     def parse_expression(self):
+        line = self._current_line()
         if DEBUG:
             debug("Parsing expression...")
         left = self.parse_term_mul()
@@ -1167,6 +1188,8 @@ class Parser:
             left = BinaryOpNode(left, op, right)
         if DEBUG:
             debug(f"Parsed expression: {left}\n")
+        if isinstance(left, ASTNode) and left.line_num is None and line is not None:
+            left.line_num = line
         return left
 
     def parse_term_mul(self):
@@ -1475,6 +1498,24 @@ class ThrowSignal(Exception):
     """
     def __init__(self, message):
         self.message = message
+
+class SauravRuntimeError(RuntimeError):
+    """Runtime error with source location info for better diagnostics.
+
+    Wraps standard RuntimeError to include the .srv source line number
+    and optional filename so users can quickly locate the error.
+    """
+    def __init__(self, message, line=None, filename=None):
+        self.line = line
+        self.filename = filename
+        if line is not None:
+            loc = f"line {line}"
+            if filename:
+                loc += f" in {filename}"
+            super().__init__(f"{loc}: {message}")
+        else:
+            super().__init__(str(message))
+        self.original_message = str(message)
 
 class BreakSignal(Exception):
     """Signal to break out of the nearest enclosing loop."""
@@ -3626,7 +3667,15 @@ class Interpreter:
             debug("Interpreting AST...")
         handler = self._interpret_dispatch.get(type(ast))
         if handler is not None:
-            return handler(ast)
+            try:
+                return handler(ast)
+            except SauravRuntimeError:
+                raise  # already enriched
+            except (ReturnSignal, ThrowSignal, BreakSignal, ContinueSignal, YieldSignal):
+                raise  # control flow signals, not errors
+            except RuntimeError as e:
+                line = getattr(ast, 'line_num', None)
+                raise SauravRuntimeError(str(e), line=line) from None
         else:
             raise ValueError(f'Unknown AST node type: {type(ast).__name__}')
 
@@ -4138,7 +4187,15 @@ class Interpreter:
             debug(f"Evaluating node: {node}")
         handler = self._evaluate_dispatch.get(type(node))
         if handler is not None:
-            return handler(node)
+            try:
+                return handler(node)
+            except SauravRuntimeError:
+                raise  # already enriched
+            except (ReturnSignal, ThrowSignal, BreakSignal, ContinueSignal, YieldSignal):
+                raise  # control flow signals, not errors
+            except RuntimeError as e:
+                line = getattr(node, 'line_num', None)
+                raise SauravRuntimeError(str(e), line=line) from None
         else:
             raise ValueError(f'Unknown node type: {node}')
 
@@ -4776,6 +4833,9 @@ def main():
         if isinstance(msg, float) and msg == int(msg):
             msg = int(msg)
         print(f"Uncaught error: {msg}")
+        sys.exit(1)
+    except SauravRuntimeError as e:
+        print(f"Error: {e}")
         sys.exit(1)
     except RuntimeError as e:
         print(f"Error: {e}")
