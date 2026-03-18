@@ -11,6 +11,7 @@ Usage:
 """
 
 import copy
+import operator
 import re
 import sys
 import os
@@ -1682,6 +1683,21 @@ class Interpreter:
     Includes DoS guards (recursion depth, loop iteration, and allocation
     limits) to prevent runaway programs.
     """
+
+    # ── Class-level operator dispatch tables (static mappings, no per-instance alloc) ──
+    _BINARY_OP_DISPATCH = {
+        '+': operator.add,
+        '-': operator.sub,
+    }
+    _COMPARE_OP_DISPATCH = {
+        '==': operator.eq,
+        '!=': operator.ne,
+        '<':  operator.lt,
+        '>':  operator.gt,
+        '<=': operator.le,
+        '>=': operator.ge,
+    }
+
     def __init__(self):
         self.functions = {}  # Store function definitions
         self.variables = {}  # Store variable values
@@ -1749,22 +1765,9 @@ class Interpreter:
             TernaryNode:      self._eval_ternary,
         }
 
-        # ── Operator dispatch tables for O(1) lookup in hot paths ────
-        # Replaces if/elif chains in _eval_binary_op and _eval_compare
-        # with dict-based dispatch for measurable speedup in tight loops.
-        import operator as _op
-        self._binary_op_dispatch = {
-            '+': _op.add,
-            '-': _op.sub,
-        }
-        self._compare_op_dispatch = {
-            '==': _op.eq,
-            '!=': _op.ne,
-            '<':  _op.lt,
-            '>':  _op.gt,
-            '<=': _op.le,
-            '>=': _op.ge,
-        }
+        # Operator dispatch tables are class-level constants
+        # (_BINARY_OP_DISPATCH and _COMPARE_OP_DISPATCH) — no per-instance
+        # allocation needed since they only reference pure operator functions.
 
     @staticmethod
     def _type_name(value):
@@ -4248,7 +4251,7 @@ class Interpreter:
                     return self._guarded_repeat(right, int(left))
                 return left * right
             # O(1) dispatch for +, -
-            op_fn = self._binary_op_dispatch.get(node.operator)
+            op_fn = self._BINARY_OP_DISPATCH.get(node.operator)
             if op_fn is not None:
                 return op_fn(left, right)
             # Division and modulo need zero-checks
@@ -4273,7 +4276,7 @@ class Interpreter:
         if DEBUG:
             debug(f"Comparing: {left} {node.operator} {right}")
         try:
-            cmp_fn = self._compare_op_dispatch.get(node.operator)
+            cmp_fn = self._COMPARE_OP_DISPATCH.get(node.operator)
             if cmp_fn is not None:
                 return cmp_fn(left, right)
             raise ValueError(f'Unknown comparison operator: {node.operator}')
