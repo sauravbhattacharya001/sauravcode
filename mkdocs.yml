@@ -41,6 +41,7 @@ nav:
     - Quick Start: getting-started.md
     - Your First Program: first-program.md
   - Language Reference: LANGUAGE.md
+  - Standard Library: stdlib.md
   - Examples: EXAMPLES.md
   - Architecture: ARCHITECTURE.md
   - Compiler Guide: compiler.md
