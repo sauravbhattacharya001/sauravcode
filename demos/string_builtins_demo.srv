@@ -1,0 +1,29 @@
+# Advanced String Builtins Demo
+
+# Reverse and characters
+print str_reverse "abcdef"
+print str_chars "hi!"
+
+# Title case
+print str_title "hello world from sauravcode"
+
+# Type checking
+print str_is_digit "12345"
+print str_is_digit "123a5"
+print str_is_alpha "hello"
+print str_is_alpha "hello1"
+print str_is_alnum "hello123"
+print str_is_alnum "hello 123"
+
+# Words and slug
+print str_words "  hello   world  from   sauravcode  "
+print str_slug "Hello World! This is SauravCode 2.0"
+
+# Count occurrences
+print str_count "banana" "an"
+
+# Word wrap
+print str_wrap "The quick brown fox jumps over the lazy dog near the river bank" 20
+
+# Center pad
+print str_center "hello" 20 "*"

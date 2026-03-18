@@ -652,6 +652,8 @@ class Parser:
         'http_get', 'http_post', 'http_put', 'http_delete',
         'bit_and', 'bit_or', 'bit_xor', 'bit_not', 'bit_lshift', 'bit_rshift',
         'group_by', 'take_while', 'drop_while', 'scan', 'zip_with',
+        'str_reverse', 'str_chars', 'str_title', 'str_is_digit', 'str_is_alpha',
+        'str_is_alnum', 'str_words', 'str_slug', 'str_count', 'str_wrap', 'str_center',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1911,6 +1913,7 @@ class Interpreter:
         self._register_zero_arg_builtins()
         self._register_hash_builtins()
         self._register_bitwise_builtins()
+        self._register_string_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -2077,6 +2080,88 @@ class Interpreter:
             a = _require_int('bit_not', args[0])
             return float(~a)
         self.builtins['bit_not'] = lambda args: _bit_not(self, args)
+
+    # ── Data-driven advanced string builtins ─────────────────
+
+    def _register_string_builtins(self):
+        """Register advanced string manipulation builtins.
+
+        Extends the existing string library with:
+        - str_reverse: reverse a string
+        - str_chars: split into character list
+        - str_count: count substring occurrences
+        - str_title: title-case a string
+        - str_center: center-pad a string
+        - str_is_digit: check if all digits
+        - str_is_alpha: check if all alphabetic
+        - str_is_alnum: check if all alphanumeric
+        - str_words: split by whitespace into word list
+        - str_slug: convert to URL-friendly slug
+        - str_wrap: word-wrap at a given column width
+        """
+        import re as _re
+        import textwrap as _textwrap
+
+        # -- 1-arg string builtins --
+        _ONE_ARG_TABLE = {
+            'str_reverse':  lambda s: s[::-1],
+            'str_chars':    lambda s: list(s),
+            'str_title':    lambda s: s.title(),
+            'str_is_digit': lambda s: len(s) > 0 and s.isdigit(),
+            'str_is_alpha': lambda s: len(s) > 0 and s.isalpha(),
+            'str_is_alnum': lambda s: len(s) > 0 and s.isalnum(),
+            'str_words':    lambda s: s.split(),
+            'str_slug':     lambda s: _re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-'),
+        }
+        for name, fn in _ONE_ARG_TABLE.items():
+            def make_handler(n, f):
+                def handler(self_inner, args):
+                    self_inner._expect_args(n, args, 1)
+                    s = args[0]
+                    if not isinstance(s, str):
+                        raise RuntimeError(f"{n} expects a string argument, got {type(s).__name__}")
+                    return f(s)
+                return handler
+            h = make_handler(name, fn)
+            self.builtins[name] = lambda args, h=h: h(self, args)
+
+        # -- 2-arg string builtins --
+        def _str_count(self_inner, args):
+            self_inner._expect_args('str_count', args, 2)
+            s, sub = args
+            if not isinstance(s, str) or not isinstance(sub, str):
+                raise RuntimeError("str_count expects two string arguments")
+            return float(s.count(sub))
+
+        def _str_wrap(self_inner, args):
+            self_inner._expect_args('str_wrap', args, 2)
+            s, width = args
+            if not isinstance(s, str):
+                raise RuntimeError("str_wrap expects a string as first argument")
+            width = int(width)
+            if width < 1 or width > 10000:
+                raise RuntimeError(f"str_wrap: width must be 1-10000, got {width}")
+            return _textwrap.fill(s, width=width)
+
+        _TWO_ARG_BUILTINS = {
+            'str_count': _str_count,
+            'str_wrap':  _str_wrap,
+        }
+        for name, fn in _TWO_ARG_BUILTINS.items():
+            self.builtins[name] = lambda args, f=fn: f(self, args)
+
+        # -- 3-arg: str_center(s, width, fill) --
+        def _str_center(self_inner, args):
+            self_inner._expect_args('str_center', args, 3)
+            s, width, fill = args
+            if not isinstance(s, str):
+                raise RuntimeError("str_center expects a string as first argument")
+            width = int(width)
+            if not isinstance(fill, str) or len(fill) != 1:
+                raise RuntimeError("str_center expects a single fill character as third argument")
+            return s.center(width, fill)
+
+        self.builtins['str_center'] = lambda args: _str_center(self, args)
 
     # ── Shared statistics validation ──────────────────
 
