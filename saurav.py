@@ -657,6 +657,8 @@ class Parser:
         'sets_create', 'sets_add', 'sets_remove', 'sets_contains',
         'sets_union', 'sets_intersection', 'sets_difference', 'sets_symmetric_diff',
         'sets_size', 'sets_to_list', 'sets_is_subset', 'sets_is_superset',
+        'path_join', 'path_dir', 'path_base', 'path_ext', 'path_stem',
+        'path_abs', 'path_exists', 'list_dir', 'make_dir', 'is_dir', 'is_file',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2295,6 +2297,109 @@ class Interpreter:
         self.builtins['sets_to_list'] = lambda args: _sets_to_list(self, args)
         self.builtins['sets_is_subset'] = lambda args: _sets_is_subset(self, args)
         self.builtins['sets_is_superset'] = lambda args: _sets_is_superset(self, args)
+
+        # ── Path / filesystem utility builtins ────────────────
+
+        def _path_join(self_inner, args):
+            """path_join(parts...) → join path components using OS separator"""
+            if len(args) < 1:
+                raise RuntimeError("path_join expects at least 1 argument")
+            for a in args:
+                if not isinstance(a, str):
+                    raise RuntimeError("path_join: all arguments must be strings")
+            return os.path.join(*args)
+
+        def _path_dir(self_inner, args):
+            """path_dir(path) → directory portion of a path"""
+            self_inner._expect_args('path_dir', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("path_dir expects a string argument")
+            return os.path.dirname(args[0])
+
+        def _path_base(self_inner, args):
+            """path_base(path) → filename portion of a path"""
+            self_inner._expect_args('path_base', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("path_base expects a string argument")
+            return os.path.basename(args[0])
+
+        def _path_ext(self_inner, args):
+            """path_ext(path) → file extension including dot (e.g. '.txt')"""
+            self_inner._expect_args('path_ext', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("path_ext expects a string argument")
+            return os.path.splitext(args[0])[1]
+
+        def _path_stem(self_inner, args):
+            """path_stem(path) → filename without extension"""
+            self_inner._expect_args('path_stem', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("path_stem expects a string argument")
+            base = os.path.basename(args[0])
+            return os.path.splitext(base)[0]
+
+        def _path_abs(self_inner, args):
+            """path_abs(path) → absolute path"""
+            self_inner._expect_args('path_abs', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("path_abs expects a string argument")
+            self_inner._validate_file_path('path_abs', args[0])
+            return os.path.abspath(args[0])
+
+        def _path_exists(self_inner, args):
+            """path_exists(path) → true/false whether the path exists"""
+            self_inner._expect_args('path_exists', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("path_exists expects a string argument")
+            self_inner._validate_file_path('path_exists', args[0])
+            return os.path.exists(args[0])
+
+        def _list_dir(self_inner, args):
+            """list_dir(path) → list of filenames in directory"""
+            self_inner._expect_args('list_dir', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("list_dir expects a string argument")
+            self_inner._validate_file_path('list_dir', args[0])
+            if not os.path.isdir(args[0]):
+                raise RuntimeError(f"list_dir: '{args[0]}' is not a directory")
+            return sorted(os.listdir(args[0]))
+
+        def _make_dir(self_inner, args):
+            """make_dir(path) → creates directory (and parents), returns path"""
+            self_inner._expect_args('make_dir', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("make_dir expects a string argument")
+            self_inner._validate_file_path('make_dir', args[0])
+            os.makedirs(args[0], exist_ok=True)
+            return args[0]
+
+        def _is_dir(self_inner, args):
+            """is_dir(path) → true if path is a directory"""
+            self_inner._expect_args('is_dir', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("is_dir expects a string argument")
+            self_inner._validate_file_path('is_dir', args[0])
+            return os.path.isdir(args[0])
+
+        def _is_file(self_inner, args):
+            """is_file(path) → true if path is a regular file"""
+            self_inner._expect_args('is_file', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("is_file expects a string argument")
+            self_inner._validate_file_path('is_file', args[0])
+            return os.path.isfile(args[0])
+
+        self.builtins['path_join'] = lambda args: _path_join(self, args)
+        self.builtins['path_dir'] = lambda args: _path_dir(self, args)
+        self.builtins['path_base'] = lambda args: _path_base(self, args)
+        self.builtins['path_ext'] = lambda args: _path_ext(self, args)
+        self.builtins['path_stem'] = lambda args: _path_stem(self, args)
+        self.builtins['path_abs'] = lambda args: _path_abs(self, args)
+        self.builtins['path_exists'] = lambda args: _path_exists(self, args)
+        self.builtins['list_dir'] = lambda args: _list_dir(self, args)
+        self.builtins['make_dir'] = lambda args: _make_dir(self, args)
+        self.builtins['is_dir'] = lambda args: _is_dir(self, args)
+        self.builtins['is_file'] = lambda args: _is_file(self, args)
 
     # ── Shared statistics validation ──────────────────
 

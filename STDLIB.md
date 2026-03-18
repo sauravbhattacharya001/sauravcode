@@ -163,6 +163,22 @@ reduce (lambda acc x -> acc + x) [1 2 3] 0  // → 6
 | `read_lines` | `read_lines path` | Read file as list of lines |
 | `file_exists` | `file_exists path` | Check if file exists |
 
+## Path & Filesystem Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `path_join` | `path_join part1 part2 ...` | Join path components with OS separator |
+| `path_dir` | `path_dir path` | Get directory portion of a path |
+| `path_base` | `path_base path` | Get filename portion of a path |
+| `path_ext` | `path_ext path` | Get file extension (e.g. `.txt`) |
+| `path_stem` | `path_stem path` | Get filename without extension |
+| `path_abs` | `path_abs path` | Get absolute path |
+| `path_exists` | `path_exists path` | Check if path exists |
+| `list_dir` | `list_dir path` | List entries in a directory (sorted) |
+| `make_dir` | `make_dir path` | Create directory (and parents) |
+| `is_dir` | `is_dir path` | Check if path is a directory |
+| `is_file` | `is_file path` | Check if path is a regular file |
+
 ## JSON Functions
 
 | Function | Signature | Description |

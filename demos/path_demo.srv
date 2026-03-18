@@ -1,0 +1,70 @@
+# Path & Filesystem Builtins Demo
+# ================================
+# 11 builtins: path_join, path_dir, path_base, path_ext, path_stem,
+# path_abs, path_exists, list_dir, make_dir, is_dir, is_file
+
+print "=== Path Manipulation ==="
+
+# Join path components
+p = path_join "src" "utils" "helpers.py"
+print f"path_join: {p}"
+
+# Extract parts
+d = path_dir p
+print f"path_dir:  {d}"
+
+b = path_base p
+print f"path_base: {b}"
+
+e = path_ext p
+print f"path_ext:  {e}"
+
+s = path_stem p
+print f"path_stem: {s}"
+
+# Absolute path of current dir
+abs_dot = path_abs "."
+print f"path_abs:  {abs_dot}"
+
+print ""
+print "=== Filesystem Queries ==="
+
+# Check existence
+exists = path_exists "."
+print f"path_exists('.'): {exists}"
+
+dir_check = is_dir "."
+print f"is_dir('.'):      {dir_check}"
+
+file_check = is_file "."
+print f"is_file('.'):     {file_check}"
+
+# List current directory entries
+files = list_dir "."
+count = len files
+print f"list_dir('.') has {count} entries"
+
+# Show first few
+first_five = files[:5]
+for item in first_five
+    print f"  {item}"
+
+print ""
+print "=== Build Paths Dynamically ==="
+
+extensions = [".py", ".srv", ".md", ".json"]
+for ext in extensions
+    name = path_stem "config.yaml"
+    new_file = path_join "output" (name + ext)
+    print f"  {new_file}"
+
+print ""
+print "=== Directory Creation ==="
+
+# Create a nested directory
+make_dir "test_path_demo_dir"
+created = is_dir "test_path_demo_dir"
+print f"Created test_path_demo_dir: {created}"
+
+print ""
+print "Done!"
