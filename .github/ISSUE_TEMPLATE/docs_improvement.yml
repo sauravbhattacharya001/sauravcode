@@ -1,0 +1,35 @@
+name: Documentation Improvement
+description: Report incorrect, unclear, or missing documentation
+title: "[Docs] "
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Documentation Area
+      description: Which page or section has the issue?
+      options:
+        - README
+        - Language Reference (LANGUAGE.md)
+        - Architecture Guide (ARCHITECTURE.md)
+        - Examples (EXAMPLES.md)
+        - Docs site (sauravbhattacharya001.github.io/sauravcode)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-issue
+    attributes:
+      label: Current Issue
+      description: What's wrong or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested-improvement
+    attributes:
+      label: Suggested Improvement
+      description: How should it be fixed or what should be added?
+    validations:
+      required: true

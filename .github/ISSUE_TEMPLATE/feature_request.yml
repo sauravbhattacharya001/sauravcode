@@ -1,0 +1,59 @@
+name: Feature Request
+description: Suggest a new language feature, built-in function, or tooling improvement
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make sauravcode better? We'd love to hear it!
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A concise description of the feature you'd like.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this useful? What problem does it solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-syntax
+    attributes:
+      label: Proposed Syntax
+      description: If this is a language feature, show what the code would look like.
+      render: text
+      placeholder: |
+        # Example sauravcode using the proposed feature
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: Which parts of the project does this affect?
+      options:
+        - label: Language syntax / grammar
+        - label: Interpreter (`saurav.py`)
+        - label: Compiler (`sauravcc.py`)
+        - label: Standard library / built-ins
+        - label: Documentation
+        - label: Tooling (editor support, REPL, etc.)
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you thought about other ways to achieve this?
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other details, references, or examples from other languages.

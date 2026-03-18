@@ -1,0 +1,92 @@
+name: Bug Report
+description: Report a bug in the interpreter or compiler
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the details below so we can reproduce and fix it.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the bug.
+      placeholder: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Code to Reproduce
+      description: Paste the `.srv` code that triggers the bug.
+      render: text
+      placeholder: |
+        # paste your sauravcode here
+        var x = 10
+        print(x)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Where does the bug occur?
+      multiple: true
+      options:
+        - Interpreter (saurav.py)
+        - Compiler (sauravcc.py)
+        - Both
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happens? Include the full error output if any.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: e.g., Windows 11, Ubuntu 22.04, macOS 14
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: Run `python --version`
+      placeholder: e.g., 3.12.0
+    validations:
+      required: true
+
+  - type: input
+    id: gcc-version
+    attributes:
+      label: GCC Version (if using compiler)
+      description: Run `gcc --version`
+      placeholder: e.g., 13.2.0
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: |
+        Any other details? Does `--emit-c` reveal anything in the generated C code?
