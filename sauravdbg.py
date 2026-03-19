@@ -29,6 +29,7 @@ Breakpoint Conditions:
     b 10 if x > 5  Set conditional breakpoint at line 10
 """
 
+import ast
 import sys
 import os
 import re
@@ -44,6 +45,100 @@ from saurav import (
     TryCatchNode, ThrowNode, MatchNode, ImportNode,
     BreakSignal, ContinueSignal, ReturnSignal, YieldSignal,
 )
+
+
+
+# ---------------------------------------------------------------------------
+# Safe expression evaluator for the debugger REPL.
+# Uses ast.literal_eval for constants and simple variable lookup + comparison
+# instead of the dangerous eval() builtin, which can be escaped even with
+# __builtins__ set to {}.
+# ---------------------------------------------------------------------------
+
+_SAFE_COMPARE_OPS = {
+    ast.Eq: lambda a, b: a == b,
+    ast.NotEq: lambda a, b: a != b,
+    ast.Lt: lambda a, b: a < b,
+    ast.LtE: lambda a, b: a <= b,
+    ast.Gt: lambda a, b: a > b,
+    ast.GtE: lambda a, b: a >= b,
+    ast.Is: lambda a, b: a is b,
+    ast.IsNot: lambda a, b: a is not b,
+    ast.In: lambda a, b: a in b,
+    ast.NotIn: lambda a, b: a not in b,
+}
+
+_SAFE_BIN_OPS = {
+    ast.Add: lambda a, b: a + b,
+    ast.Sub: lambda a, b: a - b,
+    ast.Mult: lambda a, b: a * b,
+    ast.Div: lambda a, b: a / b,
+    ast.Mod: lambda a, b: a % b,
+}
+
+_SAFE_UNARY_OPS = {
+    ast.USub: lambda a: -a,
+    ast.UAdd: lambda a: +a,
+    ast.Not: lambda a: not a,
+}
+
+
+def _safe_eval(expr_str: str, variables: dict):
+    """Safely evaluate simple expressions using AST walking.
+
+    Supports: variable names, literals, comparisons, basic arithmetic,
+    attribute access on known values, subscripts.
+    Does NOT support: calls, imports, comprehensions, lambdas, or any
+    construct that could execute arbitrary code.
+    """
+    tree = ast.parse(expr_str.strip(), mode='eval')
+    return _eval_node(tree.body, variables)
+
+
+def _eval_node(node, variables):
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body, variables)
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id in variables:
+            return variables[node.id]
+        raise NameError(f"Undefined variable: {node.id}")
+    if isinstance(node, ast.UnaryOp):
+        op_fn = _SAFE_UNARY_OPS.get(type(node.op))
+        if op_fn:
+            return op_fn(_eval_node(node.operand, variables))
+    if isinstance(node, ast.BinOp):
+        op_fn = _SAFE_BIN_OPS.get(type(node.op))
+        if op_fn:
+            return op_fn(_eval_node(node.left, variables), _eval_node(node.right, variables))
+    if isinstance(node, ast.BoolOp):
+        if isinstance(node.op, ast.And):
+            return all(_eval_node(v, variables) for v in node.values)
+        if isinstance(node.op, ast.Or):
+            return any(_eval_node(v, variables) for v in node.values)
+    if isinstance(node, ast.Compare):
+        left = _eval_node(node.left, variables)
+        for op, comparator in zip(node.ops, node.comparators):
+            right = _eval_node(comparator, variables)
+            op_fn = _SAFE_COMPARE_OPS.get(type(op))
+            if not op_fn:
+                raise ValueError(f"Unsupported comparison: {type(op).__name__}")
+            if not op_fn(left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.Subscript):
+        value = _eval_node(node.value, variables)
+        sl = node.slice
+        if isinstance(sl, ast.Constant):
+            return value[sl.value]
+        idx = _eval_node(sl, variables)
+        return value[idx]
+    if isinstance(node, ast.Attribute):
+        value = _eval_node(node.value, variables)
+        return getattr(value, node.attr)
+    raise ValueError(f"Unsupported expression: {ast.dump(node)}")
 
 
 class Breakpoint:
@@ -138,10 +233,9 @@ class DebugInterpreter(Interpreter):
                 self.call_stack.pop()
 
     def _eval_condition(self, condition_str):
-        """Evaluate a breakpoint condition string."""
-        # Simple variable lookup and comparison
+        """Evaluate a breakpoint condition string safely."""
         try:
-            return eval(condition_str, {"__builtins__": {}}, self.variables)
+            return _safe_eval(condition_str, self.variables)
         except Exception:
             return False
 
@@ -240,7 +334,7 @@ class DebugInterpreter(Interpreter):
             else:
                 # Try evaluating as an expression
                 try:
-                    result = eval(cmd, {"__builtins__": {}}, self.variables)
+                    result = _safe_eval(cmd, self.variables)
                     print(f"  {_format_value(result)}")
                 except Exception:
                     print(f"  {_RED}Unknown command: {command}. Type 'h' for help.{_RESET}")
@@ -304,7 +398,7 @@ class DebugInterpreter(Interpreter):
         else:
             # Try evaluating as expression
             try:
-                result = eval(name, {"__builtins__": {}}, self.variables)
+                result = _safe_eval(name, self.variables)
                 print(f"  {_format_value(result)}")
             except Exception as e:
                 print(f"  {_RED}Cannot evaluate '{name}': {e}{_RESET}")

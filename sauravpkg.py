@@ -27,7 +27,9 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import tarfile
 import time
@@ -848,7 +850,18 @@ def cmd_run(args):
 
     command = scripts[args.script]
     print(f"  Running '{args.script}': {command}")
-    return os.system(command)
+    # Use subprocess instead of os.system to avoid shell injection.
+    # Split the command safely; if it uses shell features the user can
+    # wrap it in an explicit shell invocation in their manifest.
+    try:
+        result = subprocess.run(
+            shlex.split(command),
+            cwd=args.dir,
+        )
+        return result.returncode
+    except (OSError, ValueError) as exc:
+        print(f"  ✗ Failed to run script: {exc}")
+        return 1
 
 
 def build_parser():
