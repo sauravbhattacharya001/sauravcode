@@ -1,0 +1,54 @@
+# ansi_demo.srv -- Terminal color and styling builtins demo
+
+# Basic styles
+print bold "This text is bold"
+print dim "This text is dim"
+print italic "This text is italic"
+print underline "This text is underlined"
+print strikethrough "This text has strikethrough"
+print ""
+
+# Foreground colors
+print color "Red text" "red"
+print color "Green text" "green"
+print color "Blue text" "blue"
+print color "Yellow text" "yellow"
+print color "Cyan text" "cyan"
+print color "Magenta text" "magenta"
+print color "Bright red text" "bright_red"
+print ""
+
+# Background colors
+print bg_color "Red background" "red"
+print bg_color "Green background" "green"
+print bg_color "Blue background" "blue"
+print ""
+
+# Combined styles with style()
+print style "Bold and Red" "bold" "red"
+print style "Underline Green" "underline" "green"
+print style "Italic Cyan Bold" "italic" "cyan" "bold"
+print ""
+
+# Rainbow text
+print rainbow "Hello from SauravCode!"
+print rainbow "ABCDEFGHIJKLMNOP"
+print ""
+
+# strip_ansi removes formatting
+string colored = color "colored text" "red"
+print "With ANSI: " + colored
+print "Stripped:  " + strip_ansi colored
+print ""
+
+# Practical: status messages
+print (style "[OK]" "bold" "green") + " Server started"
+print (style "[WARN]" "bold" "yellow") + " Low memory"
+print (style "[ERROR]" "bold" "red") + " Connection failed"
+print ""
+
+# Practical: table header
+print (style "Name" "bold" "underline") + "    " + (style "Score" "bold" "underline")
+print (color "Alice" "cyan") + "   " + (color "95" "green")
+print (color "Bob" "cyan") + "     " + (color "87" "yellow")
+print (color "Carol" "cyan") + "   " + (color "72" "red")

@@ -664,6 +664,8 @@ class Parser:
         'env_get', 'env_set', 'env_unset', 'env_list', 'env_has',
         'sys_exit', 'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid',
         'sys_uptime', 'sys_hostname',
+        'color', 'bg_color', 'bold', 'dim', 'italic', 'underline',
+        'strikethrough', 'style', 'rainbow', 'strip_ansi',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1943,6 +1945,7 @@ class Interpreter:
         self._register_bitwise_builtins()
         self._register_string_builtins()
         self._register_env_sys_builtins()
+        self._register_ansi_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -2552,6 +2555,164 @@ class Interpreter:
             'sys_pid': _sys_pid,
             'sys_uptime': _sys_uptime,
             'sys_hostname': _sys_hostname,
+        }
+        for name, fn in _table.items():
+            self.builtins[name] = fn
+
+    # ── ANSI terminal color & styling builtins ────────────────────────
+
+    def _register_ansi_builtins(self):
+        """Register ANSI terminal color and styling builtins.
+
+        Styling:
+        - bold(text) → bold text
+        - dim(text) → dim/faint text
+        - italic(text) → italic text
+        - underline(text) → underlined text
+        - strikethrough(text) → strikethrough text
+
+        Colors:
+        - color(text, name) → foreground color (black/red/green/yellow/blue/magenta/cyan/white
+          + bright variants like bright_red, bright_green, etc.)
+        - bg_color(text, name) → background color (same names)
+
+        Combo:
+        - style(text, style1, style2, ...) → apply multiple styles/colors
+        - rainbow(text) → cycle rainbow colors across characters
+        - strip_ansi(text) → remove all ANSI escape sequences
+        """
+        _RESET = '\033[0m'
+
+        _FG_COLORS = {
+            'black': '\033[30m', 'red': '\033[31m', 'green': '\033[32m',
+            'yellow': '\033[33m', 'blue': '\033[34m', 'magenta': '\033[35m',
+            'cyan': '\033[36m', 'white': '\033[37m',
+            'bright_black': '\033[90m', 'bright_red': '\033[91m',
+            'bright_green': '\033[92m', 'bright_yellow': '\033[93m',
+            'bright_blue': '\033[94m', 'bright_magenta': '\033[95m',
+            'bright_cyan': '\033[96m', 'bright_white': '\033[97m',
+        }
+
+        _BG_COLORS = {
+            'black': '\033[40m', 'red': '\033[41m', 'green': '\033[42m',
+            'yellow': '\033[43m', 'blue': '\033[44m', 'magenta': '\033[45m',
+            'cyan': '\033[46m', 'white': '\033[47m',
+            'bright_black': '\033[100m', 'bright_red': '\033[101m',
+            'bright_green': '\033[102m', 'bright_yellow': '\033[103m',
+            'bright_blue': '\033[104m', 'bright_magenta': '\033[105m',
+            'bright_cyan': '\033[106m', 'bright_white': '\033[107m',
+        }
+
+        _STYLES = {
+            'bold': '\033[1m', 'dim': '\033[2m', 'italic': '\033[3m',
+            'underline': '\033[4m', 'strikethrough': '\033[9m',
+        }
+
+        _RAINBOW = ['\033[31m', '\033[33m', '\033[32m', '\033[36m', '\033[34m', '\033[35m']
+
+        _ANSI_RE = re.compile(r'\033\[[0-9;]*m')
+
+        def _bold(args):
+            self._expect_args('bold', args, 1)
+            return f"{_STYLES['bold']}{args[0]}{_RESET}"
+
+        def _dim(args):
+            self._expect_args('dim', args, 1)
+            return f"{_STYLES['dim']}{args[0]}{_RESET}"
+
+        def _italic(args):
+            self._expect_args('italic', args, 1)
+            return f"{_STYLES['italic']}{args[0]}{_RESET}"
+
+        def _underline(args):
+            self._expect_args('underline', args, 1)
+            return f"{_STYLES['underline']}{args[0]}{_RESET}"
+
+        def _strikethrough(args):
+            self._expect_args('strikethrough', args, 1)
+            return f"{_STYLES['strikethrough']}{args[0]}{_RESET}"
+
+        def _color(args):
+            self._expect_args('color', args, 2)
+            text, name = args
+            if not isinstance(name, str):
+                raise RuntimeError("color: color name must be a string")
+            code = _FG_COLORS.get(name)
+            if code is None:
+                raise RuntimeError(
+                    f"color: unknown color '{name}'. Available: "
+                    + ', '.join(sorted(_FG_COLORS.keys()))
+                )
+            return f"{code}{text}{_RESET}"
+
+        def _bg_color(args):
+            self._expect_args('bg_color', args, 2)
+            text, name = args
+            if not isinstance(name, str):
+                raise RuntimeError("bg_color: color name must be a string")
+            code = _BG_COLORS.get(name)
+            if code is None:
+                raise RuntimeError(
+                    f"bg_color: unknown color '{name}'. Available: "
+                    + ', '.join(sorted(_BG_COLORS.keys()))
+                )
+            return f"{code}{text}{_RESET}"
+
+        def _style(args):
+            if len(args) < 2:
+                raise RuntimeError(
+                    "style expects at least 2 arguments: style(text, style1, ...)"
+                )
+            text = args[0]
+            codes = []
+            for s in args[1:]:
+                if not isinstance(s, str):
+                    raise RuntimeError(f"style: each style must be a string, got {type(s).__name__}")
+                if s in _STYLES:
+                    codes.append(_STYLES[s])
+                elif s in _FG_COLORS:
+                    codes.append(_FG_COLORS[s])
+                elif s.startswith('bg_') and s[3:] in _BG_COLORS:
+                    codes.append(_BG_COLORS[s[3:]])
+                else:
+                    available = sorted(set(list(_STYLES.keys()) + list(_FG_COLORS.keys())
+                                       + [f'bg_{c}' for c in _BG_COLORS.keys()]))
+                    raise RuntimeError(
+                        f"style: unknown style '{s}'. Available: " + ', '.join(available)
+                    )
+            return ''.join(codes) + str(text) + _RESET
+
+        def _rainbow(args):
+            self._expect_args('rainbow', args, 1)
+            text = str(args[0])
+            result = []
+            ci = 0
+            for ch in text:
+                if ch == ' ':
+                    result.append(ch)
+                else:
+                    result.append(f"{_RAINBOW[ci % len(_RAINBOW)]}{ch}")
+                    ci += 1
+            result.append(_RESET)
+            return ''.join(result)
+
+        def _strip_ansi(args):
+            self._expect_args('strip_ansi', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("strip_ansi: argument must be a string")
+            return _ANSI_RE.sub('', args[0])
+
+        _table = {
+            'bold': _bold,
+            'dim': _dim,
+            'italic': _italic,
+            'underline': _underline,
+            'strikethrough': _strikethrough,
+            'color': _color,
+            'bg_color': _bg_color,
+            'style': _style,
+            'rainbow': _rainbow,
+            'strip_ansi': _strip_ansi,
         }
         for name, fn in _table.items():
             self.builtins[name] = fn
@@ -5276,6 +5437,16 @@ def repl():
                 'http_post':      'http_post url body [h] — HTTP POST, returns {status, body, headers}',
                 'http_put':       'http_put url body [h]  — HTTP PUT, returns {status, body, headers}',
                 'http_delete':    'http_delete url [h]    — HTTP DELETE, returns {status, body, headers}',
+                'color':          'color text name        — wrap text in foreground ANSI color',
+                'bg_color':       'bg_color text name     — wrap text in background ANSI color',
+                'bold':           'bold text              — bold text',
+                'dim':            'dim text               — dim/faint text',
+                'italic':         'italic text            — italic text',
+                'underline':      'underline text         — underlined text',
+                'strikethrough':  'strikethrough text     — strikethrough text',
+                'style':          'style text s1 s2 ...   — apply multiple styles/colors at once',
+                'rainbow':        'rainbow text           — rainbow-colored text',
+                'strip_ansi':     'strip_ansi text        — remove all ANSI escape codes',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):
