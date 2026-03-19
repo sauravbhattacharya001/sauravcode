@@ -11,9 +11,13 @@ coverage:
       default:
         target: 70%
         threshold: 5%
+        branches:
+          - main
     patch:
       default:
         target: 60%
+        branches:
+          - main
 
 comment:
   layout: "header, diff, flags, components"

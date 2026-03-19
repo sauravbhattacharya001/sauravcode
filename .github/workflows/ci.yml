@@ -33,7 +33,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest tests/ --cov=. --cov-report=xml --cov-report=term-missing --cov-config=pyproject.toml -v
+          pytest tests/ --cov=. --cov-report=xml --cov-report=term-missing --cov-report=html --cov-config=pyproject.toml -v
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
@@ -42,3 +42,32 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Coverage summary
+        if: matrix.python-version == '3.12'
+        run: |
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.attrib.get('line-rate', 0)) * 100
+          branch_rate = float(root.attrib.get('branch-rate', 0)) * 100
+          print(f'| Metric | Value |')
+          print(f'|--------|-------|')
+          print(f'| Line coverage | {line_rate:.1f}% |')
+          print(f'| Branch coverage | {branch_rate:.1f}% |')
+          packages = root.findall('.//package')
+          print(f'| Packages | {len(packages)} |')
+          classes = root.findall('.//class')
+          print(f'| Files measured | {len(classes)} |')
+          " >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload HTML coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
