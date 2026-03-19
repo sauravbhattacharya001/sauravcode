@@ -1716,6 +1716,8 @@ class Interpreter:
     _BINARY_OP_DISPATCH = {
         '+': operator.add,
         '-': operator.sub,
+        '/': operator.truediv,
+        '%': operator.mod,
     }
     _COMPARE_OP_DISPATCH = {
         '==': operator.eq,
@@ -4666,25 +4668,34 @@ class Interpreter:
         for stmt in body:
             self.interpret(stmt)
 
+    # ── Truthiness dispatch table (avoids isinstance chains on hot path) ──
+    _TRUTHY_DISPATCH = {
+        bool:  lambda v: v,
+        int:   lambda v: v != 0,
+        float: lambda v: v != 0,
+        str:   lambda v: len(v) > 0,
+        list:  lambda v: len(v) > 0,
+        dict:  lambda v: len(v) > 0,
+        type(None): lambda v: False,
+    }
+
     def _is_truthy(self, value):
         """Determine truthiness of a value.
 
         Falsy values: ``false``, ``0``, ``""``, ``[]``, ``{}``, ``None``.
         Everything else (non-zero numbers, non-empty strings/lists/maps,
         generators, etc.) is truthy.
+
+        Uses a type-dispatch table for O(1) lookup instead of isinstance
+        chains, since this is called on every conditional and logical op.
         """
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return value != 0
-        if isinstance(value, str):
+        handler = self._TRUTHY_DISPATCH.get(type(value))
+        if handler is not None:
+            return handler(value)
+        # set is truthy when non-empty (not in the fast-path table
+        # because sets are rare compared to other types)
+        if isinstance(value, set):
             return len(value) > 0
-        if isinstance(value, list):
-            return len(value) > 0
-        if isinstance(value, dict):
-            return len(value) > 0
-        if value is None:
-            return False
         return True
 
     def execute_function(self, call_node):
@@ -4852,19 +4863,15 @@ class Interpreter:
                 elif isinstance(right, (str, list)) and isinstance(left, (int, float)):
                     return self._guarded_repeat(right, int(left))
                 return left * right
-            # O(1) dispatch for +, -
+            # Division/modulo need zero-checks before dispatch
+            if node.operator in ('/', '%') and right == 0:
+                raise RuntimeError(
+                    "Division by zero" if node.operator == '/' else "Modulo by zero"
+                )
+            # O(1) dispatch for +, -, /, %
             op_fn = self._BINARY_OP_DISPATCH.get(node.operator)
             if op_fn is not None:
                 return op_fn(left, right)
-            # Division and modulo need zero-checks
-            if node.operator == '/':
-                if right == 0:
-                    raise RuntimeError("Division by zero")
-                return left / right
-            if node.operator == '%':
-                if right == 0:
-                    raise RuntimeError("Modulo by zero")
-                return left % right
             raise ValueError(f'Unknown operator: {node.operator}')
         except TypeError:
             raise RuntimeError(
