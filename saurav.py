@@ -659,6 +659,8 @@ class Parser:
         'sets_size', 'sets_to_list', 'sets_is_subset', 'sets_is_superset',
         'path_join', 'path_dir', 'path_base', 'path_ext', 'path_stem',
         'path_abs', 'path_exists', 'list_dir', 'make_dir', 'is_dir', 'is_file',
+        'sort_by', 'min_by', 'max_by', 'partition', 'rotate',
+        'interleave', 'frequencies', 'combinations', 'permutations',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2400,6 +2402,139 @@ class Interpreter:
         self.builtins['make_dir'] = lambda args: _make_dir(self, args)
         self.builtins['is_dir'] = lambda args: _is_dir(self, args)
         self.builtins['is_file'] = lambda args: _is_file(self, args)
+
+        # --- Combinatorics & advanced collection builtins ---
+        self.builtins['sort_by'] = lambda args: self._builtin_sort_by(args)
+        self.builtins['min_by'] = lambda args: self._builtin_min_by(args)
+        self.builtins['max_by'] = lambda args: self._builtin_max_by(args)
+        self.builtins['partition'] = lambda args: self._builtin_partition(args)
+        self.builtins['rotate'] = lambda args: self._builtin_rotate(args)
+        self.builtins['interleave'] = lambda args: self._builtin_interleave(args)
+        self.builtins['frequencies'] = lambda args: self._builtin_frequencies(args)
+        self.builtins['combinations'] = lambda args: self._builtin_combinations(args)
+        self.builtins['permutations'] = lambda args: self._builtin_permutations(args)
+
+    # ── Combinatorics & advanced collection builtins ──────────────────
+
+    def _builtin_sort_by(self, args):
+        """sort_by(func, list) - sort list by key function result"""
+        self._expect_args('sort_by', args, 2)
+        func, lst = args
+        if not isinstance(func, (str, LambdaValue)):
+            raise RuntimeError("sort_by: first argument must be a function or lambda")
+        if not isinstance(lst, list):
+            raise RuntimeError("sort_by: second argument must be a list")
+        return sorted(lst, key=lambda x: self._call_function_with_args(func, [x]))
+
+    def _builtin_min_by(self, args):
+        """min_by(func, list) - element with minimum key function result"""
+        self._expect_args('min_by', args, 2)
+        func, lst = args
+        if not isinstance(func, (str, LambdaValue)):
+            raise RuntimeError("min_by: first argument must be a function or lambda")
+        if not isinstance(lst, list):
+            raise RuntimeError("min_by: second argument must be a list")
+        if len(lst) == 0:
+            raise RuntimeError("min_by: empty list")
+        return min(lst, key=lambda x: self._call_function_with_args(func, [x]))
+
+    def _builtin_max_by(self, args):
+        """max_by(func, list) - element with maximum key function result"""
+        self._expect_args('max_by', args, 2)
+        func, lst = args
+        if not isinstance(func, (str, LambdaValue)):
+            raise RuntimeError("max_by: first argument must be a function or lambda")
+        if not isinstance(lst, list):
+            raise RuntimeError("max_by: second argument must be a list")
+        if len(lst) == 0:
+            raise RuntimeError("max_by: empty list")
+        return max(lst, key=lambda x: self._call_function_with_args(func, [x]))
+
+    def _builtin_partition(self, args):
+        """partition(func, list) - split list into [truthy, falsy] by predicate"""
+        self._expect_args('partition', args, 2)
+        func, lst = args
+        if not isinstance(func, (str, LambdaValue)):
+            raise RuntimeError("partition: first argument must be a function or lambda")
+        if not isinstance(lst, list):
+            raise RuntimeError("partition: second argument must be a list")
+        truthy, falsy = [], []
+        for item in lst:
+            if self._call_function_with_args(func, [item]):
+                truthy.append(item)
+            else:
+                falsy.append(item)
+        return [truthy, falsy]
+
+    def _builtin_rotate(self, args):
+        """rotate(list, n) - rotate list by n positions (positive = left)"""
+        self._expect_args('rotate', args, 2)
+        lst, n = args
+        if not isinstance(lst, list):
+            raise RuntimeError("rotate: first argument must be a list")
+        if not isinstance(n, (int, float)):
+            raise RuntimeError("rotate: second argument must be a number")
+        n = int(n)
+        if len(lst) == 0:
+            return []
+        n = n % len(lst)
+        return lst[n:] + lst[:n]
+
+    def _builtin_interleave(self, args):
+        """interleave(list1, list2) - interleave two lists element by element"""
+        self._expect_args('interleave', args, 2)
+        a, b = args
+        if not isinstance(a, list) or not isinstance(b, list):
+            raise RuntimeError("interleave: both arguments must be lists")
+        result = []
+        for i in range(max(len(a), len(b))):
+            if i < len(a):
+                result.append(a[i])
+            if i < len(b):
+                result.append(b[i])
+        return result
+
+    def _builtin_frequencies(self, args):
+        """frequencies(list) - count occurrences of each element, returns dict"""
+        self._expect_args('frequencies', args, 1)
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("frequencies: argument must be a list")
+        freq = {}
+        for item in lst:
+            key = str(item) if isinstance(item, list) else item
+            if isinstance(key, float) and key == int(key):
+                key = int(key)
+            k = str(key)
+            freq[k] = freq.get(k, 0) + 1
+        return freq
+
+    def _builtin_combinations(self, args):
+        """combinations(list, k) - all k-element combinations"""
+        self._expect_args('combinations', args, 2)
+        from itertools import combinations as _combinations
+        lst, k = args
+        if not isinstance(lst, list):
+            raise RuntimeError("combinations: first argument must be a list")
+        if not isinstance(k, (int, float)):
+            raise RuntimeError("combinations: second argument must be a number")
+        k = int(k)
+        if k < 0 or k > len(lst):
+            raise RuntimeError(f"combinations: k={k} out of range for list of length {len(lst)}")
+        return [list(c) for c in _combinations(lst, k)]
+
+    def _builtin_permutations(self, args):
+        """permutations(list, k?) - all k-element permutations (default k=len)"""
+        if len(args) < 1 or len(args) > 2:
+            raise RuntimeError("permutations expects 1-2 arguments")
+        from itertools import permutations as _permutations
+        lst = args[0]
+        if not isinstance(lst, list):
+            raise RuntimeError("permutations: first argument must be a list")
+        k = int(args[1]) if len(args) == 2 else len(lst)
+        if k < 0 or k > len(lst):
+            raise RuntimeError(f"permutations: k={k} out of range for list of length {len(lst)}")
+        return [list(p) for p in _permutations(lst, k)]
 
     # ── Shared statistics validation ──────────────────
 
