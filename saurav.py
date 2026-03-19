@@ -661,10 +661,15 @@ class Parser:
         'path_abs', 'path_exists', 'list_dir', 'make_dir', 'is_dir', 'is_file',
         'sort_by', 'min_by', 'max_by', 'partition', 'rotate',
         'interleave', 'frequencies', 'combinations', 'permutations',
+        'env_get', 'env_set', 'env_unset', 'env_list', 'env_has',
+        'sys_exit', 'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid',
+        'sys_uptime', 'sys_hostname',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
-    ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler'})
+    ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
+        'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
+        'env_list'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -1937,6 +1942,7 @@ class Interpreter:
         self._register_hash_builtins()
         self._register_bitwise_builtins()
         self._register_string_builtins()
+        self._register_env_sys_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -2427,6 +2433,128 @@ class Interpreter:
         self.builtins['frequencies'] = lambda args: self._builtin_frequencies(args)
         self.builtins['combinations'] = lambda args: self._builtin_combinations(args)
         self.builtins['permutations'] = lambda args: self._builtin_permutations(args)
+
+    # ── Environment variable & system info builtins ──────────────────
+
+    def _register_env_sys_builtins(self):
+        """Register environment variable and system info builtins.
+
+        Environment:
+        - env_get(name[, default]) → get env var (optional default)
+        - env_set(name, value) → set env var
+        - env_unset(name) → remove env var
+        - env_list() → map of all env vars
+        - env_has(name) → true/false
+
+        System:
+        - sys_exit([code]) → exit with code (default 0)
+        - sys_args() → list of command-line arguments
+        - sys_platform() → platform string (linux/win32/darwin)
+        - sys_cwd() → current working directory
+        - sys_pid() → current process ID
+        - sys_uptime() → interpreter uptime in seconds
+        - sys_hostname() → machine hostname
+        """
+        import platform as _platform
+        import socket as _socket
+
+        _start_time = _time.time()
+
+        def _env_get(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("env_get expects 1-2 arguments: env_get(name[, default])")
+            name = args[0]
+            if not isinstance(name, str):
+                raise RuntimeError("env_get: name must be a string")
+            if len(args) == 2:
+                return os.environ.get(name, args[1])
+            val = os.environ.get(name)
+            if val is None:
+                return None
+            return val
+
+        def _env_set(args):
+            self._expect_args('env_set', args, 2)
+            name, value = args
+            if not isinstance(name, str):
+                raise RuntimeError("env_set: name must be a string")
+            os.environ[name] = str(value)
+            return None
+
+        def _env_unset(args):
+            self._expect_args('env_unset', args, 1)
+            name = args[0]
+            if not isinstance(name, str):
+                raise RuntimeError("env_unset: name must be a string")
+            os.environ.pop(name, None)
+            return None
+
+        def _env_list(args):
+            if len(args) != 0:
+                raise RuntimeError("env_list takes no arguments")
+            return dict(os.environ)
+
+        def _env_has(args):
+            self._expect_args('env_has', args, 1)
+            name = args[0]
+            if not isinstance(name, str):
+                raise RuntimeError("env_has: name must be a string")
+            return name in os.environ
+
+        def _sys_exit(args):
+            code = 0
+            if len(args) == 1:
+                code = int(args[0])
+            elif len(args) > 1:
+                raise RuntimeError("sys_exit expects 0-1 arguments: sys_exit([code])")
+            sys.exit(code)
+
+        def _sys_args(args):
+            if len(args) != 0:
+                raise RuntimeError("sys_args takes no arguments")
+            return list(sys.argv)
+
+        def _sys_platform(args):
+            if len(args) != 0:
+                raise RuntimeError("sys_platform takes no arguments")
+            return sys.platform
+
+        def _sys_cwd(args):
+            if len(args) != 0:
+                raise RuntimeError("sys_cwd takes no arguments")
+            return os.getcwd()
+
+        def _sys_pid(args):
+            if len(args) != 0:
+                raise RuntimeError("sys_pid takes no arguments")
+            return float(os.getpid())
+
+        def _sys_uptime(args):
+            if len(args) != 0:
+                raise RuntimeError("sys_uptime takes no arguments")
+            return round(_time.time() - _start_time, 3)
+
+        def _sys_hostname(args):
+            if len(args) != 0:
+                raise RuntimeError("sys_hostname takes no arguments")
+            return _socket.gethostname()
+
+        _table = {
+            'env_get': _env_get,
+            'env_set': _env_set,
+            'env_unset': _env_unset,
+            'env_list': _env_list,
+            'env_has': _env_has,
+            'sys_exit': _sys_exit,
+            'sys_args': _sys_args,
+            'sys_platform': _sys_platform,
+            'sys_cwd': _sys_cwd,
+            'sys_pid': _sys_pid,
+            'sys_uptime': _sys_uptime,
+            'sys_hostname': _sys_hostname,
+        }
+        for name, fn in _table.items():
+            self.builtins[name] = fn
 
     # ── Combinatorics & advanced collection builtins ──────────────────
 

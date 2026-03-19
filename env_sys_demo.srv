@@ -1,0 +1,48 @@
+# env_sys_demo.srv - Environment variable and system info builtins demo
+# Run: python saurav.py env_sys_demo.srv
+
+print "=== System Info ==="
+print "Platform:"
+print sys_platform
+print "Hostname:"
+print sys_hostname
+print "Working directory:"
+print sys_cwd
+print "Process ID:"
+print sys_pid
+print "Interpreter uptime (seconds):"
+print sys_uptime
+
+print ""
+print "=== Environment Variables ==="
+
+# Set an env var
+env_set "MY_APP_MODE" "production"
+mode = env_get "MY_APP_MODE"
+print "MY_APP_MODE:"
+print mode
+
+# Check if env var exists
+print "Has MY_APP_MODE:"
+print env_has "MY_APP_MODE"
+
+# Get with default for missing var
+fallback = env_get "NONEXISTENT_VAR_12345" "default_value"
+print "Missing var with default:"
+print fallback
+
+# Remove an env var
+env_unset "MY_APP_MODE"
+print "After unset, has MY_APP_MODE:"
+print env_has "MY_APP_MODE"
+
+print ""
+print "=== Env Var Listing ==="
+all_env = env_list
+k = keys all_env
+count = min 5 (len k)
+print "Number of env vars:"
+print len k
+print "First 5 keys:"
+for i in range 0 count
+    print k[i]
