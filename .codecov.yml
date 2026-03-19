@@ -25,4 +25,7 @@ comment:
 ignore:
   - "docs/**"
   - "tests/**"
+  - "demos/**"
+  - "editors/**"
   - "*.srv"
+  - "test_*.py"

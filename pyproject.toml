@@ -69,10 +69,14 @@ addopts = [
 ]
 
 [tool.coverage.run]
-source = ["sauravcode"]
+source = ["sauravcode", "."]
 omit = [
     "tests/*",
     "docs/*",
+    "demos/*",
+    "editors/*",
+    "setup.py",
+    "test_*.py",
 ]
 
 [tool.coverage.report]
