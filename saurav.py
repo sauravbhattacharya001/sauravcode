@@ -1434,13 +1434,27 @@ class Parser:
                 if text_buf:
                     parts.append(StringNode(''.join(text_buf)))
                     text_buf = []
-                # Find matching closing brace
+                # Find matching closing brace, skipping over string literals
                 depth = 1
                 j = i + 1
                 while j < len(content) and depth > 0:
-                    if content[j] == '{':
+                    c = content[j]
+                    if c in ('"', "'"):
+                        # Skip over quoted string inside expression
+                        quote = c
+                        j += 1
+                        while j < len(content):
+                            if content[j] == '\\' and j + 1 < len(content):
+                                j += 2
+                                continue
+                            if content[j] == quote:
+                                j += 1
+                                break
+                            j += 1
+                        continue
+                    if c == '{':
                         depth += 1
-                    elif content[j] == '}':
+                    elif c == '}':
                         depth -= 1
                     j += 1
                 if depth != 0:
