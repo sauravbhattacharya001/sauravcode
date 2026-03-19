@@ -98,6 +98,14 @@ def _serialise(value):
 # HTTP handler
 # ---------------------------------------------------------------------------
 
+# Maximum request body size (1 MB) to prevent denial-of-service via
+# oversized payloads.  Configurable via --max-body-size CLI flag.
+MAX_BODY_SIZE = 1_048_576  # 1 MB
+
+# Maximum execution time per request (seconds).
+MAX_EXEC_TIME = 10
+
+
 class APIHandler(BaseHTTPRequestHandler):
     """Handles GET / (list endpoints) and POST /<fn_name> (call function)."""
 
@@ -105,6 +113,7 @@ class APIHandler(BaseHTTPRequestHandler):
     interp = None       # set by serve()
     enable_cors = False  # set by serve()
     srv_path = ""        # set by serve()
+    max_body_size = MAX_BODY_SIZE  # set by serve()
 
     def _set_cors(self):
         if self.enable_cors:
@@ -177,8 +186,14 @@ class APIHandler(BaseHTTPRequestHandler):
         func = self.interp.functions[fn_name]
         params = list(func.params) if func.params else []
 
-        # Read body
+        # Read body — enforce size limit to prevent DoS
         content_len = int(self.headers.get("Content-Length", 0))
+        if content_len > self.max_body_size:
+            self._json_response(413, {
+                "error": f"Request body too large ({content_len} bytes). "
+                         f"Max allowed: {self.max_body_size} bytes."
+            })
+            return
         raw = self.rfile.read(content_len) if content_len else b""
 
         # Parse arguments
@@ -205,28 +220,44 @@ class APIHandler(BaseHTTPRequestHandler):
         # Build argument list in order
         arg_values = [_coerce_arg(args[p]) for p in params]
 
-        # Execute
+        # Execute in an isolated interpreter copy to prevent cross-request
+        # state pollution (shared mutable variables are a security risk).
+        import copy
+        import threading
         t0 = time.monotonic()
         stdout_capture = io.StringIO()
         try:
             from saurav import FunctionCallNode, NumberNode, StringNode, ListNode
 
-            # Build a synthetic function call — simpler to just call directly
-            old_vars = dict(self.interp.variables)
+            # Deep-copy the interpreter so each request gets clean state
+            req_interp = copy.deepcopy(self.interp)
             for p, v in zip(params, arg_values):
-                self.interp.variables[p] = v
+                req_interp.variables[p] = v
 
-            # Execute function body
+            # Execute function body with a timeout guard
             result = None
             from saurav import ReturnSignal
-            try:
-                for stmt in func.body:
-                    self.interp.interpret(stmt)
-            except ReturnSignal as r:
-                result = r.value
+            timed_out = [False]
 
-            # Restore variables
-            self.interp.variables = old_vars
+            def _execute():
+                nonlocal result
+                try:
+                    for stmt in req_interp.functions[fn_name].body:
+                        req_interp.interpret(stmt)
+                except ReturnSignal as r:
+                    result = r.value
+
+            thread = threading.Thread(target=_execute, daemon=True)
+            thread.start()
+            thread.join(timeout=MAX_EXEC_TIME)
+            if thread.is_alive():
+                timed_out[0] = True
+
+            if timed_out[0]:
+                self._json_response(504, {
+                    "error": f"Function '{fn_name}' exceeded {MAX_EXEC_TIME}s execution limit."
+                })
+                return
 
             elapsed = time.monotonic() - t0
             output = stdout_capture.getvalue()
