@@ -1,0 +1,42 @@
+# UUID & Random Data Generation Demo
+# Demonstrates: uuid_v4, random_bytes, random_hex, random_string, random_float
+
+print "=== UUID Generation ==="
+id1 = uuid_v4
+id2 = uuid_v4
+print f"UUID 1: {id1}"
+print f"UUID 2: {id2}"
+print f"UUIDs are unique: {id1 != id2}"
+
+print ""
+print "=== Random Bytes ==="
+bytes_list = random_bytes 8
+print f"8 random bytes: {bytes_list}"
+print f"Length: {len bytes_list}"
+
+print ""
+print "=== Random Hex ==="
+hex4 = random_hex 4
+hex16 = random_hex 16
+print f"4-byte hex: {hex4}"
+print f"16-byte hex: {hex16}"
+
+print ""
+print "=== Random Strings ==="
+token = random_string 32
+short_code = random_string 8
+print f"API token: {token}"
+print f"Short code: {short_code}"
+
+print ""
+print "=== Random Floats ==="
+r1 = random_float
+r2 = random_float 1.0 100.0
+print f"Random [0,1): {r1}"
+print f"Random [1,100): {r2}"
+
+print ""
+print "=== Practical: Generate session tokens ==="
+for i 1 4
+    sid = random_hex 8
+    print f"Session {i}: sess_{sid}"

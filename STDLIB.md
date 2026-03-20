@@ -1,6 +1,6 @@
 # Standard Library Reference
 
-Complete reference for all 107 built-in functions in sauravcode. No imports needed — all functions are available immediately.
+Complete reference for all 112 built-in functions in sauravcode. No imports needed — all functions are available immediately.
 
 Sauravcode uses space-separated arguments with no parentheses or commas:
 
@@ -230,6 +230,16 @@ Sets are unordered collections of unique, hashable values (numbers, strings, boo
 | `sets_to_list` | `sets_to_list s` | Convert to sorted list |
 | `sets_is_subset` | `sets_is_subset (a) (b)` | True if a ⊆ b |
 | `sets_is_superset` | `sets_is_superset (a) (b)` | True if a ⊇ b |
+
+## UUID & Random Data Generation
+
+| Function | Usage | Description |
+|----------|-------|-------------|
+| `uuid_v4` | `uuid_v4` | Generate random UUID v4 string (no args) |
+| `random_bytes` | `random_bytes 16` | List of n random integers 0-255 |
+| `random_hex` | `random_hex 8` | Random hex string (2n hex characters) |
+| `random_string` | `random_string 32` | Random alphanumeric string of length n |
+| `random_float` | `random_float` or `random_float 1.0 100.0` | Random float in [0,1) or [min,max) |
 
 ## Operators
 

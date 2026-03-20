@@ -666,12 +666,13 @@ class Parser:
         'sys_uptime', 'sys_hostname',
         'color', 'bg_color', 'bold', 'dim', 'italic', 'underline',
         'strikethrough', 'style', 'rainbow', 'strip_ansi',
+        'uuid_v4', 'random_bytes', 'random_hex', 'random_string', 'random_float',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
     ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
-        'env_list'})
+        'env_list', 'uuid_v4', 'random_float'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -1946,6 +1947,7 @@ class Interpreter:
         self._register_string_builtins()
         self._register_env_sys_builtins()
         self._register_ansi_builtins()
+        self._register_random_data_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -2717,7 +2719,80 @@ class Interpreter:
         for name, fn in _table.items():
             self.builtins[name] = fn
 
-    # ── Combinatorics & advanced collection builtins ──────────────────
+    # ── UUID & random data generation builtins ────────────────────────
+
+    def _register_random_data_builtins(self):
+        """Register UUID and random data generation builtins.
+
+        Builtins:
+        - uuid_v4()  generate a random UUID v4 string
+        - random_bytes(n)  list of n random integers 0-255
+        - random_hex(n)  random hex string of n bytes (2n hex chars)
+        - random_string(n)  random alphanumeric string of length n
+        - random_float()  random float in [0, 1), or random_float(min, max)
+        """
+        import uuid as _uuid_mod
+        import os as _os_mod
+        import string as _string_mod
+
+        def _uuid_v4(args):
+            if args:
+                raise RuntimeError("uuid_v4 takes no arguments")
+            return str(_uuid_mod.uuid4())
+
+        def _random_bytes(args):
+            self._expect_args('random_bytes', args, 1)
+            n = args[0]
+            if not isinstance(n, (int, float)) or int(n) != n or n < 0:
+                raise RuntimeError("random_bytes: argument must be a non-negative integer")
+            n = int(n)
+            if n > 65536:
+                raise RuntimeError("random_bytes: maximum 65536 bytes")
+            return list(_os_mod.urandom(n))
+
+        def _random_hex(args):
+            self._expect_args('random_hex', args, 1)
+            n = args[0]
+            if not isinstance(n, (int, float)) or int(n) != n or n < 0:
+                raise RuntimeError("random_hex: argument must be a non-negative integer")
+            n = int(n)
+            if n > 65536:
+                raise RuntimeError("random_hex: maximum 65536 bytes")
+            return _os_mod.urandom(n).hex()
+
+        def _random_string(args):
+            self._expect_args('random_string', args, 1)
+            n = args[0]
+            if not isinstance(n, (int, float)) or int(n) != n or n < 0:
+                raise RuntimeError("random_string: argument must be a non-negative integer")
+            n = int(n)
+            if n > 65536:
+                raise RuntimeError("random_string: maximum 65536 characters")
+            import random as _rng
+            chars = _string_mod.ascii_letters + _string_mod.digits
+            return ''.join(_rng.choice(chars) for _ in range(n))
+
+        def _random_float(args):
+            import random as _rng
+            if len(args) == 0:
+                return _rng.random()
+            elif len(args) == 2:
+                lo, hi = args
+                if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+                    raise RuntimeError("random_float: arguments must be numbers")
+                return _rng.uniform(float(lo), float(hi))
+            else:
+                raise RuntimeError("random_float expects 0 or 2 arguments: random_float() or random_float(min, max)")
+
+        _table = {
+            'uuid_v4': _uuid_v4,
+            'random_bytes': _random_bytes,
+            'random_hex': _random_hex,
+            'random_string': _random_string,
+            'random_float': _random_float,
+        }
+        for name, fn in _table.items():
+            self.builtins[name] = fn
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
@@ -5447,6 +5522,11 @@ def repl():
                 'style':          'style text s1 s2 ...   — apply multiple styles/colors at once',
                 'rainbow':        'rainbow text           — rainbow-colored text',
                 'strip_ansi':     'strip_ansi text        — remove all ANSI escape codes',
+                'uuid_v4':        'uuid_v4               — generate random UUID v4 string',
+                'random_bytes':   'random_bytes n         — list of n random bytes (0-255)',
+                'random_hex':     'random_hex n           — random hex string of n bytes',
+                'random_string':  'random_string n        — random alphanumeric string of length n',
+                'random_float':   'random_float [min max] — random float in [0,1) or [min,max)',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):
