@@ -667,6 +667,8 @@ class Parser:
         'color', 'bg_color', 'bold', 'dim', 'italic', 'underline',
         'strikethrough', 'style', 'rainbow', 'strip_ansi',
         'uuid_v4', 'random_bytes', 'random_hex', 'random_string', 'random_float',
+        'csv_parse', 'csv_stringify', 'csv_headers', 'csv_select', 'csv_filter',
+        'csv_sort', 'csv_read', 'csv_write',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1948,6 +1950,7 @@ class Interpreter:
         self._register_env_sys_builtins()
         self._register_ansi_builtins()
         self._register_random_data_builtins()
+        self._register_csv_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -2790,6 +2793,194 @@ class Interpreter:
             'random_hex': _random_hex,
             'random_string': _random_string,
             'random_float': _random_float,
+        }
+        for name, fn in _table.items():
+            self.builtins[name] = fn
+
+    def _register_csv_builtins(self):
+        """Register CSV parsing and generation builtins.
+
+        Builtins:
+        - csv_parse(text)  parse CSV text into list of maps (first row = headers)
+        - csv_parse(text, delimiter)  parse with custom delimiter
+        - csv_stringify(rows)  convert list of maps to CSV text
+        - csv_stringify(rows, delimiter)  with custom delimiter
+        - csv_headers(rows)  extract column headers from parsed CSV data
+        - csv_select(rows, columns)  select specific columns from CSV data
+        - csv_filter(rows, column, value)  filter rows where column == value
+        - csv_sort(rows, column)  sort rows by column value
+        - csv_sort(rows, column, "desc")  sort descending
+        - csv_read(path)  read and parse a CSV file
+        - csv_read(path, delimiter)  read with custom delimiter
+        - csv_write(path, rows)  write CSV data to a file
+        - csv_write(path, rows, delimiter)  write with custom delimiter
+        """
+        import csv as _csv_mod
+        import io as _io_mod
+
+        interpreter = self
+
+        def _csv_parse(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("csv_parse expects 1-2 arguments: csv_parse(text) or csv_parse(text, delimiter)")
+            text = args[0]
+            if not isinstance(text, str):
+                raise RuntimeError("csv_parse: first argument must be a string")
+            delimiter = ','
+            if len(args) == 2:
+                if not isinstance(args[1], str) or len(args[1]) != 1:
+                    raise RuntimeError("csv_parse: delimiter must be a single character")
+                delimiter = args[1]
+            reader = _csv_mod.DictReader(_io_mod.StringIO(text), delimiter=delimiter)
+            rows = []
+            for row in reader:
+                converted = {}
+                for k, v in row.items():
+                    if v is None:
+                        converted[k] = ''
+                    else:
+                        # Try numeric conversion
+                        try:
+                            converted[k] = float(v) if '.' in v else int(v)
+                        except (ValueError, TypeError):
+                            converted[k] = v
+                rows.append(converted)
+            return rows
+
+        def _csv_stringify(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("csv_stringify expects 1-2 arguments: csv_stringify(rows) or csv_stringify(rows, delimiter)")
+            rows = args[0]
+            if not isinstance(rows, list):
+                raise RuntimeError("csv_stringify: first argument must be a list of maps")
+            if not rows:
+                return ''
+            delimiter = ','
+            if len(args) == 2:
+                if not isinstance(args[1], str) or len(args[1]) != 1:
+                    raise RuntimeError("csv_stringify: delimiter must be a single character")
+                delimiter = args[1]
+            if not isinstance(rows[0], dict):
+                raise RuntimeError("csv_stringify: each row must be a map")
+            headers = list(rows[0].keys())
+            output = _io_mod.StringIO()
+            writer = _csv_mod.writer(output, delimiter=delimiter, lineterminator='\n')
+            writer.writerow(headers)
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise RuntimeError("csv_stringify: each row must be a map")
+                writer.writerow([row.get(h, '') for h in headers])
+            return output.getvalue()
+
+        def _csv_headers(args):
+            interpreter._expect_args('csv_headers', args, 1)
+            rows = args[0]
+            if not isinstance(rows, list):
+                raise RuntimeError("csv_headers: argument must be a list of maps")
+            if not rows:
+                return []
+            if not isinstance(rows[0], dict):
+                raise RuntimeError("csv_headers: rows must contain maps")
+            return list(rows[0].keys())
+
+        def _csv_select(args):
+            interpreter._expect_args('csv_select', args, 2)
+            rows, columns = args
+            if not isinstance(rows, list):
+                raise RuntimeError("csv_select: first argument must be a list of maps")
+            if not isinstance(columns, list):
+                raise RuntimeError("csv_select: second argument must be a list of column names")
+            result = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise RuntimeError("csv_select: each row must be a map")
+                result.append({c: row.get(c, '') for c in columns})
+            return result
+
+        def _csv_filter(args):
+            interpreter._expect_args('csv_filter', args, 3)
+            rows, column, value = args
+            if not isinstance(rows, list):
+                raise RuntimeError("csv_filter: first argument must be a list of maps")
+            if not isinstance(column, str):
+                raise RuntimeError("csv_filter: second argument must be a column name string")
+            result = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise RuntimeError("csv_filter: each row must be a map")
+                if row.get(column) == value:
+                    result.append(row)
+            return result
+
+        def _csv_sort(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("csv_sort expects 2-3 arguments: csv_sort(rows, column) or csv_sort(rows, column, \"desc\")")
+            rows = args[0]
+            column = args[1]
+            descending = False
+            if len(args) == 3:
+                if args[2] == "desc":
+                    descending = True
+                elif args[2] != "asc":
+                    raise RuntimeError("csv_sort: third argument must be \"asc\" or \"desc\"")
+            if not isinstance(rows, list):
+                raise RuntimeError("csv_sort: first argument must be a list of maps")
+            if not isinstance(column, str):
+                raise RuntimeError("csv_sort: second argument must be a column name string")
+            def sort_key(row):
+                v = row.get(column, '')
+                if isinstance(v, (int, float)):
+                    return (0, v, '')
+                return (1, 0, str(v))
+            return sorted(rows, key=sort_key, reverse=descending)
+
+        def _csv_read(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("csv_read expects 1-2 arguments: csv_read(path) or csv_read(path, delimiter)")
+            path = args[0]
+            if not isinstance(path, str):
+                raise RuntimeError("csv_read: first argument must be a file path string")
+            full_path = interpreter._validate_file_path('csv_read', path)
+            try:
+                with open(full_path, 'r', encoding='utf-8', newline='') as f:
+                    text = f.read()
+            except FileNotFoundError:
+                raise RuntimeError(f"csv_read: file not found: {path}")
+            except PermissionError:
+                raise RuntimeError(f"csv_read: permission denied: {path}")
+            read_args = [text]
+            if len(args) == 2:
+                read_args.append(args[1])
+            return _csv_parse(read_args)
+
+        def _csv_write(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("csv_write expects 2-3 arguments: csv_write(path, rows) or csv_write(path, rows, delimiter)")
+            path = args[0]
+            rows = args[1]
+            if not isinstance(path, str):
+                raise RuntimeError("csv_write: first argument must be a file path string")
+            full_path = interpreter._validate_file_path('csv_write', path)
+            stringify_args = [rows]
+            if len(args) == 3:
+                stringify_args.append(args[2])
+            text = _csv_stringify(stringify_args)
+            try:
+                with open(full_path, 'w', encoding='utf-8', newline='') as f:
+                    f.write(text)
+            except PermissionError:
+                raise RuntimeError(f"csv_write: permission denied: {path}")
+            return True
+
+        _table = {
+            'csv_parse': _csv_parse,
+            'csv_stringify': _csv_stringify,
+            'csv_headers': _csv_headers,
+            'csv_select': _csv_select,
+            'csv_filter': _csv_filter,
+            'csv_sort': _csv_sort,
+            'csv_read': _csv_read,
+            'csv_write': _csv_write,
         }
         for name, fn in _table.items():
             self.builtins[name] = fn
@@ -5474,6 +5665,14 @@ def repl():
                 'random_hex':     'random_hex n           — random hex string of n bytes',
                 'random_string':  'random_string n        — random alphanumeric string of length n',
                 'random_float':   'random_float [min max] — random float in [0,1) or [min,max)',
+                'csv_parse':      'csv_parse text [delim] — parse CSV text into list of maps',
+                'csv_stringify':  'csv_stringify rows [delim] — convert list of maps to CSV text',
+                'csv_headers':   'csv_headers rows       — extract column names from CSV data',
+                'csv_select':    'csv_select rows cols   — select specific columns',
+                'csv_filter':    'csv_filter rows col val — filter rows where col == val',
+                'csv_sort':      'csv_sort rows col [dir] — sort rows by column (asc/desc)',
+                'csv_read':      'csv_read path [delim]  — read and parse a CSV file',
+                'csv_write':     'csv_write path rows [d] — write CSV data to a file',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):

@@ -241,6 +241,19 @@ Sets are unordered collections of unique, hashable values (numbers, strings, boo
 | `random_string` | `random_string 32` | Random alphanumeric string of length n |
 | `random_float` | `random_float` or `random_float 1.0 100.0` | Random float in [0,1) or [min,max) |
 
+## CSV Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `csv_parse` | `csv_parse text` or `csv_parse text ","` | Parse CSV text into list of maps (first row = headers). Auto-converts numbers. |
+| `csv_stringify` | `csv_stringify (rows)` or `csv_stringify (rows) ","` | Convert list of maps back to CSV text |
+| `csv_headers` | `csv_headers (rows)` | Extract column names from parsed CSV data |
+| `csv_select` | `csv_select (rows) ["col1", "col2"]` | Select specific columns from CSV data |
+| `csv_filter` | `csv_filter (rows) "column" value` | Filter rows where column equals value |
+| `csv_sort` | `csv_sort (rows) "column"` or `csv_sort (rows) "column" "desc"` | Sort rows by column (ascending or descending) |
+| `csv_read` | `csv_read "file.csv"` | Read and parse a CSV file |
+| `csv_write` | `csv_write "file.csv" (rows)` | Write CSV data to a file |
+
 ## Operators
 
 Beyond built-in functions, sauravcode supports these operators:
