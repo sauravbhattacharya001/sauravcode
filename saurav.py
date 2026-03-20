@@ -4923,6 +4923,46 @@ class Interpreter:
             return False
         return True
 
+    def _invoke_function(self, func_node, evaluated_args, name='<anonymous>'):
+        """Invoke a FunctionNode with pre-evaluated arguments.
+
+        Centralises the recursion guard, scope management, closure injection,
+        parameter binding, body execution, and ReturnSignal handling that was
+        previously duplicated between the named-function and variable-callable
+        code paths in execute_function().
+        """
+        self._call_depth += 1
+        if self._call_depth > MAX_RECURSION_DEPTH:
+            self._call_depth -= 1
+            raise RuntimeError(
+                f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
+                f"in function '{name}'"
+            )
+
+        result = None
+        with self._scoped_env():
+            # Inject closure scope — variables from the defining scope are
+            # available but won't overwrite the caller's existing variables.
+            if hasattr(func_node, 'closure_scope') and func_node.closure_scope:
+                for cname, cval in func_node.closure_scope.items():
+                    if cname not in self.variables:
+                        self.variables[cname] = cval
+
+            for param, arg_val in zip(func_node.params, evaluated_args):
+                self.variables[param] = arg_val
+                if DEBUG:
+                    debug(f"Set parameter '{param}' to {arg_val}")
+            try:
+                for stmt in func_node.body:
+                    self.interpret(stmt)
+            except ReturnSignal as ret:
+                result = ret.value
+            finally:
+                self._call_depth -= 1
+        if DEBUG:
+            debug(f"Function {name} returned {result}\n")
+        return result
+
     def execute_function(self, call_node):
         # Check user-defined functions first (allows overriding builtins)
         func = self.functions.get(call_node.name)
@@ -4931,12 +4971,6 @@ class Interpreter:
                 debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
 
             # Check if this is a generator function.
-            # Use the cached _is_generator attribute (set at definition time
-            # in _interp_function).  If the attribute is missing (e.g. the
-            # function was injected via closure_scope or imported without
-            # passing through _interp_function), cache it now to avoid
-            # paying the O(body_size) _has_yield AST walk on every
-            # subsequent call.
             if not hasattr(func, '_is_generator'):
                 func._is_generator = self._has_yield(func.body)
             if func._is_generator:
@@ -4944,40 +4978,8 @@ class Interpreter:
                 evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
                 return GeneratorValue(self, func, evaluated_args)
 
-            # Guard against excessive recursion (DoS protection)
-            self._call_depth += 1
-            if self._call_depth > MAX_RECURSION_DEPTH:
-                self._call_depth -= 1
-                raise RuntimeError(
-                    f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
-                    f"in function '{call_node.name}'"
-                )
-
-            result = None
-            with self._scoped_env():
-                # Inject closure scope from imported modules (#26).
-                # Variables from the defining module are available but
-                # won't overwrite the caller's existing variables.
-                if hasattr(func, 'closure_scope') and func.closure_scope:
-                    for cname, cval in func.closure_scope.items():
-                        if cname not in self.variables:
-                            self.variables[cname] = cval
-
-                for param, arg in zip(func.params, call_node.arguments):
-                    evaluated_arg = self.evaluate(arg)
-                    self.variables[param] = evaluated_arg
-                    if DEBUG:
-                        debug(f"Set parameter '{param}' to {evaluated_arg}")
-                try:
-                    for stmt in func.body:
-                        self.interpret(stmt)
-                except ReturnSignal as ret:
-                    result = ret.value
-                finally:
-                    self._call_depth -= 1
-            if DEBUG:
-                debug(f"Function {call_node.name} returned {result}\n")
-            return result
+            evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+            return self._invoke_function(func, evaluated_args, call_node.name)
 
         # Check built-in functions
         if call_node.name in self.builtins:
@@ -4992,31 +4994,8 @@ class Interpreter:
         if call_node.name in self.variables:
             var_val = self.variables[call_node.name]
             if isinstance(var_val, FunctionNode):
-                # Treat as a function call — evaluate args and invoke
                 evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
-                self._call_depth += 1
-                if self._call_depth > MAX_RECURSION_DEPTH:
-                    self._call_depth -= 1
-                    raise RuntimeError(
-                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
-                        f"in function '{call_node.name}'"
-                    )
-                result = None
-                with self._scoped_env():
-                    if hasattr(var_val, 'closure_scope') and var_val.closure_scope:
-                        for cname, cval in var_val.closure_scope.items():
-                            if cname not in self.variables:
-                                self.variables[cname] = cval
-                    for param, arg_val in zip(var_val.params, evaluated_args):
-                        self.variables[param] = arg_val
-                    try:
-                        for stmt in var_val.body:
-                            self.interpret(stmt)
-                    except ReturnSignal as ret:
-                        result = ret.value
-                    finally:
-                        self._call_depth -= 1
-                return result
+                return self._invoke_function(var_val, evaluated_args, call_node.name)
             elif isinstance(var_val, LambdaValue):
                 evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
                 return self._call_lambda(var_val, evaluated_args)
