@@ -377,7 +377,7 @@ def _execute_and_report(file_path, mode, debug, clear, quiet, stats,
                         notify, on_success, on_failure, initial=False):
     """Execute a file and print results."""
     if clear:
-        os.system("cls" if os.name == "nt" else "clear")
+        subprocess.run("cls" if os.name == "nt" else "clear", shell=True, check=False)
 
     now = datetime.now().strftime("%H:%M:%S")
     rel = os.path.relpath(file_path)

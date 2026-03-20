@@ -3666,6 +3666,37 @@ class Interpreter:
         if not url.startswith(('http://', 'https://')):
             raise RuntimeError(f"http_{method.lower()}: URL must start with http:// or https://")
 
+        # SSRF protection: block requests to internal/private networks
+        import ipaddress
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ''
+        # Block common metadata endpoints and localhost aliases
+        _blocked_hosts = {
+            'localhost', '0.0.0.0', '[::1]', '[::]',
+            'metadata.google.internal', 'metadata.goog',
+            '169.254.169.254',  # AWS/GCP/Azure metadata
+        }
+        if hostname.lower() in _blocked_hosts:
+            raise RuntimeError(
+                f"http_{method.lower()}: requests to internal/metadata hosts "
+                f"are blocked for security ('{hostname}')"
+            )
+        # Resolve and check for private/reserved IP ranges
+        try:
+            import socket
+            resolved = socket.getaddrinfo(hostname, parsed.port or 80, proto=socket.IPPROTO_TCP)
+            for _, _, _, _, sockaddr in resolved:
+                addr = ipaddress.ip_address(sockaddr[0])
+                if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                    raise RuntimeError(
+                        f"http_{method.lower()}: requests to private/internal "
+                        f"networks are blocked for security ('{hostname}' "
+                        f"resolves to {addr})"
+                    )
+        except (socket.gaierror, OSError):
+            pass  # let urllib handle unresolvable hosts
+
         req_headers = {'User-Agent': 'sauravcode/1.0'}
         if headers and isinstance(headers, dict):
             for k, v in headers.items():

@@ -21,6 +21,7 @@ Features:
 
 import sys
 import os
+import subprocess
 import time
 import re
 
@@ -433,7 +434,7 @@ class SauravRepl:
             return True
 
         elif command == ".clear":
-            os.system("cls" if os.name == "nt" else "clear")
+            subprocess.run("cls" if os.name == "nt" else "clear", shell=True, check=False)
             return True
 
         elif command == ".reset":
