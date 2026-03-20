@@ -3172,6 +3172,36 @@ class Interpreter:
 
     # --- Higher-order function built-ins ---
 
+    def _invoke_func_node(self, func_node, evaluated_args):
+        """Invoke a FunctionNode with recursion depth tracking and scoped environment.
+        
+        Handles closure scope restoration, parameter binding, body interpretation,
+        and ReturnSignal handling — the common logic for all FunctionNode invocations.
+        """
+        self._call_depth += 1
+        if self._call_depth > MAX_RECURSION_DEPTH:
+            self._call_depth -= 1
+            raise RuntimeError(
+                f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
+                f"in function '{func_node.name}'"
+            )
+        result = None
+        with self._scoped_env():
+            if hasattr(func_node, 'closure_scope') and func_node.closure_scope:
+                for cname, cval in func_node.closure_scope.items():
+                    if cname not in self.variables:
+                        self.variables[cname] = cval
+            for param, val in zip(func_node.params, evaluated_args):
+                self.variables[param] = val
+            try:
+                for stmt in func_node.body:
+                    self.interpret(stmt)
+            except ReturnSignal as ret:
+                result = ret.value
+            finally:
+                self._call_depth -= 1
+        return result
+
     def _call_function_with_args(self, func_ref, evaluated_args):
         """Call a user-defined function, built-in, or lambda with pre-evaluated args.
         
@@ -3189,82 +3219,20 @@ class Interpreter:
 
         # FunctionNode value (closure returned from higher-order function)
         if isinstance(func_ref, FunctionNode):
-            self._call_depth += 1
-            if self._call_depth > MAX_RECURSION_DEPTH:
-                self._call_depth -= 1
-                raise RuntimeError(
-                    f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
-                    f"in function '{func_ref.name}'"
-                )
-            result = None
-            with self._scoped_env():
-                if hasattr(func_ref, 'closure_scope') and func_ref.closure_scope:
-                    for cname, cval in func_ref.closure_scope.items():
-                        if cname not in self.variables:
-                            self.variables[cname] = cval
-                for param, val in zip(func_ref.params, evaluated_args):
-                    self.variables[param] = val
-                try:
-                    for stmt in func_ref.body:
-                        self.interpret(stmt)
-                except ReturnSignal as ret:
-                    result = ret.value
-                finally:
-                    self._call_depth -= 1
-            return result
-        
+            return self._invoke_func_node(func_ref, evaluated_args)
+
         # Named function
         func_name = func_ref
         func = self.functions.get(func_name)
         if func:
-            self._call_depth += 1
-            if self._call_depth > MAX_RECURSION_DEPTH:
-                self._call_depth -= 1
-                raise RuntimeError(
-                    f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
-                    f"in function '{func_name}'"
-                )
-            result = None
-            with self._scoped_env():
-                for param, val in zip(func.params, evaluated_args):
-                    self.variables[param] = val
-                try:
-                    for stmt in func.body:
-                        self.interpret(stmt)
-                except ReturnSignal as ret:
-                    result = ret.value
-                finally:
-                    self._call_depth -= 1
-            return result
+            return self._invoke_func_node(func, evaluated_args)
         if func_name in self.builtins:
             return self.builtins[func_name](evaluated_args)
         # Check if the name refers to a variable holding a callable
         if func_name in self.variables:
             var_val = self.variables[func_name]
             if isinstance(var_val, FunctionNode):
-                self._call_depth += 1
-                if self._call_depth > MAX_RECURSION_DEPTH:
-                    self._call_depth -= 1
-                    raise RuntimeError(
-                        f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) exceeded "
-                        f"in function '{func_name}'"
-                    )
-                result = None
-                with self._scoped_env():
-                    if hasattr(var_val, 'closure_scope') and var_val.closure_scope:
-                        for cname, cval in var_val.closure_scope.items():
-                            if cname not in self.variables:
-                                self.variables[cname] = cval
-                    for param, val in zip(var_val.params, evaluated_args):
-                        self.variables[param] = val
-                    try:
-                        for stmt in var_val.body:
-                            self.interpret(stmt)
-                    except ReturnSignal as ret:
-                        result = ret.value
-                    finally:
-                        self._call_depth -= 1
-                return result
+                return self._invoke_func_node(var_val, evaluated_args)
             elif isinstance(var_val, LambdaValue):
                 return self._call_lambda(var_val, evaluated_args)
         raise RuntimeError(f"Function '{func_name}' is not defined.")
@@ -3278,7 +3246,7 @@ class Interpreter:
         """
         self._expect_args('map', args, 2)
         func_ref, lst = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("map expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("map expects a list as second argument")
@@ -3293,7 +3261,7 @@ class Interpreter:
         """
         self._expect_args('filter', args, 2)
         func_ref, lst = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("filter expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("filter expects a list as second argument")
@@ -3309,7 +3277,7 @@ class Interpreter:
         """
         self._expect_args('reduce', args, 3)
         func_ref, lst, init = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("reduce expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("reduce expects a list as second argument")
@@ -3328,7 +3296,7 @@ class Interpreter:
         """
         self._expect_args('each', args, 2)
         func_ref, lst = args
-        if not isinstance(func_ref, (str, LambdaValue)):
+        if not isinstance(func_ref, (str, LambdaValue, FunctionNode)):
             raise RuntimeError("each expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("each expects a list as second argument")
