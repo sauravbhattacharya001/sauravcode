@@ -1,0 +1,80 @@
+# validation_demo.srv - Data Validation Builtins Demo
+# Run: sauravcode validation_demo.srv
+
+print "=== Data Validation Builtins ==="
+print ""
+
+# Email validation
+print "Email:"
+print is_email "user@example.com"
+print is_email "not-an-email"
+print is_email "test.user+tag@domain.co.uk"
+
+# URL validation
+print ""
+print "URL:"
+print is_url "https://example.com/path?q=1"
+print is_url "ftp://bad.com"
+print is_url "http://localhost:3000"
+
+# IP address validation
+print ""
+print "IP Addresses:"
+print is_ipv4 "192.168.1.1"
+print is_ipv4 "999.1.1.1"
+print is_ipv6 "::1"
+print is_ip "10.0.0.1"
+print is_ip "::1"
+
+# Date validation
+print ""
+print "Dates:"
+print is_date "2026-03-21"
+print is_date "03/21/2026"
+print is_date "not-a-date"
+print is_date "2026-03-21T14:30:00"
+
+# UUID validation
+print ""
+print "UUID:"
+print is_uuid "550e8400-e29b-41d4-a716-446655440000"
+print is_uuid "not-a-uuid"
+
+# Hex color validation
+print ""
+print "Hex Colors:"
+print is_hex_color "#ff0000"
+print is_hex_color "#abc"
+print is_hex_color "red"
+
+# Phone validation
+print ""
+print "Phone Numbers:"
+print is_phone "+14155551234"
+print is_phone "123"
+
+# Credit card validation (Luhn check)
+print ""
+print "Credit Card (Luhn):"
+print is_credit_card "4111111111111111"
+print is_credit_card "1234567890123456"
+
+# JSON validation
+print ""
+print "JSON:"
+print is_json "[1, 2, 3]"
+
+# Multi-rule validate()
+print ""
+print "=== Multi-Rule Validation ==="
+rules1 = ["required", "email", "min_len:5"]
+print validate "user@example.com" rules1
+
+rules2 = ["required", "email"]
+print validate "" rules2
+
+rules3 = ["required", "alpha", "min_len:2", "max_len:10"]
+print validate "abc" rules3
+
+rules4 = ["required", "numeric", "min:0", "max:100"]
+print validate "42" rules4

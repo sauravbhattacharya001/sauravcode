@@ -727,6 +727,9 @@ class Parser:
         'uuid_v4', 'random_bytes', 'random_hex', 'random_string', 'random_float',
         'csv_parse', 'csv_stringify', 'csv_headers', 'csv_select', 'csv_filter',
         'csv_sort', 'csv_read', 'csv_write',
+        'is_email', 'is_url', 'is_ipv4', 'is_ipv6', 'is_ip',
+        'is_date', 'is_uuid', 'is_hex_color', 'is_phone',
+        'is_credit_card', 'is_json', 'validate',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2010,6 +2013,7 @@ class Interpreter:
         self._register_ansi_builtins()
         self._register_random_data_builtins()
         self._register_csv_builtins()
+        self._register_validation_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -3138,6 +3142,220 @@ class Interpreter:
             'csv_sort': _csv_sort,
             'csv_read': _csv_read,
             'csv_write': _csv_write,
+        }
+        for name, fn in _table.items():
+            self.builtins[name] = fn
+
+    def _register_validation_builtins(self):
+        """Register data validation builtins."""
+        import re as _re
+        import json as _json
+
+        _email_re = _re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
+        _url_re = _re.compile(r'^https?://[^\s/$.?#].[^\s]*$', _re.IGNORECASE)
+        _ipv4_re = _re.compile(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')
+        _ipv6_re = _re.compile(r'^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$')
+        _uuid_re = _re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+        _hex_color_re = _re.compile(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$')
+        _phone_re = _re.compile(r'^\+?[1-9]\d{6,14}$')
+        _credit_card_re = _re.compile(r'^\d{13,19}$')
+
+        self_inner = self
+
+        def _is_email(args):
+            self_inner._expect_args('is_email', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            return bool(_email_re.match(args[0]))
+
+        def _is_url(args):
+            self_inner._expect_args('is_url', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            return bool(_url_re.match(args[0]))
+
+        def _is_ipv4(args):
+            self_inner._expect_args('is_ipv4', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            m = _ipv4_re.match(args[0])
+            if not m:
+                return False
+            return all(0 <= int(g) <= 255 for g in m.groups())
+
+        def _is_ipv6(args):
+            self_inner._expect_args('is_ipv6', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            return bool(_ipv6_re.match(args[0]))
+
+        def _is_ip(args):
+            self_inner._expect_args('is_ip', args, 1)
+            return _is_ipv4(args) or _is_ipv6(args)
+
+        def _is_date(args):
+            self_inner._expect_args('is_date', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            from datetime import datetime as _dt
+            for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d',
+                        '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S'):
+                try:
+                    _dt.strptime(args[0], fmt)
+                    return True
+                except ValueError:
+                    continue
+            return False
+
+        def _is_uuid(args):
+            self_inner._expect_args('is_uuid', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            return bool(_uuid_re.match(args[0]))
+
+        def _is_hex_color(args):
+            self_inner._expect_args('is_hex_color', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            return bool(_hex_color_re.match(args[0]))
+
+        def _is_phone(args):
+            self_inner._expect_args('is_phone', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            cleaned = args[0].replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+            return bool(_phone_re.match(cleaned))
+
+        def _is_credit_card(args):
+            self_inner._expect_args('is_credit_card', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            digits = args[0].replace(' ', '').replace('-', '')
+            if not _credit_card_re.match(digits):
+                return False
+            # Luhn algorithm
+            total = 0
+            for i, d in enumerate(reversed(digits)):
+                n = int(d)
+                if i % 2 == 1:
+                    n *= 2
+                    if n > 9:
+                        n -= 9
+                total += n
+            return total % 10 == 0
+
+        def _is_json(args):
+            self_inner._expect_args('is_json', args, 1)
+            if not isinstance(args[0], str):
+                return False
+            try:
+                _json.loads(args[0])
+                return True
+            except (ValueError, TypeError):
+                return False
+
+        def _validate(args):
+            """validate(value, rules) - returns map with valid, errors. rules is a list of rule strings."""
+            if len(args) < 2:
+                raise RuntimeError("validate: requires 2 arguments (value, rules_list)")
+            value = args[0]
+            rules_arg = args[1] if len(args) == 2 else args[1:]
+            if isinstance(rules_arg, list):
+                rules = rules_arg
+            else:
+                rules = [rules_arg]
+            errors = []
+            for rule in rules:
+                if not isinstance(rule, str):
+                    raise RuntimeError(f"validate: rules must be strings, got {type(rule).__name__}")
+                r = rule.lower().strip()
+                if r == 'required':
+                    if value is None or (isinstance(value, str) and value.strip() == ''):
+                        errors.append('Value is required')
+                elif r == 'email':
+                    if not _is_email([value]):
+                        errors.append('Invalid email address')
+                elif r == 'url':
+                    if not _is_url([value]):
+                        errors.append('Invalid URL')
+                elif r == 'ipv4':
+                    if not _is_ipv4([value]):
+                        errors.append('Invalid IPv4 address')
+                elif r == 'ipv6':
+                    if not _is_ipv6([value]):
+                        errors.append('Invalid IPv6 address')
+                elif r == 'ip':
+                    if not _is_ip([value]):
+                        errors.append('Invalid IP address')
+                elif r == 'uuid':
+                    if not _is_uuid([value]):
+                        errors.append('Invalid UUID')
+                elif r == 'date':
+                    if not _is_date([value]):
+                        errors.append('Invalid date')
+                elif r == 'hex_color':
+                    if not _is_hex_color([value]):
+                        errors.append('Invalid hex color')
+                elif r == 'phone':
+                    if not _is_phone([value]):
+                        errors.append('Invalid phone number')
+                elif r == 'credit_card':
+                    if not _is_credit_card([value]):
+                        errors.append('Invalid credit card number')
+                elif r == 'json':
+                    if not _is_json([value]):
+                        errors.append('Invalid JSON')
+                elif r == 'numeric':
+                    if not isinstance(value, (int, float)):
+                        try:
+                            float(value)
+                        except (ValueError, TypeError):
+                            errors.append('Value must be numeric')
+                elif r == 'alpha':
+                    if not isinstance(value, str) or not value.isalpha():
+                        errors.append('Value must contain only letters')
+                elif r == 'alphanumeric':
+                    if not isinstance(value, str) or not value.isalnum():
+                        errors.append('Value must be alphanumeric')
+                elif r.startswith('min_len:'):
+                    min_l = int(r.split(':')[1])
+                    if not isinstance(value, str) or len(value) < min_l:
+                        errors.append(f'Minimum length is {min_l}')
+                elif r.startswith('max_len:'):
+                    max_l = int(r.split(':')[1])
+                    if not isinstance(value, str) or len(value) > max_l:
+                        errors.append(f'Maximum length is {max_l}')
+                elif r.startswith('min:'):
+                    min_v = float(r.split(':')[1])
+                    try:
+                        if float(value) < min_v:
+                            errors.append(f'Value must be at least {min_v}')
+                    except (ValueError, TypeError):
+                        errors.append(f'Value must be at least {min_v}')
+                elif r.startswith('max:'):
+                    max_v = float(r.split(':')[1])
+                    try:
+                        if float(value) > max_v:
+                            errors.append(f'Value must be at most {max_v}')
+                    except (ValueError, TypeError):
+                        errors.append(f'Value must be at most {max_v}')
+                else:
+                    errors.append(f'Unknown rule: {rule}')
+            return {'valid': len(errors) == 0, 'errors': errors}
+
+        _table = {
+            'is_email': _is_email,
+            'is_url': _is_url,
+            'is_ipv4': _is_ipv4,
+            'is_ipv6': _is_ipv6,
+            'is_ip': _is_ip,
+            'is_date': _is_date,
+            'is_uuid': _is_uuid,
+            'is_hex_color': _is_hex_color,
+            'is_phone': _is_phone,
+            'is_credit_card': _is_credit_card,
+            'is_json': _is_json,
+            'validate': _validate,
         }
         for name, fn in _table.items():
             self.builtins[name] = fn
@@ -5834,6 +6052,18 @@ def repl():
                 'csv_sort':      'csv_sort rows col [dir] — sort rows by column (asc/desc)',
                 'csv_read':      'csv_read path [delim]  — read and parse a CSV file',
                 'csv_write':     'csv_write path rows [d] — write CSV data to a file',
+                'is_email':      'is_email str          — true if valid email address',
+                'is_url':        'is_url str            — true if valid HTTP/HTTPS URL',
+                'is_ipv4':       'is_ipv4 str           — true if valid IPv4 address',
+                'is_ipv6':       'is_ipv6 str           — true if valid IPv6 address',
+                'is_ip':         'is_ip str             — true if valid IPv4 or IPv6',
+                'is_date':       'is_date str           — true if parseable date string',
+                'is_uuid':       'is_uuid str           — true if valid UUID format',
+                'is_hex_color':  'is_hex_color str      — true if valid hex color (#RGB/#RRGGBB)',
+                'is_phone':      'is_phone str          — true if valid phone number format',
+                'is_credit_card':'is_credit_card str    — true if valid card number (Luhn)',
+                'is_json':       'is_json str           — true if valid JSON string',
+                'validate':      'validate val rules... — multi-rule validation → {valid, errors}',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):

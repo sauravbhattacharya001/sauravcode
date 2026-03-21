@@ -254,6 +254,25 @@ Sets are unordered collections of unique, hashable values (numbers, strings, boo
 | `csv_read` | `csv_read "file.csv"` | Read and parse a CSV file |
 | `csv_write` | `csv_write "file.csv" (rows)` | Write CSV data to a file |
 
+### Validation
+
+| Function | Usage | Description |
+|----------|-------|-------------|
+| `is_email` | `is_email "user@example.com"` | True if valid email address |
+| `is_url` | `is_url "https://example.com"` | True if valid HTTP/HTTPS URL |
+| `is_ipv4` | `is_ipv4 "192.168.1.1"` | True if valid IPv4 address |
+| `is_ipv6` | `is_ipv6 "::1"` | True if valid IPv6 address |
+| `is_ip` | `is_ip "10.0.0.1"` | True if valid IPv4 or IPv6 address |
+| `is_date` | `is_date "2026-03-21"` | True if parseable date (YYYY-MM-DD, MM/DD/YYYY, etc.) |
+| `is_uuid` | `is_uuid "550e8400-..."` | True if valid UUID format |
+| `is_hex_color` | `is_hex_color "#ff0000"` | True if valid hex color (#RGB, #RRGGBB, #RRGGBBAA) |
+| `is_phone` | `is_phone "+14155551234"` | True if valid phone number format |
+| `is_credit_card` | `is_credit_card "4111111111111111"` | True if valid card number (Luhn algorithm) |
+| `is_json` | `is_json "[1, 2, 3]"` | True if valid JSON string |
+| `validate` | `validate "val" ["required", "email"]` | Multi-rule validation returning `{valid, errors}` |
+
+**Validate rules:** `required`, `email`, `url`, `ipv4`, `ipv6`, `ip`, `uuid`, `date`, `hex_color`, `phone`, `credit_card`, `json`, `numeric`, `alpha`, `alphanumeric`, `min_len:N`, `max_len:N`, `min:N`, `max:N`
+
 ## Operators
 
 Beyond built-in functions, sauravcode supports these operators:
