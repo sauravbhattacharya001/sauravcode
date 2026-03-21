@@ -2205,6 +2205,11 @@ class Interpreter:
         # Sets are represented as Python frozensets internally.
         # Users create them from lists and get lists back.
 
+        # ── Data-driven set builtins ─────────────────────────
+        # sets_create and sets_add/sets_remove have special logic, but
+        # the 7 two-set-arg operators and 2 one-set-arg helpers collapse
+        # into compact tables.
+
         def _sets_create(self_inner, args):
             """sets_create([1, 2, 3]) → set from list (or empty set)"""
             if len(args) == 0:
@@ -2248,40 +2253,34 @@ class Interpreter:
                 raise RuntimeError("sets_contains expects a set as first argument")
             return val in s
 
-        def _sets_union(self_inner, args):
-            """sets_union(a, b) → union of two sets"""
-            self_inner._expect_args('sets_union', args, 2)
-            a, b = args
-            if not isinstance(a, set) or not isinstance(b, set):
-                raise RuntimeError("sets_union expects two sets")
-            return a | b
+        self.builtins['sets_create'] = lambda args: _sets_create(self, args)
+        self.builtins['sets_add'] = lambda args: _sets_add(self, args)
+        self.builtins['sets_remove'] = lambda args: _sets_remove(self, args)
+        self.builtins['sets_contains'] = lambda args: _sets_contains(self, args)
 
-        def _sets_intersection(self_inner, args):
-            """sets_intersection(a, b) → intersection of two sets"""
-            self_inner._expect_args('sets_intersection', args, 2)
-            a, b = args
-            if not isinstance(a, set) or not isinstance(b, set):
-                raise RuntimeError("sets_intersection expects two sets")
-            return a & b
+        # Two-set-arg operators: all share validate-two-sets + apply pattern
+        _SETS_TWO_ARG_TABLE = {
+            'sets_union':          lambda a, b: a | b,
+            'sets_intersection':   lambda a, b: a & b,
+            'sets_difference':     lambda a, b: a - b,
+            'sets_symmetric_diff': lambda a, b: a ^ b,
+            'sets_is_subset':      lambda a, b: a <= b,
+            'sets_is_superset':    lambda a, b: a >= b,
+        }
+        for _name, _op in _SETS_TWO_ARG_TABLE.items():
+            def _make_two_set(n, op):
+                def handler(self_inner, args):
+                    self_inner._expect_args(n, args, 2)
+                    a, b = args
+                    if not isinstance(a, set) or not isinstance(b, set):
+                        raise RuntimeError(f"{n} expects two sets")
+                    return op(a, b)
+                return handler
+            h = _make_two_set(_name, _op)
+            self.builtins[_name] = lambda args, h=h: h(self, args)
 
-        def _sets_difference(self_inner, args):
-            """sets_difference(a, b) → elements in a but not in b"""
-            self_inner._expect_args('sets_difference', args, 2)
-            a, b = args
-            if not isinstance(a, set) or not isinstance(b, set):
-                raise RuntimeError("sets_difference expects two sets")
-            return a - b
-
-        def _sets_symmetric_diff(self_inner, args):
-            """sets_symmetric_diff(a, b) → elements in either but not both"""
-            self_inner._expect_args('sets_symmetric_diff', args, 2)
-            a, b = args
-            if not isinstance(a, set) or not isinstance(b, set):
-                raise RuntimeError("sets_symmetric_diff expects two sets")
-            return a ^ b
-
+        # One-set-arg helpers
         def _sets_size(self_inner, args):
-            """sets_size(s) → number of elements"""
             self_inner._expect_args('sets_size', args, 1)
             s = args[0]
             if not isinstance(s, set):
@@ -2289,7 +2288,6 @@ class Interpreter:
             return len(s)
 
         def _sets_to_list(self_inner, args):
-            """sets_to_list(s) → sorted list of set elements"""
             self_inner._expect_args('sets_to_list', args, 1)
             s = args[0]
             if not isinstance(s, set):
@@ -2299,37 +2297,49 @@ class Interpreter:
             except TypeError:
                 return list(s)
 
-        def _sets_is_subset(self_inner, args):
-            """sets_is_subset(a, b) → true if a ⊆ b"""
-            self_inner._expect_args('sets_is_subset', args, 2)
-            a, b = args
-            if not isinstance(a, set) or not isinstance(b, set):
-                raise RuntimeError("sets_is_subset expects two sets")
-            return a <= b
-
-        def _sets_is_superset(self_inner, args):
-            """sets_is_superset(a, b) → true if a ⊇ b"""
-            self_inner._expect_args('sets_is_superset', args, 2)
-            a, b = args
-            if not isinstance(a, set) or not isinstance(b, set):
-                raise RuntimeError("sets_is_superset expects two sets")
-            return a >= b
-
-        self.builtins['sets_create'] = lambda args: _sets_create(self, args)
-        self.builtins['sets_add'] = lambda args: _sets_add(self, args)
-        self.builtins['sets_remove'] = lambda args: _sets_remove(self, args)
-        self.builtins['sets_contains'] = lambda args: _sets_contains(self, args)
-        self.builtins['sets_union'] = lambda args: _sets_union(self, args)
-        self.builtins['sets_intersection'] = lambda args: _sets_intersection(self, args)
-        self.builtins['sets_difference'] = lambda args: _sets_difference(self, args)
-        self.builtins['sets_symmetric_diff'] = lambda args: _sets_symmetric_diff(self, args)
         self.builtins['sets_size'] = lambda args: _sets_size(self, args)
         self.builtins['sets_to_list'] = lambda args: _sets_to_list(self, args)
-        self.builtins['sets_is_subset'] = lambda args: _sets_is_subset(self, args)
-        self.builtins['sets_is_superset'] = lambda args: _sets_is_superset(self, args)
 
-        # ── Path / filesystem utility builtins ────────────────
+        # ── Data-driven path builtins ─────────────────────────
+        # Pure path builtins (no filesystem access, just string transforms)
+        # share: 1-arg, require string, apply os.path function.
+        _PATH_PURE_TABLE = {
+            'path_dir':  os.path.dirname,
+            'path_base': os.path.basename,
+            'path_ext':  lambda p: os.path.splitext(p)[1],
+            'path_stem': lambda p: os.path.splitext(os.path.basename(p))[0],
+        }
+        for _name, _fn in _PATH_PURE_TABLE.items():
+            def _make_path_pure(n, fn):
+                def handler(self_inner, args):
+                    self_inner._expect_args(n, args, 1)
+                    if not isinstance(args[0], str):
+                        raise RuntimeError(f"{n} expects a string argument")
+                    return fn(args[0])
+                return handler
+            h = _make_path_pure(_name, _fn)
+            self.builtins[_name] = lambda args, h=h: h(self, args)
 
+        # Validated path builtins (need _validate_file_path before filesystem access)
+        _PATH_VALIDATED_TABLE = {
+            'path_abs':    os.path.abspath,
+            'path_exists': os.path.exists,
+            'is_dir':      os.path.isdir,
+            'is_file':     os.path.isfile,
+        }
+        for _name, _fn in _PATH_VALIDATED_TABLE.items():
+            def _make_path_validated(n, fn):
+                def handler(self_inner, args):
+                    self_inner._expect_args(n, args, 1)
+                    if not isinstance(args[0], str):
+                        raise RuntimeError(f"{n} expects a string argument")
+                    self_inner._validate_file_path(n, args[0])
+                    return fn(args[0])
+                return handler
+            h = _make_path_validated(_name, _fn)
+            self.builtins[_name] = lambda args, h=h: h(self, args)
+
+        # Special path builtins with unique logic
         def _path_join(self_inner, args):
             """path_join(parts...) → join path components using OS separator"""
             if len(args) < 1:
@@ -2338,51 +2348,6 @@ class Interpreter:
                 if not isinstance(a, str):
                     raise RuntimeError("path_join: all arguments must be strings")
             return os.path.join(*args)
-
-        def _path_dir(self_inner, args):
-            """path_dir(path) → directory portion of a path"""
-            self_inner._expect_args('path_dir', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("path_dir expects a string argument")
-            return os.path.dirname(args[0])
-
-        def _path_base(self_inner, args):
-            """path_base(path) → filename portion of a path"""
-            self_inner._expect_args('path_base', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("path_base expects a string argument")
-            return os.path.basename(args[0])
-
-        def _path_ext(self_inner, args):
-            """path_ext(path) → file extension including dot (e.g. '.txt')"""
-            self_inner._expect_args('path_ext', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("path_ext expects a string argument")
-            return os.path.splitext(args[0])[1]
-
-        def _path_stem(self_inner, args):
-            """path_stem(path) → filename without extension"""
-            self_inner._expect_args('path_stem', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("path_stem expects a string argument")
-            base = os.path.basename(args[0])
-            return os.path.splitext(base)[0]
-
-        def _path_abs(self_inner, args):
-            """path_abs(path) → absolute path"""
-            self_inner._expect_args('path_abs', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("path_abs expects a string argument")
-            self_inner._validate_file_path('path_abs', args[0])
-            return os.path.abspath(args[0])
-
-        def _path_exists(self_inner, args):
-            """path_exists(path) → true/false whether the path exists"""
-            self_inner._expect_args('path_exists', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("path_exists expects a string argument")
-            self_inner._validate_file_path('path_exists', args[0])
-            return os.path.exists(args[0])
 
         def _list_dir(self_inner, args):
             """list_dir(path) → list of filenames in directory"""
@@ -2403,33 +2368,9 @@ class Interpreter:
             os.makedirs(args[0], exist_ok=True)
             return args[0]
 
-        def _is_dir(self_inner, args):
-            """is_dir(path) → true if path is a directory"""
-            self_inner._expect_args('is_dir', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("is_dir expects a string argument")
-            self_inner._validate_file_path('is_dir', args[0])
-            return os.path.isdir(args[0])
-
-        def _is_file(self_inner, args):
-            """is_file(path) → true if path is a regular file"""
-            self_inner._expect_args('is_file', args, 1)
-            if not isinstance(args[0], str):
-                raise RuntimeError("is_file expects a string argument")
-            self_inner._validate_file_path('is_file', args[0])
-            return os.path.isfile(args[0])
-
         self.builtins['path_join'] = lambda args: _path_join(self, args)
-        self.builtins['path_dir'] = lambda args: _path_dir(self, args)
-        self.builtins['path_base'] = lambda args: _path_base(self, args)
-        self.builtins['path_ext'] = lambda args: _path_ext(self, args)
-        self.builtins['path_stem'] = lambda args: _path_stem(self, args)
-        self.builtins['path_abs'] = lambda args: _path_abs(self, args)
-        self.builtins['path_exists'] = lambda args: _path_exists(self, args)
         self.builtins['list_dir'] = lambda args: _list_dir(self, args)
         self.builtins['make_dir'] = lambda args: _make_dir(self, args)
-        self.builtins['is_dir'] = lambda args: _is_dir(self, args)
-        self.builtins['is_file'] = lambda args: _is_file(self, args)
 
         # --- Combinatorics & advanced collection builtins ---
         self.builtins['sort_by'] = lambda args: self._builtin_sort_by(args)
