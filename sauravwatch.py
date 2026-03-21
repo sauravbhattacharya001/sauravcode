@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -377,7 +378,10 @@ def _execute_and_report(file_path, mode, debug, clear, quiet, stats,
                         notify, on_success, on_failure, initial=False):
     """Execute a file and print results."""
     if clear:
-        os.system("cls" if os.name == "nt" else "clear")
+        if os.name == "nt":
+            subprocess.run("cls", shell=True)
+        else:
+            subprocess.run(["clear"])
 
     now = datetime.now().strftime("%H:%M:%S")
     rel = os.path.relpath(file_path)
@@ -407,15 +411,15 @@ def _execute_and_report(file_path, mode, debug, clear, quiet, stats,
     if notify and not success:
         send_notification("sauravwatch", f"❌ {rel} failed")
 
-    # Hooks
+    # Hooks — use shlex.split to avoid shell injection (no shell=True)
     if success and on_success:
         try:
-            subprocess.run(on_success, shell=True, timeout=10)
+            subprocess.run(shlex.split(on_success), timeout=10)
         except Exception:
             pass
     elif not success and on_failure:
         try:
-            subprocess.run(on_failure, shell=True, timeout=10)
+            subprocess.run(shlex.split(on_failure), timeout=10)
         except Exception:
             pass
 
