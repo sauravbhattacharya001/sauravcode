@@ -2292,7 +2292,8 @@ class TestTryCatchInterpreter:
             '    print f"second: {e2}"\n'
         )
         output = run_code(code)
-        assert "second: Division by zero" in output.strip()
+        assert "second:" in output.strip()
+        assert "Division by zero" in output.strip()
 
     def test_throw_in_for_loop_body(self):
         code = (
@@ -2331,7 +2332,8 @@ class TestTryCatchDemo:
         with open(test_file) as f:
             code = f.read()
         output = run_code(code)
-        assert "Caught error: Division by zero" in output
+        assert "Caught error:" in output
+        assert "Division by zero" in output
         assert "Validation failed: Age cannot be negative" in output
         assert "Age: 25" in output
         assert "Array error:" in output

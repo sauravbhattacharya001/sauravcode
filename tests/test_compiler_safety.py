@@ -637,5 +637,5 @@ class TestCompileEndToEnd:
         code = ('try\n  throw "oops"\ncatch e\n  print e')
         output = compile_to_c(code)
         assert "setjmp" in output
-        # throw compiles to a throw() function call in the generated C
-        assert "throw(" in output
+        # throw compiles to longjmp-based error propagation in the generated C
+        assert "longjmp" in output

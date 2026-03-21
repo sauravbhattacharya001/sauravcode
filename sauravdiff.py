@@ -55,15 +55,16 @@ def _node_hash(node):
     """
     Compute a structural hash of an AST node and its children.
     Two nodes with the same hash are structurally identical.
+    Ignores line_num so position changes don't affect equality.
     """
     if not isinstance(node, ASTNode):
         return hash(repr(node))
 
     parts = [_node_type(node)]
 
-    # Collect scalar attributes
+    # Collect scalar attributes (skip line_num — it's positional, not structural)
     for attr in sorted(vars(node)):
-        if attr.startswith('_'):
+        if attr.startswith('_') or attr == 'line_num':
             continue
         val = getattr(node, attr)
         if isinstance(val, ASTNode):
