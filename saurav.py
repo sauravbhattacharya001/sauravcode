@@ -19,8 +19,62 @@ import math
 import random
 import time as _time
 import contextlib
-from collections import ChainMap
+from collections import ChainMap, deque
 from datetime import datetime as _datetime
+
+
+class _SrvStack:
+    """Stack data structure for sauravcode (LIFO)."""
+    __slots__ = ('_data',)
+    def __init__(self, items=None):
+        self._data = list(items) if items else []
+    def push(self, val):
+        self._data.append(val)
+    def pop(self):
+        if not self._data:
+            raise RuntimeError("stack_pop: stack is empty")
+        return self._data.pop()
+    def peek(self):
+        if not self._data:
+            raise RuntimeError("stack_peek: stack is empty")
+        return self._data[-1]
+    def size(self):
+        return len(self._data)
+    def is_empty(self):
+        return len(self._data) == 0
+    def to_list(self):
+        return list(self._data)
+    def clear(self):
+        self._data.clear()
+    def __repr__(self):
+        return f"Stack({self._data})"
+
+
+class _SrvQueue:
+    """Queue data structure for sauravcode (FIFO)."""
+    __slots__ = ('_data',)
+    def __init__(self, items=None):
+        self._data = deque(items) if items else deque()
+    def enqueue(self, val):
+        self._data.append(val)
+    def dequeue(self):
+        if not self._data:
+            raise RuntimeError("queue_dequeue: queue is empty")
+        return self._data.popleft()
+    def peek(self):
+        if not self._data:
+            raise RuntimeError("queue_peek: queue is empty")
+        return self._data[0]
+    def size(self):
+        return len(self._data)
+    def is_empty(self):
+        return len(self._data) == 0
+    def to_list(self):
+        return list(self._data)
+    def clear(self):
+        self._data.clear()
+    def __repr__(self):
+        return f"Queue({list(self._data)})"
 
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
@@ -657,6 +711,10 @@ class Parser:
         'sets_create', 'sets_add', 'sets_remove', 'sets_contains',
         'sets_union', 'sets_intersection', 'sets_difference', 'sets_symmetric_diff',
         'sets_size', 'sets_to_list', 'sets_is_subset', 'sets_is_superset',
+        'stack_create', 'stack_push', 'stack_pop', 'stack_peek',
+        'stack_size', 'stack_is_empty', 'stack_to_list', 'stack_clear',
+        'queue_create', 'queue_enqueue', 'queue_dequeue', 'queue_peek',
+        'queue_size', 'queue_is_empty', 'queue_to_list', 'queue_clear',
         'path_join', 'path_dir', 'path_base', 'path_ext', 'path_stem',
         'path_abs', 'path_exists', 'list_dir', 'make_dir', 'is_dir', 'is_file',
         'sort_by', 'min_by', 'max_by', 'partition', 'rotate',
@@ -674,7 +732,8 @@ class Parser:
     # Builtins that take zero arguments — auto-called when used standalone
     ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
-        'env_list', 'uuid_v4', 'random_float'})
+        'env_list', 'uuid_v4', 'random_float',
+        'stack_create', 'queue_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -2299,6 +2358,163 @@ class Interpreter:
 
         self.builtins['sets_size'] = lambda args: _sets_size(self, args)
         self.builtins['sets_to_list'] = lambda args: _sets_to_list(self, args)
+
+        # ── Stack & Queue builtins ────────────────────────────
+        # Stack: LIFO data structure (push/pop from top)
+        # Queue: FIFO data structure (enqueue at back, dequeue from front)
+
+        def _stack_create(self_inner, args):
+            """stack_create() → empty stack; stack_create([1,2,3]) → stack from list"""
+            if len(args) == 0:
+                return _SrvStack()
+            self_inner._expect_args('stack_create', args, 1)
+            if not isinstance(args[0], list):
+                raise RuntimeError("stack_create expects a list argument")
+            return _SrvStack(args[0])
+
+        def _stack_push(self_inner, args):
+            """stack_push(s, value) → pushes value, returns stack"""
+            self_inner._expect_args('stack_push', args, 2)
+            s, val = args
+            if not isinstance(s, _SrvStack):
+                raise RuntimeError("stack_push expects a stack as first argument")
+            s.push(val)
+            return s
+
+        def _stack_pop(self_inner, args):
+            """stack_pop(s) → removes and returns top element"""
+            self_inner._expect_args('stack_pop', args, 1)
+            s = args[0]
+            if not isinstance(s, _SrvStack):
+                raise RuntimeError("stack_pop expects a stack as first argument")
+            return s.pop()
+
+        def _stack_peek(self_inner, args):
+            """stack_peek(s) → returns top element without removing"""
+            self_inner._expect_args('stack_peek', args, 1)
+            s = args[0]
+            if not isinstance(s, _SrvStack):
+                raise RuntimeError("stack_peek expects a stack as first argument")
+            return s.peek()
+
+        def _stack_size(self_inner, args):
+            """stack_size(s) → number of elements"""
+            self_inner._expect_args('stack_size', args, 1)
+            s = args[0]
+            if not isinstance(s, _SrvStack):
+                raise RuntimeError("stack_size expects a stack as first argument")
+            return s.size()
+
+        def _stack_is_empty(self_inner, args):
+            """stack_is_empty(s) → true/false"""
+            self_inner._expect_args('stack_is_empty', args, 1)
+            s = args[0]
+            if not isinstance(s, _SrvStack):
+                raise RuntimeError("stack_is_empty expects a stack as first argument")
+            return s.is_empty()
+
+        def _stack_to_list(self_inner, args):
+            """stack_to_list(s) → list of elements (bottom to top)"""
+            self_inner._expect_args('stack_to_list', args, 1)
+            s = args[0]
+            if not isinstance(s, _SrvStack):
+                raise RuntimeError("stack_to_list expects a stack as first argument")
+            return s.to_list()
+
+        def _stack_clear(self_inner, args):
+            """stack_clear(s) → clears all elements, returns stack"""
+            self_inner._expect_args('stack_clear', args, 1)
+            s = args[0]
+            if not isinstance(s, _SrvStack):
+                raise RuntimeError("stack_clear expects a stack as first argument")
+            s.clear()
+            return s
+
+        self.builtins['stack_create'] = lambda args: _stack_create(self, args)
+        self.builtins['stack_push'] = lambda args: _stack_push(self, args)
+        self.builtins['stack_pop'] = lambda args: _stack_pop(self, args)
+        self.builtins['stack_peek'] = lambda args: _stack_peek(self, args)
+        self.builtins['stack_size'] = lambda args: _stack_size(self, args)
+        self.builtins['stack_is_empty'] = lambda args: _stack_is_empty(self, args)
+        self.builtins['stack_to_list'] = lambda args: _stack_to_list(self, args)
+        self.builtins['stack_clear'] = lambda args: _stack_clear(self, args)
+
+        # Queue builtins
+        def _queue_create(self_inner, args):
+            """queue_create() → empty queue; queue_create([1,2,3]) → queue from list"""
+            if len(args) == 0:
+                return _SrvQueue()
+            self_inner._expect_args('queue_create', args, 1)
+            if not isinstance(args[0], list):
+                raise RuntimeError("queue_create expects a list argument")
+            return _SrvQueue(args[0])
+
+        def _queue_enqueue(self_inner, args):
+            """queue_enqueue(q, value) → adds value to back, returns queue"""
+            self_inner._expect_args('queue_enqueue', args, 2)
+            q, val = args
+            if not isinstance(q, _SrvQueue):
+                raise RuntimeError("queue_enqueue expects a queue as first argument")
+            q.enqueue(val)
+            return q
+
+        def _queue_dequeue(self_inner, args):
+            """queue_dequeue(q) → removes and returns front element"""
+            self_inner._expect_args('queue_dequeue', args, 1)
+            q = args[0]
+            if not isinstance(q, _SrvQueue):
+                raise RuntimeError("queue_dequeue expects a queue as first argument")
+            return q.dequeue()
+
+        def _queue_peek(self_inner, args):
+            """queue_peek(q) → returns front element without removing"""
+            self_inner._expect_args('queue_peek', args, 1)
+            q = args[0]
+            if not isinstance(q, _SrvQueue):
+                raise RuntimeError("queue_peek expects a queue as first argument")
+            return q.peek()
+
+        def _queue_size(self_inner, args):
+            """queue_size(q) → number of elements"""
+            self_inner._expect_args('queue_size', args, 1)
+            q = args[0]
+            if not isinstance(q, _SrvQueue):
+                raise RuntimeError("queue_size expects a queue as first argument")
+            return q.size()
+
+        def _queue_is_empty(self_inner, args):
+            """queue_is_empty(q) → true/false"""
+            self_inner._expect_args('queue_is_empty', args, 1)
+            q = args[0]
+            if not isinstance(q, _SrvQueue):
+                raise RuntimeError("queue_is_empty expects a queue as first argument")
+            return q.is_empty()
+
+        def _queue_to_list(self_inner, args):
+            """queue_to_list(q) → list of elements (front to back)"""
+            self_inner._expect_args('queue_to_list', args, 1)
+            q = args[0]
+            if not isinstance(q, _SrvQueue):
+                raise RuntimeError("queue_to_list expects a queue as first argument")
+            return q.to_list()
+
+        def _queue_clear(self_inner, args):
+            """queue_clear(q) → clears all elements, returns queue"""
+            self_inner._expect_args('queue_clear', args, 1)
+            q = args[0]
+            if not isinstance(q, _SrvQueue):
+                raise RuntimeError("queue_clear expects a queue as first argument")
+            q.clear()
+            return q
+
+        self.builtins['queue_create'] = lambda args: _queue_create(self, args)
+        self.builtins['queue_enqueue'] = lambda args: _queue_enqueue(self, args)
+        self.builtins['queue_dequeue'] = lambda args: _queue_dequeue(self, args)
+        self.builtins['queue_peek'] = lambda args: _queue_peek(self, args)
+        self.builtins['queue_size'] = lambda args: _queue_size(self, args)
+        self.builtins['queue_is_empty'] = lambda args: _queue_is_empty(self, args)
+        self.builtins['queue_to_list'] = lambda args: _queue_to_list(self, args)
+        self.builtins['queue_clear'] = lambda args: _queue_clear(self, args)
 
         # ── Data-driven path builtins ─────────────────────────
         # Pure path builtins (no filesystem access, just string transforms)
@@ -4653,6 +4869,10 @@ class Interpreter:
             print(_format_map(value))
         elif isinstance(value, set):
             print(_format_set(value))
+        elif isinstance(value, _SrvStack):
+            print(f"Stack({_format_list(value.to_list())})")
+        elif isinstance(value, _SrvQueue):
+            print(f"Queue({_format_list(value.to_list())})")
         elif isinstance(value, GeneratorValue):
             print(repr(value))
         else:
