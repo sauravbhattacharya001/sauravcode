@@ -4031,6 +4031,30 @@ class Interpreter:
 
     # --- HTTP built-ins ---
 
+    @staticmethod
+    def _is_private_ip(hostname):
+        """Check if a hostname resolves to a private/internal IP address.
+
+        Blocks SSRF attacks by preventing requests to:
+        - Loopback addresses (127.0.0.0/8, ::1)
+        - Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+        - Link-local (169.254.0.0/16) including cloud metadata endpoints
+        - IPv6 private ranges (fc00::/7, fe80::/10)
+        """
+        import ipaddress
+        import socket
+        try:
+            for family, _type, _proto, _canon, sockaddr in socket.getaddrinfo(
+                hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM
+            ):
+                ip = ipaddress.ip_address(sockaddr[0])
+                if (ip.is_private or ip.is_loopback or ip.is_link_local
+                        or ip.is_reserved or ip.is_multicast):
+                    return True
+        except (socket.gaierror, ValueError, OSError):
+            return False
+        return False
+
     def _http_request(self, method, url, body=None, headers=None):
         """Perform an HTTP request and return a map with status, body, and headers."""
         import urllib.request
@@ -4040,6 +4064,18 @@ class Interpreter:
             raise RuntimeError(f"http_{method.lower()} expects a string URL")
         if not url.startswith(('http://', 'https://')):
             raise RuntimeError(f"http_{method.lower()}: URL must start with http:// or https://")
+
+        # SSRF protection: block requests to private/internal network addresses.
+        # This is critical when sauravcode programs are served via sauravapi,
+        # where untrusted input could probe internal services or cloud metadata.
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if hostname and self._is_private_ip(hostname):
+            raise RuntimeError(
+                f"http_{method.lower()}: requests to private/internal network "
+                f"addresses are blocked for security (SSRF protection)"
+            )
 
         req_headers = {'User-Agent': 'sauravcode/1.0'}
         if headers and isinstance(headers, dict):
