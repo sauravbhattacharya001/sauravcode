@@ -234,8 +234,12 @@ class APIHandler(BaseHTTPRequestHandler):
             for p, v in zip(params, arg_values):
                 req_interp.variables[p] = v
 
-            # Execute function body with a timeout guard
+            # Execute function body with a timeout guard.
+            # We use ctypes to raise an exception in the worker thread
+            # so it actually stops (daemon threads keep consuming CPU).
+            import ctypes
             result = None
+            exec_error = [None]
             from saurav import ReturnSignal
             timed_out = [False]
 
@@ -246,18 +250,33 @@ class APIHandler(BaseHTTPRequestHandler):
                         req_interp.interpret(stmt)
                 except ReturnSignal as r:
                     result = r.value
+                except SystemExit:
+                    pass  # raised by timeout kill
+                except Exception as e:
+                    exec_error[0] = e
 
             thread = threading.Thread(target=_execute, daemon=True)
             thread.start()
             thread.join(timeout=MAX_EXEC_TIME)
             if thread.is_alive():
                 timed_out[0] = True
+                # Best-effort: raise SystemExit in the worker thread
+                try:
+                    ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                        ctypes.c_ulong(thread.ident),
+                        ctypes.py_object(SystemExit),
+                    )
+                except Exception:
+                    pass  # platform may not support this
 
             if timed_out[0]:
                 self._json_response(504, {
                     "error": f"Function '{fn_name}' exceeded {MAX_EXEC_TIME}s execution limit."
                 })
                 return
+
+            if exec_error[0] is not None:
+                raise exec_error[0]
 
             elapsed = time.monotonic() - t0
             output = stdout_capture.getvalue()
@@ -286,8 +305,14 @@ class APIHandler(BaseHTTPRequestHandler):
 # Server entry point
 # ---------------------------------------------------------------------------
 
-def serve(srv_path, port=8480, cors=False):
-    """Load the .srv file and start the API server."""
+def serve(srv_path, port=8480, host="127.0.0.1", cors=False):
+    """Load the .srv file and start the API server.
+
+    Args:
+        host: Bind address. Defaults to 127.0.0.1 (localhost only) for
+              security — use 0.0.0.0 explicitly via --host to expose to
+              the network.
+    """
     print(f"Loading {srv_path}...")
     interp = load_srv(srv_path)
 
@@ -313,10 +338,12 @@ def serve(srv_path, port=8480, cors=False):
         param_str = " ".join(params) if params else "(no params)"
         print(f"  POST /{name}  — {param_str}")
 
-    print(f"\nServing on http://localhost:{port}")
+    if host != "127.0.0.1":
+        print(f"\n⚠️  WARNING: Binding to {host} — server is accessible from the network!")
+    print(f"\nServing on http://{host}:{port}")
     print("Press Ctrl+C to stop.\n")
 
-    server = HTTPServer(("", port), APIHandler)
+    server = HTTPServer((host, port), APIHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -357,8 +384,12 @@ def main():
     )
     parser.add_argument("source", help="Path to .srv file")
     parser.add_argument("--port", type=int, default=8480, help="Port (default 8480)")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Bind address (default 127.0.0.1; use 0.0.0.0 to expose)")
     parser.add_argument("--cors", action="store_true", help="Enable CORS headers")
     parser.add_argument("--list", action="store_true", help="List endpoints and exit")
+    parser.add_argument("--max-body-size", type=int, default=MAX_BODY_SIZE,
+                        help=f"Max request body bytes (default {MAX_BODY_SIZE})")
 
     args = parser.parse_args()
 
@@ -366,10 +397,12 @@ def main():
         print(f"Error: File '{args.source}' not found.", file=sys.stderr)
         sys.exit(1)
 
+    APIHandler.max_body_size = args.max_body_size
+
     if args.list:
         list_endpoints(args.source)
     else:
-        serve(args.source, port=args.port, cors=args.cors)
+        serve(args.source, port=args.port, host=args.host, cors=args.cors)
 
 
 if __name__ == "__main__":
