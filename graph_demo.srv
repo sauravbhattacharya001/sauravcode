@@ -1,0 +1,101 @@
+# Graph builtins demo for sauravcode
+# Demonstrates: create, add nodes/edges, traversal, shortest path
+
+# Create an undirected graph
+g = graph_create
+
+# Build a small city map
+graph_add_edge (g) "Seattle" "Portland" 174
+graph_add_edge (g) "Seattle" "Spokane" 280
+graph_add_edge (g) "Portland" "Boise" 431
+graph_add_edge (g) "Spokane" "Boise" 305
+graph_add_edge (g) "Boise" "SaltLake" 340
+graph_add_edge (g) "Portland" "SanFrancisco" 636
+
+print "=== City Graph ==="
+print g
+print ""
+
+# List all nodes
+nodes = graph_nodes g
+print "Nodes:"
+print nodes
+
+# List all edges
+edges = graph_edges g
+print "Edges:"
+for edge in edges
+    print edge
+
+# Check connections
+nbrs = graph_neighbors (g) "Seattle"
+print ""
+print "Seattle neighbors:"
+print nbrs
+
+deg = graph_degree (g) "Seattle"
+print "Seattle degree:"
+print deg
+
+has_p = graph_has_node (g) "Portland"
+print "Has Portland?"
+print has_p
+
+has_d = graph_has_node (g) "Denver"
+print "Has Denver?"
+print has_d
+
+has_edge = graph_has_edge (g) "Seattle" "Portland"
+print "Edge Seattle-Portland?"
+print has_edge
+
+# BFS from Seattle
+print ""
+bfs_result = graph_bfs (g) "Seattle"
+print "BFS from Seattle:"
+print bfs_result
+
+# DFS from Seattle
+dfs_result = graph_dfs (g) "Seattle"
+print "DFS from Seattle:"
+print dfs_result
+
+# Shortest path
+print ""
+path = graph_shortest_path (g) "Seattle" "SaltLake"
+print "Shortest path Seattle -> SaltLake:"
+print path
+
+# Connected check
+conn = graph_connected (g) "Seattle" "SaltLake"
+print "Seattle connected to SaltLake?"
+print conn
+
+# Add isolated node
+graph_add_node (g) "Anchorage"
+conn2 = graph_connected (g) "Anchorage" "Seattle"
+print "Anchorage connected to Seattle?"
+print conn2
+
+# Directed graph example
+print ""
+print "=== Directed Graph ==="
+dg = graph_create true
+graph_add_edge (dg) "A" "B" 1
+graph_add_edge (dg) "B" "C" 1
+graph_add_edge (dg) "C" "A" 1
+print dg
+a_nbrs = graph_neighbors (dg) "A"
+print "A neighbors:"
+print a_nbrs
+b_nbrs = graph_neighbors (dg) "B"
+print "B neighbors:"
+print b_nbrs
+
+# Remove edge
+graph_remove_edge (g) "Seattle" "Spokane"
+print ""
+print "After removing Seattle-Spokane edge:"
+nbrs2 = graph_neighbors (g) "Seattle"
+print "Seattle neighbors:"
+print nbrs2

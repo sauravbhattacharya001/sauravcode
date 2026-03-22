@@ -76,6 +76,128 @@ class _SrvQueue:
     def __repr__(self):
         return f"Queue({list(self._data)})"
 
+
+class _SrvGraph:
+    """Graph data structure for sauravcode (adjacency list, undirected by default)."""
+    __slots__ = ('_adj', '_directed')
+    def __init__(self, directed=False):
+        self._adj = {}  # node -> set of (neighbor, weight)
+        self._directed = directed
+    def add_node(self, node):
+        if node not in self._adj:
+            self._adj[node] = set()
+    def add_edge(self, u, v, weight=1):
+        self.add_node(u)
+        self.add_node(v)
+        self._adj[u].add((v, weight))
+        if not self._directed:
+            self._adj[v].add((u, weight))
+    def remove_node(self, node):
+        if node not in self._adj:
+            raise RuntimeError(f"graph_remove_node: node {node!r} not found")
+        del self._adj[node]
+        for n in self._adj:
+            self._adj[n] = {(nb, w) for nb, w in self._adj[n] if nb != node}
+    def remove_edge(self, u, v):
+        if u not in self._adj:
+            raise RuntimeError(f"graph_remove_edge: node {u!r} not found")
+        self._adj[u] = {(nb, w) for nb, w in self._adj[u] if nb != v}
+        if not self._directed:
+            if v in self._adj:
+                self._adj[v] = {(nb, w) for nb, w in self._adj[v] if nb != u}
+    def has_node(self, node):
+        return node in self._adj
+    def has_edge(self, u, v):
+        if u not in self._adj:
+            return False
+        return any(nb == v for nb, _ in self._adj[u])
+    def neighbors(self, node):
+        if node not in self._adj:
+            raise RuntimeError(f"graph_neighbors: node {node!r} not found")
+        return sorted([nb for nb, _ in self._adj[node]], key=lambda x: str(x))
+    def nodes(self):
+        return sorted(self._adj.keys(), key=lambda x: str(x))
+    def edges(self):
+        seen = set()
+        result = []
+        for u in sorted(self._adj.keys(), key=lambda x: str(x)):
+            for v, w in sorted(self._adj[u], key=lambda x: str(x[0])):
+                key = (u, v) if self._directed else tuple(sorted([str(u), str(v)]))
+                if key not in seen:
+                    seen.add(key)
+                    result.append([u, v, w])
+        return result
+    def degree(self, node):
+        if node not in self._adj:
+            raise RuntimeError(f"graph_degree: node {node!r} not found")
+        return len(self._adj[node])
+    def bfs(self, start):
+        if start not in self._adj:
+            raise RuntimeError(f"graph_bfs: node {start!r} not found")
+        visited = []
+        seen = {start}
+        queue = deque([start])
+        while queue:
+            node = queue.popleft()
+            visited.append(node)
+            for nb, _ in sorted(self._adj.get(node, set()), key=lambda x: str(x[0])):
+                if nb not in seen:
+                    seen.add(nb)
+                    queue.append(nb)
+        return visited
+    def dfs(self, start):
+        if start not in self._adj:
+            raise RuntimeError(f"graph_dfs: node {start!r} not found")
+        visited = []
+        seen = set()
+        stack = [start]
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            visited.append(node)
+            for nb, _ in sorted(self._adj.get(node, set()), key=lambda x: str(x[0]), reverse=True):
+                if nb not in seen:
+                    stack.append(nb)
+        return visited
+    def shortest_path(self, start, end):
+        if start not in self._adj:
+            raise RuntimeError(f"graph_shortest_path: node {start!r} not found")
+        if end not in self._adj:
+            raise RuntimeError(f"graph_shortest_path: node {end!r} not found")
+        import heapq
+        dist = {start: 0}
+        prev = {start: None}
+        pq = [(0, str(start), start)]
+        while pq:
+            d, _, node = heapq.heappop(pq)
+            if node == end:
+                path = []
+                while node is not None:
+                    path.append(node)
+                    node = prev[node]
+                return list(reversed(path))
+            if d > dist.get(node, float('inf')):
+                continue
+            for nb, w in self._adj.get(node, set()):
+                nd = d + w
+                if nd < dist.get(nb, float('inf')):
+                    dist[nb] = nd
+                    prev[nb] = node
+                    heapq.heappush(pq, (nd, str(nb), nb))
+        return []  # no path
+    def connected(self, u, v):
+        if u not in self._adj or v not in self._adj:
+            return False
+        return v in self.bfs(u)
+    def __repr__(self):
+        n = len(self._adj)
+        e = len(self.edges())
+        kind = "Directed" if self._directed else "Undirected"
+        return f"Graph({kind}, {n} nodes, {e} edges)"
+
+
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
 
@@ -738,13 +860,17 @@ class Parser:
         'color_to_rgb', 'color_to_hex', 'color_to_hsl',
         're_test', 're_match', 're_search', 're_find_all',
         're_replace', 're_split', 're_escape',
+        'graph_create', 'graph_add_node', 'graph_add_edge', 'graph_neighbors',
+        'graph_nodes', 'graph_edges', 'graph_has_node', 'graph_has_edge',
+        'graph_degree', 'graph_remove_node', 'graph_remove_edge',
+        'graph_bfs', 'graph_dfs', 'graph_shortest_path', 'graph_connected',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
     ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
-        'stack_create', 'queue_create', 'cache_create'})
+        'stack_create', 'queue_create', 'cache_create', 'graph_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -3730,6 +3856,139 @@ class Interpreter:
         self.builtins['re_replace'] = _re_replace
         self.builtins['re_split'] = _re_split
         self.builtins['re_escape'] = _re_escape
+
+        # ── Graph builtins ──
+        def _graph_create(args):
+            if len(args) == 0:
+                return _SrvGraph()
+            interpreter._expect_args('graph_create', args, 1)
+            directed = args[0]
+            if not isinstance(directed, bool):
+                raise RuntimeError("graph_create expects a boolean (true for directed)")
+            return _SrvGraph(directed)
+
+        def _graph_add_node(args):
+            interpreter._expect_args('graph_add_node', args, 2)
+            g, node = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_add_node: first argument must be a graph")
+            g.add_node(node)
+            return g
+
+        def _graph_add_edge(args):
+            if len(args) == 3:
+                g, u, v = args
+                w = 1
+            elif len(args) == 4:
+                g, u, v, w = args
+            else:
+                raise RuntimeError("graph_add_edge expects 3 or 4 arguments: (graph, u, v[, weight])")
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_add_edge: first argument must be a graph")
+            g.add_edge(u, v, w)
+            return g
+
+        def _graph_neighbors(args):
+            interpreter._expect_args('graph_neighbors', args, 2)
+            g, node = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_neighbors: first argument must be a graph")
+            return g.neighbors(node)
+
+        def _graph_nodes(args):
+            interpreter._expect_args('graph_nodes', args, 1)
+            g = args[0]
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_nodes: argument must be a graph")
+            return g.nodes()
+
+        def _graph_edges(args):
+            interpreter._expect_args('graph_edges', args, 1)
+            g = args[0]
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_edges: argument must be a graph")
+            return g.edges()
+
+        def _graph_has_node(args):
+            interpreter._expect_args('graph_has_node', args, 2)
+            g, node = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_has_node: first argument must be a graph")
+            return g.has_node(node)
+
+        def _graph_has_edge(args):
+            interpreter._expect_args('graph_has_edge', args, 3)
+            g, u, v = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_has_edge: first argument must be a graph")
+            return g.has_edge(u, v)
+
+        def _graph_degree(args):
+            interpreter._expect_args('graph_degree', args, 2)
+            g, node = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_degree: first argument must be a graph")
+            return g.degree(node)
+
+        def _graph_remove_node(args):
+            interpreter._expect_args('graph_remove_node', args, 2)
+            g, node = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_remove_node: first argument must be a graph")
+            g.remove_node(node)
+            return g
+
+        def _graph_remove_edge(args):
+            interpreter._expect_args('graph_remove_edge', args, 3)
+            g, u, v = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_remove_edge: first argument must be a graph")
+            g.remove_edge(u, v)
+            return g
+
+        def _graph_bfs(args):
+            interpreter._expect_args('graph_bfs', args, 2)
+            g, start = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_bfs: first argument must be a graph")
+            return g.bfs(start)
+
+        def _graph_dfs(args):
+            interpreter._expect_args('graph_dfs', args, 2)
+            g, start = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_dfs: first argument must be a graph")
+            return g.dfs(start)
+
+        def _graph_shortest_path(args):
+            interpreter._expect_args('graph_shortest_path', args, 3)
+            g, start, end = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_shortest_path: first argument must be a graph")
+            return g.shortest_path(start, end)
+
+        def _graph_connected(args):
+            interpreter._expect_args('graph_connected', args, 3)
+            g, u, v = args
+            if not isinstance(g, _SrvGraph):
+                raise RuntimeError("graph_connected: first argument must be a graph")
+            return g.connected(u, v)
+
+        self.builtins['graph_create'] = _graph_create
+        self.builtins['graph_add_node'] = _graph_add_node
+        self.builtins['graph_add_edge'] = _graph_add_edge
+        self.builtins['graph_neighbors'] = _graph_neighbors
+        self.builtins['graph_nodes'] = _graph_nodes
+        self.builtins['graph_edges'] = _graph_edges
+        self.builtins['graph_has_node'] = _graph_has_node
+        self.builtins['graph_has_edge'] = _graph_has_edge
+        self.builtins['graph_degree'] = _graph_degree
+        self.builtins['graph_remove_node'] = _graph_remove_node
+        self.builtins['graph_remove_edge'] = _graph_remove_edge
+        self.builtins['graph_bfs'] = _graph_bfs
+        self.builtins['graph_dfs'] = _graph_dfs
+        self.builtins['graph_shortest_path'] = _graph_shortest_path
+        self.builtins['graph_connected'] = _graph_connected
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

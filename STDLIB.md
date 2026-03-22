@@ -301,6 +301,28 @@ Sets are unordered collections of unique, hashable values (numbers, strings, boo
 | `re_split` | `re_split "[,;\\s]+" "a, b; c"` | Split by pattern → list; optional 3rd arg limits splits |
 | `re_escape` | `re_escape "$10.00"` | Escape special regex characters for literal matching |
 
+## Graph Data Structure
+
+Create and manipulate graphs with adjacency-list representation. Supports both undirected (default) and directed graphs, weighted edges, traversals, and shortest path.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `graph_create` | `g = graph_create` | Create empty undirected graph; `graph_create true` for directed |
+| `graph_add_node` | `graph_add_node (g) "A"` | Add a node (idempotent), returns graph |
+| `graph_add_edge` | `graph_add_edge (g) "A" "B" 5` | Add edge with optional weight (default 1), returns graph |
+| `graph_remove_node` | `graph_remove_node (g) "A"` | Remove node and all its edges, returns graph |
+| `graph_remove_edge` | `graph_remove_edge (g) "A" "B"` | Remove edge between two nodes, returns graph |
+| `graph_has_node` | `graph_has_node (g) "A"` | Check if node exists → `true`/`false` |
+| `graph_has_edge` | `graph_has_edge (g) "A" "B"` | Check if edge exists → `true`/`false` |
+| `graph_neighbors` | `graph_neighbors (g) "A"` | Get sorted list of neighbor nodes |
+| `graph_nodes` | `graph_nodes g` | Get sorted list of all nodes |
+| `graph_edges` | `graph_edges g` | Get list of `[u, v, weight]` edges |
+| `graph_degree` | `graph_degree (g) "A"` | Number of edges for a node |
+| `graph_bfs` | `graph_bfs (g) "A"` | Breadth-first traversal from node → list |
+| `graph_dfs` | `graph_dfs (g) "A"` | Depth-first traversal from node → list |
+| `graph_shortest_path` | `graph_shortest_path (g) "A" "D"` | Dijkstra's shortest path → list of nodes (empty if no path) |
+| `graph_connected` | `graph_connected (g) "A" "D"` | Check if two nodes are connected → `true`/`false` |
+
 ## Operators
 
 Beyond built-in functions, sauravcode supports these operators:
