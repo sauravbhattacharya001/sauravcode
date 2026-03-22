@@ -336,3 +336,21 @@ Beyond built-in functions, sauravcode supports these operators:
 | `*` on strings/lists | Repetition (guarded) | `"ab" * 3` → `"ababab"` |
 | `+` on strings | Concatenation | `"hello" + " " + "world"` |
 | `+` on lists | Concatenation | `[1 2] + [3 4]` → `[1, 2, 3, 4]` |
+
+## JSON Manipulation
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `json_encode(value)` | Convert value to JSON string | `json_encode({"a": 1})` → `'{"a": 1}'` |
+| `json_decode(str)` | Parse JSON string to value | `json_decode('{"a": 1}')` → `{"a": 1}` |
+| `json_pretty(value)` | Pretty-print with 2-space indent | `json_pretty({"a": 1})` |
+| `json_pretty(value, n)` | Pretty-print with n-space indent | `json_pretty(obj, 4)` |
+| `json_get(obj, path)` | Get nested value by dot-path | `json_get(obj, "user.name")` |
+| `json_set(obj, path, val)` | Set nested value (returns copy) | `json_set(obj, "user.name", "Bob")` |
+| `json_delete(obj, path)` | Delete key at path (returns copy) | `json_delete(obj, "user.age")` |
+| `json_keys(map)` | Get list of keys | `json_keys({"a": 1, "b": 2})` → `["a", "b"]` |
+| `json_values(map)` | Get list of values | `json_values({"a": 1})` → `[1]` |
+| `json_has(obj, path)` | Check if dot-path exists | `json_has(obj, "user.email")` → `false` |
+| `json_merge(a, b)` | Merge two maps (b overrides a) | `json_merge(defaults, overrides)` |
+| `json_flatten(obj)` | Flatten nested map to dot-paths | `json_flatten({"a": {"b": 1}})` → `{"a.b": 1}` |
+| `json_query(obj, key, val)` | Find all sub-objects where key==val | `json_query(data, "role", "admin")` |

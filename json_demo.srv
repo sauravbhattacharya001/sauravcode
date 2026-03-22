@@ -1,0 +1,93 @@
+# JSON manipulation builtins demo for sauravcode
+
+# Encode a map to a JSON string
+person = {"name": "Alice", "age": 30, "city": "Seattle"}
+json_str = json_encode person
+print "Encoded:"
+print json_str
+
+# Decode a JSON string back to a map
+decoded = json_decode json_str
+print ""
+print "Decoded name:"
+print decoded["name"]
+
+# Pretty-print with indentation
+print ""
+print "Pretty:"
+pretty = json_pretty person
+print pretty
+
+# Build nested structure with json_set
+nested = {}
+nested = json_set (nested) "user.profile.name" "Bob"
+nested = json_set (nested) "user.profile.city" "Seattle"
+print ""
+print "Built nested:"
+print (json_pretty nested)
+
+# Deep get with dot-path
+deep_name = json_get (nested) "user.profile.name"
+print ""
+print "Deep get name:"
+print deep_name
+
+# Deep set (returns new object, original unchanged)
+updated = json_set (nested) "user.profile.name" "Charlie"
+new_name = json_get (updated) "user.profile.name"
+orig_name = json_get (nested) "user.profile.name"
+print ""
+print "Updated:"
+print new_name
+print "Original:"
+print orig_name
+
+# Delete a key
+trimmed = json_delete (person) "age"
+trimmed_json = json_encode trimmed
+print ""
+print "After delete:"
+print trimmed_json
+
+# Keys and values
+k = json_keys person
+v = json_values person
+print ""
+print "Keys:"
+print k
+print "Values:"
+print v
+
+# Check path existence
+has_city = json_has (person) "city"
+has_email = json_has (person) "email"
+print ""
+print "Has city:"
+print has_city
+print "Has email:"
+print has_email
+
+# Merge two maps
+defaults = {"theme": "light", "lang": "en"}
+overrides = {"theme": "dark"}
+config = json_merge (defaults) overrides
+config_json = json_encode config
+print ""
+print "Merged:"
+print config_json
+
+# Flatten nested structure
+flat = json_flatten (nested)
+flat_json = json_encode flat
+print ""
+print "Flattened:"
+print flat_json
+
+# Query - find objects matching key=value
+team = [{"name": "Alice", "role": "lead"}, {"name": "Bob", "role": "dev"}, {"name": "Carol", "role": "lead"}]
+leads = json_query (team) "role" "lead"
+print ""
+print "Leads found:"
+print (len leads)
+for lead in leads
+    print lead["name"]

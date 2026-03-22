@@ -864,6 +864,9 @@ class Parser:
         'graph_nodes', 'graph_edges', 'graph_has_node', 'graph_has_edge',
         'graph_degree', 'graph_remove_node', 'graph_remove_edge',
         'graph_bfs', 'graph_dfs', 'graph_shortest_path', 'graph_connected',
+        'json_encode', 'json_decode', 'json_pretty', 'json_get',
+        'json_set', 'json_delete', 'json_keys', 'json_values',
+        'json_has', 'json_merge', 'json_flatten', 'json_query',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -3989,6 +3992,209 @@ class Interpreter:
         self.builtins['graph_dfs'] = _graph_dfs
         self.builtins['graph_shortest_path'] = _graph_shortest_path
         self.builtins['graph_connected'] = _graph_connected
+
+        # ── JSON builtins ──────────────────────────────────────────
+        import json as _json
+
+        def _json_encode(args):
+            interpreter._expect_args('json_encode', args, 1)
+            try:
+                return _json.dumps(args[0])
+            except (TypeError, ValueError) as e:
+                raise RuntimeError(f"json_encode: {e}")
+
+        def _json_decode(args):
+            interpreter._expect_args('json_decode', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("json_decode: argument must be a string")
+            try:
+                return _json.loads(args[0])
+            except _json.JSONDecodeError as e:
+                raise RuntimeError(f"json_decode: {e}")
+
+        def _json_pretty(args):
+            if len(args) == 1:
+                indent = 2
+            elif len(args) == 2:
+                indent = int(args[1])
+            else:
+                raise RuntimeError("json_pretty: expected 1-2 arguments")
+            try:
+                return _json.dumps(args[0], indent=indent, sort_keys=True)
+            except (TypeError, ValueError) as e:
+                raise RuntimeError(f"json_pretty: {e}")
+
+        def _json_get(args):
+            interpreter._expect_args('json_get', args, 2)
+            obj, path = args
+            if not isinstance(path, str):
+                raise RuntimeError("json_get: path must be a string")
+            keys = path.split('.')
+            current = obj
+            for key in keys:
+                if isinstance(current, dict):
+                    if key not in current:
+                        return None
+                    current = current[key]
+                elif isinstance(current, list):
+                    try:
+                        current = current[int(key)]
+                    except (ValueError, IndexError):
+                        return None
+                else:
+                    return None
+            return current
+
+        def _json_set(args):
+            interpreter._expect_args('json_set', args, 3)
+            obj, path, value = args
+            if not isinstance(path, str):
+                raise RuntimeError("json_set: path must be a string")
+            import copy
+            result = copy.deepcopy(obj) if isinstance(obj, (dict, list)) else obj
+            keys = path.split('.')
+            current = result
+            for key in keys[:-1]:
+                if isinstance(current, dict):
+                    if key not in current:
+                        current[key] = {}
+                    current = current[key]
+                elif isinstance(current, list):
+                    current = current[int(key)]
+                else:
+                    raise RuntimeError(f"json_set: cannot traverse into {type(current)}")
+            last_key = keys[-1]
+            if isinstance(current, dict):
+                current[last_key] = value
+            elif isinstance(current, list):
+                current[int(last_key)] = value
+            return result
+
+        def _json_delete(args):
+            interpreter._expect_args('json_delete', args, 2)
+            obj, path = args
+            if not isinstance(path, str):
+                raise RuntimeError("json_delete: path must be a string")
+            import copy
+            result = copy.deepcopy(obj) if isinstance(obj, (dict, list)) else obj
+            keys = path.split('.')
+            current = result
+            for key in keys[:-1]:
+                if isinstance(current, dict):
+                    if key not in current:
+                        return result
+                    current = current[key]
+                elif isinstance(current, list):
+                    try:
+                        current = current[int(key)]
+                    except (ValueError, IndexError):
+                        return result
+                else:
+                    return result
+            last_key = keys[-1]
+            if isinstance(current, dict) and last_key in current:
+                del current[last_key]
+            elif isinstance(current, list):
+                try:
+                    del current[int(last_key)]
+                except (ValueError, IndexError):
+                    pass
+            return result
+
+        def _json_keys(args):
+            interpreter._expect_args('json_keys', args, 1)
+            if not isinstance(args[0], dict):
+                raise RuntimeError("json_keys: argument must be a map/dict")
+            return list(args[0].keys())
+
+        def _json_values(args):
+            interpreter._expect_args('json_values', args, 1)
+            if not isinstance(args[0], dict):
+                raise RuntimeError("json_values: argument must be a map/dict")
+            return list(args[0].values())
+
+        def _json_has(args):
+            interpreter._expect_args('json_has', args, 2)
+            obj, path = args
+            if not isinstance(path, str):
+                raise RuntimeError("json_has: path must be a string")
+            keys = path.split('.')
+            current = obj
+            for key in keys:
+                if isinstance(current, dict):
+                    if key not in current:
+                        return False
+                    current = current[key]
+                elif isinstance(current, list):
+                    try:
+                        current = current[int(key)]
+                    except (ValueError, IndexError):
+                        return False
+                else:
+                    return False
+            return True
+
+        def _json_merge(args):
+            interpreter._expect_args('json_merge', args, 2)
+            a, b = args
+            if not isinstance(a, dict) or not isinstance(b, dict):
+                raise RuntimeError("json_merge: both arguments must be maps/dicts")
+            import copy
+            result = copy.deepcopy(a)
+            result.update(copy.deepcopy(b))
+            return result
+
+        def _json_flatten(args):
+            interpreter._expect_args('json_flatten', args, 1)
+            obj = args[0]
+            if not isinstance(obj, dict):
+                raise RuntimeError("json_flatten: argument must be a map/dict")
+            result = {}
+            def _flatten(current, prefix):
+                if isinstance(current, dict):
+                    for k, v in current.items():
+                        new_key = f"{prefix}.{k}" if prefix else k
+                        _flatten(v, new_key)
+                elif isinstance(current, list):
+                    for i, v in enumerate(current):
+                        new_key = f"{prefix}.{i}" if prefix else str(i)
+                        _flatten(v, new_key)
+                else:
+                    result[prefix] = current
+            _flatten(obj, "")
+            return result
+
+        def _json_query(args):
+            """json_query(obj, key, value) - find all objects in nested structure where key==value"""
+            interpreter._expect_args('json_query', args, 3)
+            obj, key, value = args
+            if not isinstance(key, str):
+                raise RuntimeError("json_query: key must be a string")
+            results = []
+            def _search(current):
+                if isinstance(current, dict):
+                    if key in current and current[key] == value:
+                        results.append(current)
+                    for v in current.values():
+                        _search(v)
+                elif isinstance(current, list):
+                    for item in current:
+                        _search(item)
+            _search(obj)
+            return results
+
+        self.builtins['json_encode'] = _json_encode
+        self.builtins['json_decode'] = _json_decode
+        self.builtins['json_pretty'] = _json_pretty
+        self.builtins['json_get'] = _json_get
+        self.builtins['json_set'] = _json_set
+        self.builtins['json_delete'] = _json_delete
+        self.builtins['json_keys'] = _json_keys
+        self.builtins['json_values'] = _json_values
+        self.builtins['json_has'] = _json_has
+        self.builtins['json_merge'] = _json_merge
+        self.builtins['json_flatten'] = _json_flatten
+        self.builtins['json_query'] = _json_query
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
