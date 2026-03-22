@@ -6002,10 +6002,10 @@ class Interpreter:
             if isinstance(stmt, IfNode):
                 if self._has_yield(stmt.body):
                     return True
-                for elif_cond, elif_body in (stmt.elif_blocks if hasattr(stmt, 'elif_blocks') else []):
+                for elif_cond, elif_body in stmt.elif_chains:
                     if self._has_yield(elif_body):
                         return True
-                if hasattr(stmt, 'else_body') and stmt.else_body and self._has_yield(stmt.else_body):
+                if stmt.else_body and self._has_yield(stmt.else_body):
                     return True
             elif isinstance(stmt, (WhileNode, ForNode, ForEachNode)):
                 if self._has_yield(stmt.body):

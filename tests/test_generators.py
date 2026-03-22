@@ -349,3 +349,34 @@ result = collect fizzbuzz 16
 print len result
 """)
         assert out == ['15']
+
+class TestHasYieldElifChains:
+    def test_yield_in_elif_detected_as_generator(self):
+        '''_has_yield must find yield inside elif branches (bug: used elif_blocks instead of elif_chains).'''
+        out = run_output('''
+function gen x
+    if x == 1
+        yield 10
+    else if x == 2
+        yield 20
+    else
+        yield 30
+
+result = collect gen 2
+print result
+''')
+        assert out == ['[20]']
+
+    def test_yield_only_in_elif(self):
+        '''Function with yield ONLY in elif branch must still be a generator.'''
+        out = run_output('''
+function gen flag
+    if flag == 0
+        print("no yield path")
+    else if flag == 1
+        yield 42
+
+result = collect gen 1
+print result
+''')
+        assert out == ['[42]']
