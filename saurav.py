@@ -5880,43 +5880,47 @@ class Interpreter:
         return result
 
     def execute_function(self, call_node):
+        name = call_node.name
+
+        # Evaluate arguments once — all code paths need the same values
+        # and sauravcode has no lazy-evaluation semantics.
+        evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+
         # Check user-defined functions first (allows overriding builtins)
-        func = self.functions.get(call_node.name)
+        func = self.functions.get(name)
         if func:
             if DEBUG:
-                debug(f"Executing function: {call_node.name} with arguments {call_node.arguments}")
+                debug(f"Executing function: {name} with arguments {call_node.arguments}")
 
             # Check if this is a generator function.
             if not hasattr(func, '_is_generator'):
                 func._is_generator = self._has_yield(func.body)
             if func._is_generator:
-                debug(f"Function {call_node.name} is a generator — returning GeneratorValue")
-                evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+                debug(f"Function {name} is a generator — returning GeneratorValue")
                 return GeneratorValue(self, func, evaluated_args)
 
-            evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
-            return self._invoke_function(func, evaluated_args, call_node.name)
+            return self._invoke_function(func, evaluated_args, name)
 
         # Check built-in functions
-        if call_node.name in self.builtins:
-            evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
+        if name in self.builtins:
             # Zero-arg builtin call: if a user variable shadows it, return the variable
-            if len(evaluated_args) == 0 and call_node.name in self.variables:
-                return self.variables[call_node.name]
-            return self.builtins[call_node.name](evaluated_args)
+            if len(evaluated_args) == 0 and name in self.variables:
+                return self.variables[name]
+            return self.builtins[name](evaluated_args)
 
         # Check if the name refers to a variable holding a callable value
         # (e.g. a closure returned from a higher-order function)
-        if call_node.name in self.variables:
-            var_val = self.variables[call_node.name]
+        if name in self.variables:
+            var_val = self.variables[name]
             if isinstance(var_val, FunctionNode):
-                evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
-                return self._invoke_function(var_val, evaluated_args, call_node.name)
+                return self._invoke_function(var_val, evaluated_args, name)
             elif isinstance(var_val, LambdaValue):
-                evaluated_args = [self.evaluate(arg) for arg in call_node.arguments]
                 return self._call_lambda(var_val, evaluated_args)
 
-        raise RuntimeError(f"Function {call_node.name} is not defined.")
+        raise SauravRuntimeError(
+            f"Function {name} is not defined.",
+            line=getattr(call_node, 'line_num', None)
+        )
 
     def evaluate(self, node):
         if DEBUG:
