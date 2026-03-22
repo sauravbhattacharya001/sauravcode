@@ -118,7 +118,52 @@ class SauravDebugger:
         self.call_stack = []           # list of (function_name, line)
         self.statements_executed = 0
 
+        # Command dispatch table — maps command aliases to (handler, needs_arg)
+        # Using a dispatch table instead of a long if/elif chain for O(1) lookup
+        # and easier extensibility (add new commands by adding a dict entry).
+        self._commands = {}
+        self._init_commands()
         self._init_interpreter()
+
+    def _init_commands(self):
+        """Build the command dispatch table.
+
+        Each entry maps a command name/alias to a (handler, takes_arg) tuple.
+        Handlers that take an argument receive the remainder of the input line.
+        Handlers that don't take an argument receive no parameters.
+
+        Special return values from handlers:
+          'step'  — resume execution in step mode
+          'continue' — resume execution until next breakpoint
+        """
+        # Step commands
+        for alias in ('s', 'step', 'n', 'next'):
+            self._commands[alias] = (lambda: 'step', False)
+        # Continue
+        for alias in ('c', 'continue'):
+            self._commands[alias] = (lambda: 'continue', False)
+        # Breakpoint management
+        for alias in ('b', 'break'):
+            self._commands[alias] = (self._cmd_breakpoint, True)
+        for alias in ('d', 'delete'):
+            self._commands[alias] = (self._cmd_delete_breakpoint, True)
+        for alias in ('bl', 'breakpoints'):
+            self._commands[alias] = (self._cmd_list_breakpoints, False)
+        # Inspection
+        for alias in ('p', 'print'):
+            self._commands[alias] = (self._cmd_print, True)
+        self._commands['vars'] = (self._cmd_vars, False)
+        self._commands['funcs'] = (self._cmd_funcs, False)
+        self._commands['stack'] = (self._cmd_stack, False)
+        # Navigation
+        self._commands['where'] = (None, False)  # special: needs node context
+        for alias in ('l', 'list'):
+            self._commands[alias] = (self._cmd_list_source, True)
+        self._commands['restart'] = (lambda: 'restart', False)
+        for alias in ('q', 'quit', 'exit'):
+            self._commands[alias] = (lambda: 'quit', False)
+        for alias in ('h', 'help', '?'):
+            self._commands[alias] = (self._cmd_help, False)
 
     def _init_interpreter(self):
         """Create a fresh interpreter with debug hooks."""
@@ -201,7 +246,11 @@ class SauravDebugger:
         print()
 
     def _command_loop(self, node=None):
-        """Interactive command loop at a breakpoint."""
+        """Interactive command loop at a breakpoint.
+
+        Uses the dispatch table built in _init_commands() for O(1)
+        command lookup instead of a long if/elif chain.
+        """
         while True:
             try:
                 cmd = input("(sauravdb) ").strip()
@@ -216,52 +265,29 @@ class SauravDebugger:
             command = parts[0].lower()
             arg = parts[1] if len(parts) > 1 else ""
 
-            if command in ('s', 'step', 'n', 'next'):
+            # Special case: 'where' needs the current node context
+            if command == 'where':
+                self._show_current_context(node)
+                continue
+
+            entry = self._commands.get(command)
+            if entry is None:
+                print(f"Unknown command: '{command}'. Type 'h' for help.")
+                continue
+
+            handler, takes_arg = entry
+            result = handler(arg) if takes_arg else handler()
+
+            if result == 'step':
                 self.stepping = True
                 return
-
-            elif command in ('c', 'continue'):
+            elif result == 'continue':
                 self.stepping = False
                 return
-
-            elif command in ('b', 'break'):
-                self._cmd_breakpoint(arg)
-
-            elif command in ('d', 'delete'):
-                self._cmd_delete_breakpoint(arg)
-
-            elif command in ('bl', 'breakpoints'):
-                self._cmd_list_breakpoints()
-
-            elif command in ('p', 'print'):
-                self._cmd_print(arg)
-
-            elif command == 'vars':
-                self._cmd_vars()
-
-            elif command == 'funcs':
-                self._cmd_funcs()
-
-            elif command == 'stack':
-                self._cmd_stack()
-
-            elif command == 'where':
-                self._show_current_context(node)
-
-            elif command in ('l', 'list'):
-                self._cmd_list_source(arg)
-
-            elif command == 'restart':
+            elif result == 'restart':
                 raise DebuggerRestart()
-
-            elif command in ('q', 'quit', 'exit'):
+            elif result == 'quit':
                 raise DebuggerQuit()
-
-            elif command in ('h', 'help', '?'):
-                self._cmd_help()
-
-            else:
-                print(f"Unknown command: '{command}'. Type 'h' for help.")
 
     # ── Commands ─────────────────────────────────────────────
 
