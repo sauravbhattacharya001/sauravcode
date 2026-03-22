@@ -236,16 +236,23 @@ class APIHandler(BaseHTTPRequestHandler):
 
             # Execute function body with a timeout guard
             result = None
+            exc_info = [None]
             from saurav import ReturnSignal
             timed_out = [False]
 
             def _execute():
                 nonlocal result
+                old_stdout = sys.stdout
+                sys.stdout = stdout_capture
                 try:
                     for stmt in req_interp.functions[fn_name].body:
                         req_interp.interpret(stmt)
                 except ReturnSignal as r:
                     result = r.value
+                except Exception as e:
+                    exc_info[0] = e
+                finally:
+                    sys.stdout = old_stdout
 
             thread = threading.Thread(target=_execute, daemon=True)
             thread.start()
@@ -258,6 +265,10 @@ class APIHandler(BaseHTTPRequestHandler):
                     "error": f"Function '{fn_name}' exceeded {MAX_EXEC_TIME}s execution limit."
                 })
                 return
+
+            # Re-raise exceptions from the execution thread
+            if exc_info[0] is not None:
+                raise exc_info[0]
 
             elapsed = time.monotonic() - t0
             output = stdout_capture.getvalue()
@@ -286,7 +297,7 @@ class APIHandler(BaseHTTPRequestHandler):
 # Server entry point
 # ---------------------------------------------------------------------------
 
-def serve(srv_path, port=8480, cors=False):
+def serve(srv_path, port=8480, cors=False, host="127.0.0.1", max_body_size=None):
     """Load the .srv file and start the API server."""
     print(f"Loading {srv_path}...")
     interp = load_srv(srv_path)
@@ -295,6 +306,8 @@ def serve(srv_path, port=8480, cors=False):
     APIHandler.interp = interp
     APIHandler.enable_cors = cors
     APIHandler.srv_path = srv_path
+    if max_body_size is not None:
+        APIHandler.max_body_size = max_body_size
 
     endpoints = []
     for name, func in sorted(interp.functions.items()):
@@ -313,10 +326,12 @@ def serve(srv_path, port=8480, cors=False):
         param_str = " ".join(params) if params else "(no params)"
         print(f"  POST /{name}  — {param_str}")
 
-    print(f"\nServing on http://localhost:{port}")
+    print(f"\nServing on http://{host}:{port}")
+    if host == "0.0.0.0":
+        print("  ⚠ WARNING: Listening on all interfaces — the API is network-accessible.")
     print("Press Ctrl+C to stop.\n")
 
-    server = HTTPServer(("", port), APIHandler)
+    server = HTTPServer((host, port), APIHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -357,7 +372,11 @@ def main():
     )
     parser.add_argument("source", help="Path to .srv file")
     parser.add_argument("--port", type=int, default=8480, help="Port (default 8480)")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Bind address (default 127.0.0.1; use 0.0.0.0 for all interfaces)")
     parser.add_argument("--cors", action="store_true", help="Enable CORS headers")
+    parser.add_argument("--max-body-size", type=int, default=None,
+                        help=f"Max request body in bytes (default {MAX_BODY_SIZE})")
     parser.add_argument("--list", action="store_true", help="List endpoints and exit")
 
     args = parser.parse_args()
@@ -369,7 +388,8 @@ def main():
     if args.list:
         list_endpoints(args.source)
     else:
-        serve(args.source, port=args.port, cors=args.cors)
+        serve(args.source, port=args.port, cors=args.cors,
+              host=args.host, max_body_size=args.max_body_size)
 
 
 if __name__ == "__main__":
