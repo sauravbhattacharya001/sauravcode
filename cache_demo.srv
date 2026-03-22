@@ -1,0 +1,86 @@
+# cache_demo.srv - Key-Value Cache builtins demo
+
+# === Create a cache ===
+c = cache_create
+print "=== Cache Builtins Demo ==="
+
+# Store values
+cache_set (c) "name" "sauravcode"
+cache_set (c) "version" "2.0"
+cache_set (c) "lang" "Python"
+print "Stored 3 entries"
+
+# Retrieve values
+name = cache_get (c) "name"
+print "cache_get 'name':"
+print name
+
+ver = cache_get (c) "version"
+print "cache_get 'version':"
+print ver
+
+# Check existence
+has_name = cache_has (c) "name"
+print "cache_has 'name':"
+print has_name
+
+has_missing = cache_has (c) "nope"
+print "cache_has 'nope':"
+print has_missing
+
+# Get missing key returns empty string
+missing = cache_get (c) "nope"
+print "cache_get 'nope' (missing):"
+print missing
+
+# List keys, values, entries
+keys = cache_keys (c)
+print "cache_keys:"
+print keys
+
+vals = cache_values (c)
+print "cache_values:"
+print vals
+
+entries = cache_entries (c)
+print "cache_entries:"
+print entries
+
+# Size
+sz = cache_size (c)
+print "cache_size:"
+print sz
+
+# Delete a key
+deleted = cache_delete (c) "lang"
+print "cache_delete 'lang' returned:"
+print deleted
+
+sz2 = cache_size (c)
+print "Size after delete:"
+print sz2
+
+# Clear the cache
+cache_clear (c)
+sz3 = cache_size (c)
+print "Size after clear:"
+print sz3
+
+# === Practical Example: counting word frequencies ===
+print ""
+print "=== Word Frequency Counter ==="
+words = ["hello", "world", "hello", "saurav", "world", "hello"]
+freq = cache_create
+
+for word in words
+    has = cache_has (freq) (word)
+    if has == 1
+        old = cache_get (freq) (word)
+        cache_set (freq) (word) (old + 1)
+    else
+        cache_set (freq) (word) 1
+
+print "Word frequencies:"
+print cache_entries (freq)
+
+print "Done!"

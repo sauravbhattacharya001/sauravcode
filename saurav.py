@@ -730,13 +730,16 @@ class Parser:
         'is_email', 'is_url', 'is_ipv4', 'is_ipv6', 'is_ip',
         'is_date', 'is_uuid', 'is_hex_color', 'is_phone',
         'is_credit_card', 'is_json', 'validate',
+        'cache_create', 'cache_get', 'cache_set', 'cache_clear',
+        'cache_has', 'cache_keys', 'cache_size', 'cache_delete',
+        'cache_values', 'cache_entries',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
     ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
-        'stack_create', 'queue_create'})
+        'stack_create', 'queue_create', 'cache_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -2014,6 +2017,7 @@ class Interpreter:
         self._register_random_data_builtins()
         self._register_csv_builtins()
         self._register_validation_builtins()
+        self._register_cache_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -3359,6 +3363,109 @@ class Interpreter:
         }
         for name, fn in _table.items():
             self.builtins[name] = fn
+
+    # ── Memoization & Cache builtins ─────────────────────
+
+    def _register_cache_builtins(self):
+        """Register memoization and key-value cache builtins.
+
+        Provides a simple key-value cache with
+           ``cache_create``, ``cache_get``, ``cache_set``, ``cache_has``,
+           ``cache_delete``, ``cache_keys``, ``cache_values``,
+           ``cache_entries``, ``cache_size``, ``cache_clear``.
+        """
+
+        # --- cache_create() -> new empty cache (dict wrapper) ---
+        def _cache_create(args):
+            return {'__sauravcode_cache__': True, '_data': {}}
+        self.builtins['cache_create'] = _cache_create
+
+        # --- cache_set(cache, key, value) ---
+        def _cache_set(args):
+            self._expect_args('cache_set', args, 3)
+            cache, key, value = args[0], args[1], args[2]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_set: first argument must be a cache (from cache_create)")
+            if not isinstance(key, str):
+                raise RuntimeError("cache_set: key must be a string")
+            cache['_data'][key] = value
+            return value
+        self.builtins['cache_set'] = _cache_set
+
+        # --- cache_get(cache, key) -> value or "" ---
+        def _cache_get(args):
+            self._expect_args('cache_get', args, 2)
+            cache, key = args[0], args[1]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_get: first argument must be a cache (from cache_create)")
+            if not isinstance(key, str):
+                raise RuntimeError("cache_get: key must be a string")
+            return cache['_data'].get(key, "")
+        self.builtins['cache_get'] = _cache_get
+
+        # --- cache_has(cache, key) -> bool ---
+        def _cache_has(args):
+            self._expect_args('cache_has', args, 2)
+            cache, key = args[0], args[1]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_has: first argument must be a cache (from cache_create)")
+            return 1.0 if key in cache['_data'] else 0.0
+        self.builtins['cache_has'] = _cache_has
+
+        # --- cache_delete(cache, key) -> deleted value or "" ---
+        def _cache_delete(args):
+            self._expect_args('cache_delete', args, 2)
+            cache, key = args[0], args[1]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_delete: first argument must be a cache (from cache_create)")
+            return cache['_data'].pop(key, "")
+        self.builtins['cache_delete'] = _cache_delete
+
+        # --- cache_keys(cache) -> list of keys ---
+        def _cache_keys(args):
+            self._expect_args('cache_keys', args, 1)
+            cache = args[0]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_keys: argument must be a cache (from cache_create)")
+            return list(cache['_data'].keys())
+        self.builtins['cache_keys'] = _cache_keys
+
+        # --- cache_size(cache) -> number of entries ---
+        def _cache_size(args):
+            self._expect_args('cache_size', args, 1)
+            cache = args[0]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_size: argument must be a cache (from cache_create)")
+            return float(len(cache['_data']))
+        self.builtins['cache_size'] = _cache_size
+
+        # --- cache_clear(cache) -> 0.0 ---
+        def _cache_clear(args):
+            self._expect_args('cache_clear', args, 1)
+            cache = args[0]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_clear: argument must be a cache (from cache_create)")
+            cache['_data'].clear()
+            return 0.0
+        self.builtins['cache_clear'] = _cache_clear
+
+        # --- cache_values(cache) -> list of values ---
+        def _cache_values(args):
+            self._expect_args('cache_values', args, 1)
+            cache = args[0]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_values: argument must be a cache (from cache_create)")
+            return list(cache['_data'].values())
+        self.builtins['cache_values'] = _cache_values
+
+        # --- cache_entries(cache) -> list of [key, value] pairs ---
+        def _cache_entries(args):
+            self._expect_args('cache_entries', args, 1)
+            cache = args[0]
+            if not isinstance(cache, dict) or not cache.get('__sauravcode_cache__'):
+                raise RuntimeError("cache_entries: argument must be a cache (from cache_create)")
+            return [list(pair) for pair in cache['_data'].items()]
+        self.builtins['cache_entries'] = _cache_entries
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
