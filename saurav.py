@@ -736,6 +736,8 @@ class Parser:
         'color_rgb', 'color_hex', 'color_hsl', 'color_blend',
         'color_lighten', 'color_darken', 'color_invert', 'color_contrast',
         'color_to_rgb', 'color_to_hex', 'color_to_hsl',
+        're_test', 're_match', 're_search', 're_find_all',
+        're_replace', 're_split', 're_escape',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2022,6 +2024,7 @@ class Interpreter:
         self._register_validation_builtins()
         self._register_cache_builtins()
         self._register_color_builtins()
+        self._register_regex_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -3633,6 +3636,100 @@ class Interpreter:
         self.builtins['color_to_rgb'] = _color_to_rgb
         self.builtins['color_to_hex'] = _color_to_hex
         self.builtins['color_to_hsl'] = _color_to_hsl
+
+    # ── Regex builtins ───────────────────────────────────
+
+    def _register_regex_builtins(self):
+        """Register regular expression builtins.
+
+        Provides ``re_test``, ``re_match``, ``re_search``, ``re_find_all``,
+        ``re_replace``, ``re_split``, ``re_escape``.
+        """
+        import re as _re
+        interpreter = self
+
+        # re_test(pattern, text) -> bool
+        def _re_test(args):
+            interpreter._expect_args('re_test', args, 2)
+            if not isinstance(args[0], str) or not isinstance(args[1], str):
+                raise RuntimeError("re_test: both arguments must be strings")
+            return bool(_re.search(args[0], args[1]))
+
+        # re_match(pattern, text) -> map {matched, groups, start, end} or nil
+        def _re_match(args):
+            interpreter._expect_args('re_match', args, 2)
+            if not isinstance(args[0], str) or not isinstance(args[1], str):
+                raise RuntimeError("re_match: both arguments must be strings")
+            m = _re.match(args[0], args[1])
+            if m is None:
+                return None
+            return {
+                'matched': m.group(0),
+                'groups': list(m.groups()),
+                'start': float(m.start()),
+                'end': float(m.end()),
+            }
+
+        # re_search(pattern, text) -> map {matched, groups, start, end} or nil
+        def _re_search(args):
+            interpreter._expect_args('re_search', args, 2)
+            if not isinstance(args[0], str) or not isinstance(args[1], str):
+                raise RuntimeError("re_search: both arguments must be strings")
+            m = _re.search(args[0], args[1])
+            if m is None:
+                return None
+            return {
+                'matched': m.group(0),
+                'groups': list(m.groups()),
+                'start': float(m.start()),
+                'end': float(m.end()),
+            }
+
+        # re_find_all(pattern, text) -> list of strings (or list of lists for groups)
+        def _re_find_all(args):
+            interpreter._expect_args('re_find_all', args, 2)
+            if not isinstance(args[0], str) or not isinstance(args[1], str):
+                raise RuntimeError("re_find_all: both arguments must be strings")
+            results = _re.findall(args[0], args[1])
+            # findall returns list of tuples when groups exist; convert to lists
+            return [list(r) if isinstance(r, tuple) else r for r in results]
+
+        # re_replace(pattern, replacement, text) -> string
+        def _re_replace(args):
+            if len(args) < 3 or len(args) > 4:
+                raise RuntimeError("re_replace expects 3-4 arguments: re_replace(pattern, replacement, text) or re_replace(pattern, replacement, text, count)")
+            if not isinstance(args[0], str) or not isinstance(args[1], str) or not isinstance(args[2], str):
+                raise RuntimeError("re_replace: pattern, replacement, and text must be strings")
+            count = 0  # 0 means replace all
+            if len(args) == 4:
+                count = int(args[3])
+            return _re.sub(args[0], args[1], args[2], count=count)
+
+        # re_split(pattern, text) -> list of strings
+        def _re_split(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("re_split expects 2-3 arguments: re_split(pattern, text) or re_split(pattern, text, maxsplit)")
+            if not isinstance(args[0], str) or not isinstance(args[1], str):
+                raise RuntimeError("re_split: pattern and text must be strings")
+            maxsplit = 0
+            if len(args) == 3:
+                maxsplit = int(args[2])
+            return _re.split(args[0], args[1], maxsplit=maxsplit)
+
+        # re_escape(text) -> escaped string safe for use in regex
+        def _re_escape(args):
+            interpreter._expect_args('re_escape', args, 1)
+            if not isinstance(args[0], str):
+                raise RuntimeError("re_escape: argument must be a string")
+            return _re.escape(args[0])
+
+        self.builtins['re_test'] = _re_test
+        self.builtins['re_match'] = _re_match
+        self.builtins['re_search'] = _re_search
+        self.builtins['re_find_all'] = _re_find_all
+        self.builtins['re_replace'] = _re_replace
+        self.builtins['re_split'] = _re_split
+        self.builtins['re_escape'] = _re_escape
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

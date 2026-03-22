@@ -289,6 +289,18 @@ Sets are unordered collections of unique, hashable values (numbers, strings, boo
 | `color_to_hex` | `color_to_hex 30 144 255` | Convert RGB values to hex string |
 | `color_to_hsl` | `color_to_hsl "#1E90FF"` | Convert hex to `{h, s, l}` map |
 
+## Regular Expressions
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `re_test` | `re_test "\\d+" "hello 42"` | Test if pattern matches anywhere → `true`/`false` |
+| `re_match` | `re_match "(\\w+)@(\\w+)" "user@host"` | Match from start → `{matched, groups, start, end}` or `nil` |
+| `re_search` | `re_search "\\d+" "abc 42 def"` | Search anywhere → `{matched, groups, start, end}` or `nil` |
+| `re_find_all` | `re_find_all "[A-Z]\\w+" "Hello World"` | Find all matches → list of strings (or list of lists for groups) |
+| `re_replace` | `re_replace "\\s+" " " "too  many"` | Replace all matches; optional 4th arg limits count |
+| `re_split` | `re_split "[,;\\s]+" "a, b; c"` | Split by pattern → list; optional 3rd arg limits splits |
+| `re_escape` | `re_escape "$10.00"` | Escape special regex characters for literal matching |
+
 ## Operators
 
 Beyond built-in functions, sauravcode supports these operators:
