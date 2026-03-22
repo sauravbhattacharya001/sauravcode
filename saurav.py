@@ -5181,19 +5181,22 @@ class Interpreter:
         debug(f"YieldNode evaluated with result: {result}\n")
         raise YieldSignal(result)
 
+    # ── print formatting dispatch (avoids isinstance chain per call) ───
+    _PRINT_FORMATTERS = {
+        bool:  lambda v: "true" if v else "false",
+        list:  lambda v: _format_list(v),
+        dict:  lambda v: _format_map(v),
+        set:   lambda v: _format_set(v),
+    }
+
     def _interp_print(self, ast):
         value = self.evaluate(ast.expression)
-        # Format numeric output: show integers without decimal point
-        if isinstance(value, float) and value == int(value):
+        # O(1) type dispatch for the common collection/bool types
+        formatter = self._PRINT_FORMATTERS.get(type(value))
+        if formatter is not None:
+            print(formatter(value))
+        elif isinstance(value, float) and value == int(value):
             print(int(value))
-        elif isinstance(value, bool):
-            print("true" if value else "false")
-        elif isinstance(value, list):
-            print(_format_list(value))
-        elif isinstance(value, dict):
-            print(_format_map(value))
-        elif isinstance(value, set):
-            print(_format_set(value))
         elif isinstance(value, _SrvStack):
             print(f"Stack({_format_list(value.to_list())})")
         elif isinstance(value, _SrvQueue):
@@ -5342,24 +5345,27 @@ class Interpreter:
         - Strings → individual characters
         - Maps → keys
         - Generators → yielded values
+
+        Avoids materializing intermediate lists for strings, dicts, and
+        sets by checking ``len()`` directly and iterating in-place.
+        For a 10k-character string this saves ~80 KB of allocation and
+        the O(n) copy cost.
         """
         collection = self.evaluate(node.iterable)
         if isinstance(collection, GeneratorValue):
             items = collection.to_list()
-        elif isinstance(collection, list):
-            items = collection
-        elif isinstance(collection, str):
-            items = list(collection)
-        elif isinstance(collection, dict):
-            items = list(collection.keys())
+            size = len(items)
+        elif isinstance(collection, (list, str, dict, set)):
+            items = collection  # iterate directly — no copy needed
+            size = len(collection)
         else:
             raise RuntimeError(
                 f"Cannot iterate over {type(collection).__name__}. "
                 f"for-each requires a list, string, map, or generator."
             )
-        if len(items) > MAX_LOOP_ITERATIONS:
+        if size > MAX_LOOP_ITERATIONS:
             raise RuntimeError(
-                f"For-each collection size ({len(items):,}) exceeds maximum "
+                f"For-each collection size ({size:,}) exceeds maximum "
                 f"iterations ({MAX_LOOP_ITERATIONS:,})"
             )
         for item in items:
