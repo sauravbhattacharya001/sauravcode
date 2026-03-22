@@ -4037,15 +4037,20 @@ class Interpreter:
 
         # When running from a file, enforce path traversal protection
         if self._source_dir is not None:
-            allowed_root = os.path.abspath(self._source_dir)
+            # Use realpath to resolve symlinks — abspath alone can be
+            # bypassed via symlink chains that point outside the sandbox.
+            allowed_root = os.path.realpath(self._source_dir)
 
             if os.path.isabs(path):
-                full_path = os.path.abspath(path)
+                full_path = os.path.realpath(path)
             else:
-                full_path = os.path.abspath(os.path.join(allowed_root, path))
+                full_path = os.path.realpath(os.path.join(allowed_root, path))
 
-            # Path traversal check — must resolve within allowed root
-            if not full_path.startswith(allowed_root + os.sep) and full_path != allowed_root:
+            # Path traversal check — must resolve within allowed root.
+            # Use os.path.normcase for case-insensitive comparison on Windows.
+            norm_root = os.path.normcase(allowed_root)
+            norm_full = os.path.normcase(full_path)
+            if not norm_full.startswith(norm_root + os.sep) and norm_full != norm_root:
                 raise RuntimeError(
                     f"{func_name}: path traversal outside project directory "
                     f"is not allowed ('{path}' resolves outside '{allowed_root}')"
