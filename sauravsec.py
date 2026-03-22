@@ -202,118 +202,125 @@ class SecurityScanner:
         for node in nodes:
             self._scan_node(node)
 
-    def _scan_node(self, node):
-        if node is None:
+    # ── Individual rule checks ──────────────────────────────────
+    # Each _check_* method encapsulates a single security rule,
+    # making rules independently testable and easy to extend.
+
+    def _check_path_traversal(self, node):
+        """SEC001: File operation uses dynamic path that could allow traversal."""
+        if not (isinstance(node, FunctionCallNode) and node.name in _FILE_BUILTINS):
             return
+        args = getattr(node, "arguments", [])
+        if not args:
+            return
+        path_arg = args[0]
+        if isinstance(path_arg, IdentifierNode):
+            self._add("SEC001", MEDIUM,
+                      f"File operation '{node.name}' uses variable "
+                      f"'{path_arg.name}' as path — validate before use",
+                      _line(node))
+        elif isinstance(path_arg, BinaryOpNode) and path_arg.operator == "+":
+            self._add("SEC001", MEDIUM,
+                      f"File operation '{node.name}' uses concatenated path "
+                      f"— may allow path traversal",
+                      _line(node))
+        elif isinstance(path_arg, FStringNode):
+            self._add("SEC001", MEDIUM,
+                      f"File operation '{node.name}' uses f-string path "
+                      f"— may allow path traversal",
+                      _line(node))
 
-        # ── SEC001: Path traversal ───────────────────────────
-        if isinstance(node, FunctionCallNode) and node.name in _FILE_BUILTINS:
-            args = getattr(node, "arguments", [])
-            if args:
-                path_arg = args[0]
-                # Check if the path argument uses a variable (not a plain string)
-                if isinstance(path_arg, IdentifierNode):
-                    self._add("SEC001", MEDIUM,
-                              f"File operation '{node.name}' uses variable "
-                              f"'{path_arg.name}' as path — validate before use",
-                              _line(node))
-                elif isinstance(path_arg, BinaryOpNode) and path_arg.operator == "+":
-                    self._add("SEC001", MEDIUM,
-                              f"File operation '{node.name}' uses concatenated path "
-                              f"— may allow path traversal",
-                              _line(node))
-                elif isinstance(path_arg, FStringNode):
-                    self._add("SEC001", MEDIUM,
-                              f"File operation '{node.name}' uses f-string path "
-                              f"— may allow path traversal",
-                              _line(node))
+    def _check_unbounded_loop(self, node):
+        """SEC002: while(true) with no break risks infinite execution."""
+        if not isinstance(node, WhileNode):
+            return
+        if _is_literal_true(node.condition) and not _contains_break(node.body):
+            self._add("SEC002", HIGH,
+                      "Unbounded loop: while(true) with no break statement",
+                      _line(node))
 
-        # ── SEC002: Unbounded loop ───────────────────────────
-        if isinstance(node, WhileNode):
-            if _is_literal_true(node.condition) and not _contains_break(node.body):
-                self._add("SEC002", HIGH,
-                          "Unbounded loop: while(true) with no break statement",
+    def _check_hardcoded_creds(self, node):
+        """SEC003: String literal assigned to credential-named variable."""
+        if not isinstance(node, AssignmentNode):
+            return
+        name_lower = node.name.lower()
+        if name_lower in _CRED_NAMES and isinstance(node.expression, StringNode):
+            val_preview = node.expression.value[:20]
+            if val_preview:
+                self._add("SEC003", HIGH,
+                          f"Hardcoded credential: '{node.name}' assigned "
+                          f"string literal \"{val_preview}...\"",
                           _line(node))
 
-        # ── SEC003: Hardcoded credentials ────────────────────
-        if isinstance(node, AssignmentNode):
-            name_lower = node.name.lower()
-            if name_lower in _CRED_NAMES and isinstance(node.expression, StringNode):
-                val_preview = node.expression.value[:20]
-                if val_preview:  # Non-empty string
-                    self._add("SEC003", HIGH,
-                              f"Hardcoded credential: '{node.name}' assigned "
-                              f"string literal \"{val_preview}...\"",
-                              _line(node))
+    def _check_unchecked_file_op(self, node):
+        """SEC004: File I/O not wrapped in try/catch."""
+        if not (isinstance(node, FunctionCallNode) and node.name in _FILE_BUILTINS):
+            return
+        if not self._in_try:
+            self._add("SEC004", MEDIUM,
+                      f"File operation '{node.name}' not wrapped in try/catch "
+                      f"— errors will crash the program",
+                      _line(node))
 
-        # ── SEC004: Unchecked file operation ─────────────────
-        if isinstance(node, FunctionCallNode) and node.name in _FILE_BUILTINS:
-            if not self._in_try:
-                self._add("SEC004", MEDIUM,
-                          f"File operation '{node.name}' not wrapped in try/catch "
-                          f"— errors will crash the program",
-                          _line(node))
+    def _check_recursive_depth(self, node):
+        """SEC005: Recursive function with no apparent base case guard."""
+        if not isinstance(node, FunctionNode):
+            return
+        if not _contains_call(node.body, node.name):
+            return
+        has_guard = False
+        if isinstance(node.body, list):
+            for stmt in node.body:
+                if isinstance(stmt, IfNode):
+                    has_guard = True
+                    break
+                if isinstance(stmt, FunctionCallNode) and stmt.name == node.name:
+                    break
+        if not has_guard:
+            self._add("SEC005", HIGH,
+                      f"Function '{node.name}' is recursive with no "
+                      f"apparent base case guard (if statement)",
+                      _line(node))
 
-        # ── SEC005: Recursive depth risk ─────────────────────
-        if isinstance(node, FunctionNode):
-            if _contains_call(node.body, node.name):
-                # Check if there's a base case (an if/return before the recursive call)
-                has_guard = False
-                if isinstance(node.body, list):
-                    for stmt in node.body:
-                        if isinstance(stmt, IfNode):
-                            has_guard = True
-                            break
-                        if isinstance(stmt, FunctionCallNode) and stmt.name == node.name:
-                            break  # Recursive call before any guard
-                if not has_guard:
-                    self._add("SEC005", HIGH,
-                              f"Function '{node.name}' is recursive with no "
-                              f"apparent base case guard (if statement)",
-                              _line(node))
+    def _check_unbounded_growth(self, node):
+        """SEC006: List append inside unbounded while(true) loop."""
+        if not isinstance(node, (WhileNode, ForNode, ForEachNode)):
+            return
+        if not (isinstance(node, WhileNode) and _is_literal_true(node.condition)):
+            return
+        body = node.body if isinstance(node.body, list) else [node.body]
+        for stmt in body:
+            if (isinstance(stmt, FunctionCallNode) and stmt.name == "append") or \
+               isinstance(stmt, AppendNode):
+                self._add("SEC006", MEDIUM,
+                          "List append inside unbounded while(true) loop "
+                          "— potential memory exhaustion",
+                          _line(stmt))
 
-        # ── SEC006: Unbounded list growth in loop ────────────
-        if isinstance(node, (WhileNode, ForNode, ForEachNode)):
-            body = node.body if isinstance(node.body, list) else [node.body]
-            for stmt in body:
-                if isinstance(stmt, FunctionCallNode) and stmt.name == "append":
-                    # append inside a loop — could grow unboundedly
-                    if isinstance(node, WhileNode) and _is_literal_true(node.condition):
-                        self._add("SEC006", MEDIUM,
-                                  "List append inside unbounded while(true) loop "
-                                  "— potential memory exhaustion",
-                                  _line(stmt))
-                if isinstance(stmt, AppendNode):
-                    if isinstance(node, WhileNode) and _is_literal_true(node.condition):
-                        self._add("SEC006", MEDIUM,
-                                  "List append inside unbounded while(true) loop "
-                                  "— potential memory exhaustion",
-                                  _line(stmt))
-
-        # ── SEC007: Information leak ─────────────────────────
-        if isinstance(node, PrintNode):
-            expr = node.expression
-            if isinstance(expr, IdentifierNode):
-                if expr.name.lower() in _CRED_NAMES:
+    def _check_info_leak(self, node):
+        """SEC007: Printing sensitive variable names."""
+        if not isinstance(node, PrintNode):
+            return
+        expr = node.expression
+        if isinstance(expr, IdentifierNode) and expr.name.lower() in _CRED_NAMES:
+            self._add("SEC007", HIGH,
+                      f"Printing sensitive variable '{expr.name}' "
+                      f"— potential information leak",
+                      _line(node))
+        if isinstance(expr, FStringNode):
+            for part in getattr(expr, "parts", []):
+                if isinstance(part, IdentifierNode) and part.name.lower() in _CRED_NAMES:
                     self._add("SEC007", HIGH,
-                              f"Printing sensitive variable '{expr.name}' "
-                              f"— potential information leak",
+                              f"Printing sensitive variable '{part.name}' "
+                              f"in f-string — potential information leak",
                               _line(node))
-            # Check f-strings for sensitive var references
-            if isinstance(expr, FStringNode):
-                for part in getattr(expr, "parts", []):
-                    if isinstance(part, IdentifierNode) and part.name.lower() in _CRED_NAMES:
-                        self._add("SEC007", HIGH,
-                                  f"Printing sensitive variable '{part.name}' "
-                                  f"in f-string — potential information leak",
-                                  _line(node))
 
-        # ── SEC008: Unvalidated input in file ops ────────────
+    def _check_unvalidated_input(self, node):
+        """SEC008: Track input() assignments and flag use in file ops."""
         if isinstance(node, AssignmentNode):
             expr = node.expression
             if isinstance(expr, FunctionCallNode) and expr.name == "input":
                 self._input_vars.add(node.name)
-
         if isinstance(node, FunctionCallNode) and node.name in _FILE_BUILTINS:
             args = getattr(node, "arguments", [])
             if args and isinstance(args[0], IdentifierNode):
@@ -323,46 +330,61 @@ class SecurityScanner:
                               f"used directly as file path in '{node.name}'",
                               _line(node))
 
-        # ── SEC009: Resource exhaustion — nested loops ──────
-        if isinstance(node, (ForNode, ForEachNode)):
-            # Check for nested for loops
-            body = node.body if isinstance(node.body, list) else [node.body]
-            for stmt in body:
-                if isinstance(stmt, (ForNode, ForEachNode)):
-                    # Nested for loops — check if ranges are large
-                    self._add("SEC009", LOW,
-                              "Nested for loops — O(n²) or worse complexity; "
-                              "verify ranges are bounded",
-                              _line(node))
-
-        # ── SEC010: Catch-all silencer ───────────────────────
-        if isinstance(node, TryCatchNode):
-            catch_body = getattr(node, "handler", None)
-            if _body_empty(catch_body):
-                self._add("SEC010", MEDIUM,
-                          "Empty catch block silently swallows errors "
-                          "— handle or re-throw",
+    def _check_nested_loops(self, node):
+        """SEC009: Nested for loops risk O(n²)+ complexity."""
+        if not isinstance(node, (ForNode, ForEachNode)):
+            return
+        body = node.body if isinstance(node.body, list) else [node.body]
+        for stmt in body:
+            if isinstance(stmt, (ForNode, ForEachNode)):
+                self._add("SEC009", LOW,
+                          "Nested for loops — O(n²) or worse complexity; "
+                          "verify ranges are bounded",
                           _line(node))
 
-        # ── SEC011: Tainted format string ────────────────────
-        if isinstance(node, FStringNode):
-            parts = getattr(node, "parts", [])
-            for part in parts:
-                if isinstance(part, IdentifierNode) and part.name in self._input_vars:
-                    self._add("SEC011", MEDIUM,
-                              f"F-string includes unvalidated input variable "
-                              f"'{part.name}' — sanitize before interpolation",
-                              _line(node))
+    def _check_catch_silencer(self, node):
+        """SEC010: Empty catch block silently swallows errors."""
+        if not isinstance(node, TryCatchNode):
+            return
+        if _body_empty(getattr(node, "handler", None)):
+            self._add("SEC010", MEDIUM,
+                      "Empty catch block silently swallows errors "
+                      "— handle or re-throw",
+                      _line(node))
 
-        # ── SEC012: Mutable default — list/map literal in param ──
-        if isinstance(node, FunctionNode):
-            # This is a static analysis heuristic: if a function is called
-            # repeatedly and uses list literals that persist, it could be
-            # dangerous. In sauravcode, params don't have defaults in the
-            # same way, but we can check for patterns like:
-            # fn process items = []
-            # where the default is evaluated once.
-            pass  # Placeholder for future default-param analysis
+    def _check_tainted_fstring(self, node):
+        """SEC011: F-string includes unvalidated input variable."""
+        if not isinstance(node, FStringNode):
+            return
+        for part in getattr(node, "parts", []):
+            if isinstance(part, IdentifierNode) and part.name in self._input_vars:
+                self._add("SEC011", MEDIUM,
+                          f"F-string includes unvalidated input variable "
+                          f"'{part.name}' — sanitize before interpolation",
+                          _line(node))
+
+    # All rule checks in dispatch order
+    _RULE_CHECKS = (
+        _check_path_traversal,
+        _check_unbounded_loop,
+        _check_hardcoded_creds,
+        _check_unchecked_file_op,
+        _check_recursive_depth,
+        _check_unbounded_growth,
+        _check_info_leak,
+        _check_unvalidated_input,
+        _check_nested_loops,
+        _check_catch_silencer,
+        _check_tainted_fstring,
+    )
+
+    def _scan_node(self, node):
+        if node is None:
+            return
+
+        # Run all rule checks against this node
+        for check in self._RULE_CHECKS:
+            check(self, node)
 
         # ── Recurse into children ────────────────────────────
         was_in_try = self._in_try
@@ -393,7 +415,6 @@ class SecurityScanner:
             return
 
         if isinstance(node, PrintNode):
-            # Already handled above, scan expression for nested calls
             self._scan_node(node.expression)
             return
 
