@@ -5204,15 +5204,44 @@ class Interpreter:
 
     # --- HTTP built-ins ---
 
+    @staticmethod
+    def _is_private_ip(hostname):
+        """Check if a hostname resolves to a private/reserved IP (SSRF protection)."""
+        import ipaddress
+        import socket
+        try:
+            # Resolve hostname to IP(s) — check ALL resolved addresses
+            for info in socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                addr = info[4][0]
+                ip = ipaddress.ip_address(addr)
+                if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                    return True
+        except (socket.gaierror, ValueError):
+            # Can't resolve → block by default (could be a crafted hostname)
+            return True
+        return False
+
     def _http_request(self, method, url, body=None, headers=None):
         """Perform an HTTP request and return a map with status, body, and headers."""
         import urllib.request
         import urllib.error
+        from urllib.parse import urlparse
 
         if not isinstance(url, str):
             raise RuntimeError(f"http_{method.lower()} expects a string URL")
         if not url.startswith(('http://', 'https://')):
             raise RuntimeError(f"http_{method.lower()}: URL must start with http:// or https://")
+
+        # SSRF protection: block requests to private/internal networks
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            raise RuntimeError(f"http_{method.lower()}: could not parse hostname from URL")
+        if self._is_private_ip(hostname):
+            raise RuntimeError(
+                f"http_{method.lower()}: requests to private/internal networks are blocked "
+                f"(SSRF protection). Host '{hostname}' resolves to a private IP."
+            )
 
         req_headers = {'User-Agent': 'sauravcode/1.0'}
         if headers and isinstance(headers, dict):
