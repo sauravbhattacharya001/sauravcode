@@ -354,3 +354,20 @@ Beyond built-in functions, sauravcode supports these operators:
 | `json_merge(a, b)` | Merge two maps (b overrides a) | `json_merge(defaults, overrides)` |
 | `json_flatten(obj)` | Flatten nested map to dot-paths | `json_flatten({"a": {"b": 1}})` → `{"a.b": 1}` |
 | `json_query(obj, key, val)` | Find all sub-objects where key==val | `json_query(data, "role", "admin")` |
+
+## Trie (Prefix Tree) Data Structure
+
+A trie (prefix tree) for efficient string storage, prefix search, and autocomplete. Ideal for dictionaries, autocomplete systems, and spell checkers.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `trie_create` | `t = trie_create` | Create empty trie |
+| `trie_insert` | `trie_insert (t) "hello"` | Insert word into trie, returns trie |
+| `trie_search` | `trie_search (t) "hello"` | Check if exact word exists → `true`/`false` |
+| `trie_starts_with` | `trie_starts_with (t) "hel"` | Check if any word starts with prefix → `true`/`false` |
+| `trie_delete` | `trie_delete (t) "hello"` | Remove word from trie, returns trie |
+| `trie_autocomplete` | `trie_autocomplete (t) "he" 5` | Get up to N words with prefix (default 10) |
+| `trie_size` | `trie_size t` | Number of words in trie |
+| `trie_words` | `trie_words t` | Get sorted list of all words |
+| `trie_longest_prefix` | `trie_longest_prefix (t) "hello world"` | Longest word that is a prefix of input |
+| `trie_count_prefix` | `trie_count_prefix (t) "he"` | Count words starting with prefix |

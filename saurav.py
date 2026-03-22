@@ -870,13 +870,16 @@ class Parser:
         'heap_create', 'heap_push', 'heap_pop', 'heap_peek',
         'heap_size', 'heap_is_empty', 'heap_to_list', 'heap_clear',
         'heap_merge', 'heap_push_pop', 'heap_replace',
+        'trie_create', 'trie_insert', 'trie_search', 'trie_starts_with',
+        'trie_delete', 'trie_autocomplete', 'trie_size', 'trie_words',
+        'trie_longest_prefix', 'trie_count_prefix',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
     ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
-        'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create'})
+        'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -4339,6 +4342,196 @@ class Interpreter:
         self.builtins['heap_merge'] = _heap_merge
         self.builtins['heap_push_pop'] = _heap_push_pop
         self.builtins['heap_replace'] = _heap_replace
+
+        # ── Trie (Prefix Tree) builtins ──────────────────────────────
+        class _TrieNode:
+            __slots__ = ('children', 'is_end')
+            def __init__(self):
+                self.children = {}
+                self.is_end = False
+
+        def _trie_create(args):
+            return {'_type': 'trie', 'root': _TrieNode(), 'size': 0}
+
+        def _trie_insert(args):
+            if len(args) != 2:
+                raise RuntimeError("trie_insert: expected 2 arguments (trie, word)")
+            t, word = args
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_insert: first argument must be a trie")
+            if not isinstance(word, str):
+                raise RuntimeError("trie_insert: word must be a string")
+            node = t['root']
+            for ch in word:
+                if ch not in node.children:
+                    node.children[ch] = _TrieNode()
+                node = node.children[ch]
+            if not node.is_end:
+                node.is_end = True
+                t['size'] += 1
+            return t
+
+        def _trie_search(args):
+            if len(args) != 2:
+                raise RuntimeError("trie_search: expected 2 arguments (trie, word)")
+            t, word = args
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_search: first argument must be a trie")
+            if not isinstance(word, str):
+                raise RuntimeError("trie_search: word must be a string")
+            node = t['root']
+            for ch in word:
+                if ch not in node.children:
+                    return False
+                node = node.children[ch]
+            return node.is_end
+
+        def _trie_starts_with(args):
+            if len(args) != 2:
+                raise RuntimeError("trie_starts_with: expected 2 arguments (trie, prefix)")
+            t, prefix = args
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_starts_with: first argument must be a trie")
+            if not isinstance(prefix, str):
+                raise RuntimeError("trie_starts_with: prefix must be a string")
+            node = t['root']
+            for ch in prefix:
+                if ch not in node.children:
+                    return False
+                node = node.children[ch]
+            return True
+
+        def _trie_delete(args):
+            if len(args) != 2:
+                raise RuntimeError("trie_delete: expected 2 arguments (trie, word)")
+            t, word = args
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_delete: first argument must be a trie")
+            if not isinstance(word, str):
+                raise RuntimeError("trie_delete: word must be a string")
+            def _delete(node, word, depth):
+                if depth == len(word):
+                    if not node.is_end:
+                        return False
+                    node.is_end = False
+                    return len(node.children) == 0
+                ch = word[depth]
+                if ch not in node.children:
+                    return False
+                should_remove = _delete(node.children[ch], word, depth + 1)
+                if should_remove:
+                    del node.children[ch]
+                    return not node.is_end and len(node.children) == 0
+                return False
+            existed = _trie_search([t, word])
+            _delete(t['root'], word, 0)
+            if existed and not _trie_search([t, word]):
+                t['size'] = max(0, t['size'] - 1)
+            return t
+
+        def _trie_autocomplete(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("trie_autocomplete: expected 2-3 arguments (trie, prefix, [limit])")
+            t = args[0]
+            prefix = args[1]
+            limit = int(args[2]) if len(args) == 3 else 10
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_autocomplete: first argument must be a trie")
+            if not isinstance(prefix, str):
+                raise RuntimeError("trie_autocomplete: prefix must be a string")
+            node = t['root']
+            for ch in prefix:
+                if ch not in node.children:
+                    return []
+                node = node.children[ch]
+            results = []
+            def _collect(node, current):
+                if len(results) >= limit:
+                    return
+                if node.is_end:
+                    results.append(current)
+                for ch in sorted(node.children.keys()):
+                    if len(results) >= limit:
+                        return
+                    _collect(node.children[ch], current + ch)
+            _collect(node, prefix)
+            return results
+
+        def _trie_size(args):
+            if len(args) != 1:
+                raise RuntimeError("trie_size: expected 1 argument (trie)")
+            t = args[0]
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_size: argument must be a trie")
+            return float(t['size'])
+
+        def _trie_words(args):
+            if len(args) != 1:
+                raise RuntimeError("trie_words: expected 1 argument (trie)")
+            t = args[0]
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_words: argument must be a trie")
+            results = []
+            def _collect(node, current):
+                if node.is_end:
+                    results.append(current)
+                for ch in sorted(node.children.keys()):
+                    _collect(node.children[ch], current + ch)
+            _collect(t['root'], "")
+            return results
+
+        def _trie_longest_prefix(args):
+            if len(args) != 2:
+                raise RuntimeError("trie_longest_prefix: expected 2 arguments (trie, word)")
+            t, word = args
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_longest_prefix: first argument must be a trie")
+            if not isinstance(word, str):
+                raise RuntimeError("trie_longest_prefix: word must be a string")
+            node = t['root']
+            longest = ""
+            current = ""
+            for ch in word:
+                if ch not in node.children:
+                    break
+                node = node.children[ch]
+                current += ch
+                if node.is_end:
+                    longest = current
+            return longest
+
+        def _trie_count_prefix(args):
+            if len(args) != 2:
+                raise RuntimeError("trie_count_prefix: expected 2 arguments (trie, prefix)")
+            t, prefix = args
+            if not isinstance(t, dict) or t.get('_type') != 'trie':
+                raise RuntimeError("trie_count_prefix: first argument must be a trie")
+            if not isinstance(prefix, str):
+                raise RuntimeError("trie_count_prefix: prefix must be a string")
+            node = t['root']
+            for ch in prefix:
+                if ch not in node.children:
+                    return 0.0
+                node = node.children[ch]
+            count = [0]
+            def _count(node):
+                if node.is_end:
+                    count[0] += 1
+                for child in node.children.values():
+                    _count(child)
+            _count(node)
+            return float(count[0])
+
+        self.builtins['trie_create'] = _trie_create
+        self.builtins['trie_insert'] = _trie_insert
+        self.builtins['trie_search'] = _trie_search
+        self.builtins['trie_starts_with'] = _trie_starts_with
+        self.builtins['trie_delete'] = _trie_delete
+        self.builtins['trie_autocomplete'] = _trie_autocomplete
+        self.builtins['trie_size'] = _trie_size
+        self.builtins['trie_words'] = _trie_words
+        self.builtins['trie_longest_prefix'] = _trie_longest_prefix
+        self.builtins['trie_count_prefix'] = _trie_count_prefix
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

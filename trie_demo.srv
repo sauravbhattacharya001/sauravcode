@@ -1,0 +1,73 @@
+# trie_demo.srv - Trie (Prefix Tree) data structure demo
+
+print "=== Trie (Prefix Tree) Demo ==="
+print ""
+
+# Create a trie and insert words
+t = trie_create
+trie_insert (t) "apple"
+trie_insert (t) "app"
+trie_insert (t) "application"
+trie_insert (t) "apply"
+trie_insert (t) "banana"
+trie_insert (t) "band"
+trie_insert (t) "bandana"
+trie_insert (t) "cat"
+trie_insert (t) "car"
+trie_insert (t) "card"
+
+print "Inserted 10 words into trie"
+print "Trie size: " + to_string (trie_size t)
+print ""
+
+# Search for words
+print "=== Exact Search ==="
+print "Search 'apple': " + to_string (trie_search (t) "apple")
+print "Search 'app': " + to_string (trie_search (t) "app")
+print "Search 'appl': " + to_string (trie_search (t) "appl")
+print "Search 'zebra': " + to_string (trie_search (t) "zebra")
+print ""
+
+# Prefix checking
+print "=== Prefix Check ==="
+print "Starts with 'app': " + to_string (trie_starts_with (t) "app")
+print "Starts with 'ban': " + to_string (trie_starts_with (t) "ban")
+print "Starts with 'xyz': " + to_string (trie_starts_with (t) "xyz")
+print ""
+
+# Autocomplete
+print "=== Autocomplete ==="
+print "Autocomplete 'app': " + to_string (trie_autocomplete (t) "app")
+print "Autocomplete 'ban': " + to_string (trie_autocomplete (t) "ban")
+print "Autocomplete 'ca': " + to_string (trie_autocomplete (t) "ca")
+print ""
+
+# Count words with prefix
+print "=== Count Prefix ==="
+print "Words starting with 'app': " + to_string (trie_count_prefix (t) "app")
+print "Words starting with 'ban': " + to_string (trie_count_prefix (t) "ban")
+print "Words starting with 'c': " + to_string (trie_count_prefix (t) "c")
+print ""
+
+# Longest prefix match
+print "=== Longest Prefix ==="
+print "Longest prefix of 'application': " + trie_longest_prefix (t) "application"
+print "Longest prefix of 'bandanas': " + trie_longest_prefix (t) "bandanas"
+print "Longest prefix of 'cardinality': " + trie_longest_prefix (t) "cardinality"
+print ""
+
+# List all words
+print "=== All Words (sorted) ==="
+print trie_words t
+print ""
+
+# Delete a word
+print "=== Delete ==="
+trie_delete (t) "app"
+print "Deleted 'app'"
+print "Search 'app': " + to_string (trie_search (t) "app")
+print "Search 'apple': " + to_string (trie_search (t) "apple")
+print "Trie size: " + to_string (trie_size t)
+print ""
+
+print "=== Done ==="
