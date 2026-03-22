@@ -867,13 +867,16 @@ class Parser:
         'json_encode', 'json_decode', 'json_pretty', 'json_get',
         'json_set', 'json_delete', 'json_keys', 'json_values',
         'json_has', 'json_merge', 'json_flatten', 'json_query',
+        'heap_create', 'heap_push', 'heap_pop', 'heap_peek',
+        'heap_size', 'heap_is_empty', 'heap_to_list', 'heap_clear',
+        'heap_merge', 'heap_push_pop', 'heap_replace',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
     ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
-        'stack_create', 'queue_create', 'cache_create', 'graph_create'})
+        'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -2154,6 +2157,7 @@ class Interpreter:
         self._register_cache_builtins()
         self._register_color_builtins()
         self._register_regex_builtins()
+        self._register_heap_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -4195,6 +4199,146 @@ class Interpreter:
         self.builtins['json_merge'] = _json_merge
         self.builtins['json_flatten'] = _json_flatten
         self.builtins['json_query'] = _json_query
+
+    # ── Heap / Priority Queue builtins ───────────────────
+
+    def _register_heap_builtins(self):
+        """Register min-heap (priority queue) builtins.
+
+        Provides ``heap_create``, ``heap_push``, ``heap_pop``, ``heap_peek``,
+        ``heap_size``, ``heap_is_empty``, ``heap_to_list``, ``heap_clear``,
+        ``heap_merge``, ``heap_push_pop``, ``heap_replace``.
+
+        A heap is represented as a plain list managed by Python's heapq module.
+        Items are stored as [priority, value] pairs so any value type works.
+        """
+        import heapq
+        interpreter = self
+
+        _HEAP_TAG = '__srvheap__'
+
+        def _is_heap(h):
+            return isinstance(h, dict) and h.get('__type__') == _HEAP_TAG
+
+        def _assert_heap(name, h):
+            if not _is_heap(h):
+                raise RuntimeError(f"{name}: first argument must be a heap (created with heap_create)")
+
+        # heap_create() -> new empty heap
+        def _heap_create(args):
+            return {'__type__': _HEAP_TAG, 'data': [], '_counter': 0.0}
+
+        # heap_push(heap, priority, value) -> nil  (mutates heap)
+        def _heap_push(args):
+            interpreter._expect_args('heap_push', args, 3)
+            _assert_heap('heap_push', args[0])
+            h = args[0]
+            priority = args[1]
+            if not isinstance(priority, (int, float)):
+                raise RuntimeError("heap_push: priority must be a number")
+            cnt = h['_counter']
+            h['_counter'] = cnt + 1.0
+            heapq.heappush(h['data'], [float(priority), cnt, args[2]])
+            return None
+
+        # heap_pop(heap) -> value with lowest priority (removes it)
+        def _heap_pop(args):
+            interpreter._expect_args('heap_pop', args, 1)
+            _assert_heap('heap_pop', args[0])
+            if len(args[0]['data']) == 0:
+                raise RuntimeError("heap_pop: heap is empty")
+            entry = heapq.heappop(args[0]['data'])
+            return entry[2]
+
+        # heap_peek(heap) -> value with lowest priority (does not remove)
+        def _heap_peek(args):
+            interpreter._expect_args('heap_peek', args, 1)
+            _assert_heap('heap_peek', args[0])
+            if len(args[0]['data']) == 0:
+                raise RuntimeError("heap_peek: heap is empty")
+            return args[0]['data'][0][2]
+
+        # heap_size(heap) -> number of items
+        def _heap_size(args):
+            interpreter._expect_args('heap_size', args, 1)
+            _assert_heap('heap_size', args[0])
+            return float(len(args[0]['data']))
+
+        # heap_is_empty(heap) -> bool
+        def _heap_is_empty(args):
+            interpreter._expect_args('heap_is_empty', args, 1)
+            _assert_heap('heap_is_empty', args[0])
+            return len(args[0]['data']) == 0
+
+        # heap_to_list(heap) -> list of [priority, value] pairs sorted by priority
+        def _heap_to_list(args):
+            interpreter._expect_args('heap_to_list', args, 1)
+            _assert_heap('heap_to_list', args[0])
+            sorted_entries = sorted(args[0]['data'])
+            return [[e[0], e[2]] for e in sorted_entries]
+
+        # heap_clear(heap) -> nil (removes all items)
+        def _heap_clear(args):
+            interpreter._expect_args('heap_clear', args, 1)
+            _assert_heap('heap_clear', args[0])
+            args[0]['data'] = []
+            args[0]['_counter'] = 0.0
+            return None
+
+        # heap_merge(heap1, heap2) -> new heap containing all items from both
+        def _heap_merge(args):
+            interpreter._expect_args('heap_merge', args, 2)
+            _assert_heap('heap_merge', args[0])
+            _assert_heap('heap_merge', args[1])
+            merged = {'__type__': _HEAP_TAG, 'data': [], '_counter': 0.0}
+            combined = list(args[0]['data']) + list(args[1]['data'])
+            # Re-index counters for stable ordering
+            cnt = 0.0
+            for entry in sorted(combined):
+                heapq.heappush(merged['data'], [entry[0], cnt, entry[2]])
+                cnt += 1.0
+            merged['_counter'] = cnt
+            return merged
+
+        # heap_push_pop(heap, priority, value) -> pops and returns smallest after pushing
+        def _heap_push_pop(args):
+            interpreter._expect_args('heap_push_pop', args, 3)
+            _assert_heap('heap_push_pop', args[0])
+            h = args[0]
+            priority = args[1]
+            if not isinstance(priority, (int, float)):
+                raise RuntimeError("heap_push_pop: priority must be a number")
+            cnt = h['_counter']
+            h['_counter'] = cnt + 1.0
+            entry = heapq.heappushpop(h['data'], [float(priority), cnt, args[2]])
+            return entry[2]
+
+        # heap_replace(heap, priority, value) -> pops smallest, then pushes new item
+        def _heap_replace(args):
+            interpreter._expect_args('heap_replace', args, 3)
+            _assert_heap('heap_replace', args[0])
+            h = args[0]
+            if len(h['data']) == 0:
+                raise RuntimeError("heap_replace: heap is empty")
+            priority = args[1]
+            if not isinstance(priority, (int, float)):
+                raise RuntimeError("heap_replace: priority must be a number")
+            cnt = h['_counter']
+            h['_counter'] = cnt + 1.0
+            entry = heapq.heapreplace(h['data'], [float(priority), cnt, args[2]])
+            return entry[2]
+
+        self.builtins['heap_create'] = _heap_create
+        self.builtins['heap_push'] = _heap_push
+        self.builtins['heap_pop'] = _heap_pop
+        self.builtins['heap_peek'] = _heap_peek
+        self.builtins['heap_size'] = _heap_size
+        self.builtins['heap_is_empty'] = _heap_is_empty
+        self.builtins['heap_to_list'] = _heap_to_list
+        self.builtins['heap_clear'] = _heap_clear
+        self.builtins['heap_merge'] = _heap_merge
+        self.builtins['heap_push_pop'] = _heap_push_pop
+        self.builtins['heap_replace'] = _heap_replace
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

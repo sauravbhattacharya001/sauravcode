@@ -1,0 +1,51 @@
+# heap_demo.srv — Priority Queue / Heap builtins demo
+# A min-heap where lower priority numbers come out first.
+
+print "=== Heap / Priority Queue ==="
+
+h = heap_create
+print heap_is_empty h
+
+# Push items with priorities
+heap_push (h) 3 "low priority"
+heap_push (h) 1 "urgent"
+heap_push (h) 2 "medium"
+heap_push (h) 1 "also urgent"
+
+print "Size:"
+print heap_size h
+print "Is empty:"
+print heap_is_empty h
+
+# Peek at the highest-priority (lowest number) item
+print "Next up:"
+print heap_peek h
+
+# Pop items in priority order
+print "Pop order:"
+print heap_pop h
+print heap_pop h
+print heap_pop h
+print heap_pop h
+
+# Merge demo
+print "=== Merge ==="
+a = heap_create
+b = heap_create
+heap_push (a) 1 "alpha"
+heap_push (a) 3 "gamma"
+heap_push (b) 2 "beta"
+heap_push (b) 4 "delta"
+
+c = heap_merge (a) b
+print "Merged size:"
+print heap_size c
+print heap_pop c
+print heap_pop c
+print heap_pop c
+print heap_pop c
+
+# Clear demo
+heap_clear c
+print "After clear:"
+print heap_is_empty c
