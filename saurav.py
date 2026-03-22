@@ -733,6 +733,9 @@ class Parser:
         'cache_create', 'cache_get', 'cache_set', 'cache_clear',
         'cache_has', 'cache_keys', 'cache_size', 'cache_delete',
         'cache_values', 'cache_entries',
+        'color_rgb', 'color_hex', 'color_hsl', 'color_blend',
+        'color_lighten', 'color_darken', 'color_invert', 'color_contrast',
+        'color_to_rgb', 'color_to_hex', 'color_to_hsl',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2018,6 +2021,7 @@ class Interpreter:
         self._register_csv_builtins()
         self._register_validation_builtins()
         self._register_cache_builtins()
+        self._register_color_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -3466,6 +3470,169 @@ class Interpreter:
                 raise RuntimeError("cache_entries: argument must be a cache (from cache_create)")
             return [list(pair) for pair in cache['_data'].items()]
         self.builtins['cache_entries'] = _cache_entries
+
+    def _register_color_builtins(self):
+        """Register color manipulation builtins.
+
+        Provides ``color_rgb``, ``color_hex``, ``color_hsl``, ``color_blend``,
+        ``color_lighten``, ``color_darken``, ``color_invert``, ``color_contrast``,
+        ``color_to_rgb``, ``color_to_hex``, ``color_to_hsl``.
+        """
+        interpreter = self
+
+        def _parse_hex_color(s):
+            """Parse '#RRGGBB' or '#RGB' to (r, g, b) ints."""
+            if not isinstance(s, str):
+                raise RuntimeError("color: expected a hex color string like '#FF0000'")
+            s = s.strip().lstrip('#')
+            if len(s) == 3:
+                s = s[0]*2 + s[1]*2 + s[2]*2
+            if len(s) != 6:
+                raise RuntimeError(f"color: invalid hex color '#{s}'")
+            try:
+                r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+            except ValueError:
+                raise RuntimeError(f"color: invalid hex color '#{s}'")
+            return (r, g, b)
+
+        def _rgb_to_hsl(r, g, b):
+            """Convert RGB (0-255) to HSL (h: 0-360, s: 0-100, l: 0-100)."""
+            r1, g1, b1 = r / 255.0, g / 255.0, b / 255.0
+            mx, mn = max(r1, g1, b1), min(r1, g1, b1)
+            l = (mx + mn) / 2.0
+            if mx == mn:
+                h = s = 0.0
+            else:
+                d = mx - mn
+                s = d / (2.0 - mx - mn) if l > 0.5 else d / (mx + mn)
+                if mx == r1:
+                    h = (g1 - b1) / d + (6.0 if g1 < b1 else 0.0)
+                elif mx == g1:
+                    h = (b1 - r1) / d + 2.0
+                else:
+                    h = (r1 - g1) / d + 4.0
+                h /= 6.0
+            return (round(h * 360, 1), round(s * 100, 1), round(l * 100, 1))
+
+        def _hsl_to_rgb(h, s, l):
+            """Convert HSL (h: 0-360, s: 0-100, l: 0-100) to RGB (0-255)."""
+            h1, s1, l1 = h / 360.0, s / 100.0, l / 100.0
+            if s1 == 0:
+                v = int(round(l1 * 255))
+                return (v, v, v)
+            def hue2rgb(p, q, t):
+                if t < 0: t += 1
+                if t > 1: t -= 1
+                if t < 1/6: return p + (q - p) * 6 * t
+                if t < 1/2: return q
+                if t < 2/3: return p + (q - p) * (2/3 - t) * 6
+                return p
+            q = l1 * (1 + s1) if l1 < 0.5 else l1 + s1 - l1 * s1
+            p = 2 * l1 - q
+            r = int(round(hue2rgb(p, q, h1 + 1/3) * 255))
+            g = int(round(hue2rgb(p, q, h1) * 255))
+            b = int(round(hue2rgb(p, q, h1 - 1/3) * 255))
+            return (r, g, b)
+
+        def _clamp(v, lo=0, hi=255):
+            return max(lo, min(hi, int(round(v))))
+
+        # color_rgb(r, g, b) -> map {r, g, b, hex}
+        def _color_rgb(args):
+            interpreter._expect_args('color_rgb', args, 3)
+            r, g, b = [_clamp(a) for a in args]
+            return {'r': float(r), 'g': float(g), 'b': float(b),
+                    'hex': f'#{r:02X}{g:02X}{b:02X}'}
+
+        # color_hex(str) -> map {r, g, b, hex}
+        def _color_hex(args):
+            interpreter._expect_args('color_hex', args, 1)
+            r, g, b = _parse_hex_color(args[0])
+            return {'r': float(r), 'g': float(g), 'b': float(b),
+                    'hex': f'#{r:02X}{g:02X}{b:02X}'}
+
+        # color_hsl(h, s, l) -> map {h, s, l, r, g, b, hex}
+        def _color_hsl(args):
+            interpreter._expect_args('color_hsl', args, 3)
+            h, s, l = float(args[0]), float(args[1]), float(args[2])
+            r, g, b = _hsl_to_rgb(h, s, l)
+            return {'h': h, 's': s, 'l': l,
+                    'r': float(r), 'g': float(g), 'b': float(b),
+                    'hex': f'#{r:02X}{g:02X}{b:02X}'}
+
+        # color_blend(hex1, hex2, ratio) -> blended hex
+        def _color_blend(args):
+            interpreter._expect_args('color_blend', args, 3)
+            r1, g1, b1 = _parse_hex_color(args[0])
+            r2, g2, b2 = _parse_hex_color(args[1])
+            t = float(args[2])
+            r = _clamp(r1 + (r2 - r1) * t)
+            g = _clamp(g1 + (g2 - g1) * t)
+            b = _clamp(b1 + (b2 - b1) * t)
+            return f'#{r:02X}{g:02X}{b:02X}'
+
+        # color_lighten(hex, amount) -> hex  (amount 0-100)
+        def _color_lighten(args):
+            interpreter._expect_args('color_lighten', args, 2)
+            r, g, b = _parse_hex_color(args[0])
+            h, s, l = _rgb_to_hsl(r, g, b)
+            l = min(100, l + float(args[1]))
+            r, g, b = _hsl_to_rgb(h, s, l)
+            return f'#{r:02X}{g:02X}{b:02X}'
+
+        # color_darken(hex, amount) -> hex  (amount 0-100)
+        def _color_darken(args):
+            interpreter._expect_args('color_darken', args, 2)
+            r, g, b = _parse_hex_color(args[0])
+            h, s, l = _rgb_to_hsl(r, g, b)
+            l = max(0, l - float(args[1]))
+            r, g, b = _hsl_to_rgb(h, s, l)
+            return f'#{r:02X}{g:02X}{b:02X}'
+
+        # color_invert(hex) -> hex
+        def _color_invert(args):
+            interpreter._expect_args('color_invert', args, 1)
+            r, g, b = _parse_hex_color(args[0])
+            return f'#{255-r:02X}{255-g:02X}{255-b:02X}'
+
+        # color_contrast(hex) -> "#000000" or "#FFFFFF"
+        def _color_contrast(args):
+            interpreter._expect_args('color_contrast', args, 1)
+            r, g, b = _parse_hex_color(args[0])
+            # W3C relative luminance
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+            return '#000000' if lum > 128 else '#FFFFFF'
+
+        # color_to_rgb(hex) -> map {r, g, b}
+        def _color_to_rgb(args):
+            interpreter._expect_args('color_to_rgb', args, 1)
+            r, g, b = _parse_hex_color(args[0])
+            return {'r': float(r), 'g': float(g), 'b': float(b)}
+
+        # color_to_hex(r, g, b) -> hex string
+        def _color_to_hex(args):
+            interpreter._expect_args('color_to_hex', args, 3)
+            r, g, b = [_clamp(a) for a in args]
+            return f'#{r:02X}{g:02X}{b:02X}'
+
+        # color_to_hsl(hex) -> map {h, s, l}
+        def _color_to_hsl(args):
+            interpreter._expect_args('color_to_hsl', args, 1)
+            r, g, b = _parse_hex_color(args[0])
+            h, s, l = _rgb_to_hsl(r, g, b)
+            return {'h': h, 's': s, 'l': l}
+
+        self.builtins['color_rgb'] = _color_rgb
+        self.builtins['color_hex'] = _color_hex
+        self.builtins['color_hsl'] = _color_hsl
+        self.builtins['color_blend'] = _color_blend
+        self.builtins['color_lighten'] = _color_lighten
+        self.builtins['color_darken'] = _color_darken
+        self.builtins['color_invert'] = _color_invert
+        self.builtins['color_contrast'] = _color_contrast
+        self.builtins['color_to_rgb'] = _color_to_rgb
+        self.builtins['color_to_hex'] = _color_to_hex
+        self.builtins['color_to_hsl'] = _color_to_hsl
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

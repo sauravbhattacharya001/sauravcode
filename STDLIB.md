@@ -273,6 +273,22 @@ Sets are unordered collections of unique, hashable values (numbers, strings, boo
 
 **Validate rules:** `required`, `email`, `url`, `ipv4`, `ipv6`, `ip`, `uuid`, `date`, `hex_color`, `phone`, `credit_card`, `json`, `numeric`, `alpha`, `alphanumeric`, `min_len:N`, `max_len:N`, `min:N`, `max:N`
 
+### Color Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `color_rgb` | `color_rgb 255 0 0` | Create color from RGB (0-255). Returns `{r, g, b, hex}` |
+| `color_hex` | `color_hex "#FF0000"` | Parse hex color string. Returns `{r, g, b, hex}` |
+| `color_hsl` | `color_hsl 30 100 50` | Create from HSL (h: 0-360, s: 0-100, l: 0-100). Returns `{h, s, l, r, g, b, hex}` |
+| `color_blend` | `color_blend "#FF0000" "#0000FF" 0.5` | Blend two colors by ratio (0-1). Returns hex string |
+| `color_lighten` | `color_lighten "#FF0000" 20` | Lighten color by amount (0-100). Returns hex string |
+| `color_darken` | `color_darken "#FF0000" 20` | Darken color by amount (0-100). Returns hex string |
+| `color_invert` | `color_invert "#FF8800"` | Invert a color. Returns hex string |
+| `color_contrast` | `color_contrast "#FFFF00"` | Get best text color (`#000000` or `#FFFFFF`) for readability |
+| `color_to_rgb` | `color_to_rgb "#1E90FF"` | Convert hex to `{r, g, b}` map |
+| `color_to_hex` | `color_to_hex 30 144 255` | Convert RGB values to hex string |
+| `color_to_hsl` | `color_to_hsl "#1E90FF"` | Convert hex to `{h, s, l}` map |
+
 ## Operators
 
 Beyond built-in functions, sauravcode supports these operators:

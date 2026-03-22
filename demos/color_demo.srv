@@ -1,0 +1,53 @@
+# Color manipulation builtins demo
+
+# Create colors from RGB values
+red = color_rgb 255 0 0
+print f"Red: {red}"
+
+# Parse hex colors
+sky = color_hex "#87CEEB"
+print f"Sky blue: {sky}"
+
+# Create from HSL
+sunset = color_hsl 30 100 50
+print f"Sunset orange: {sunset}"
+
+# Blend two colors
+blended = color_blend "#FF0000" "#0000FF" 0.5
+print f"Red + Blue at 50%: {blended}"
+
+# Lighten and darken
+light_red = color_lighten "#FF0000" 20
+dark_red = color_darken "#FF0000" 20
+print f"Light red: {light_red}"
+print f"Dark red: {dark_red}"
+
+# Invert a color
+inverted = color_invert "#FF8800"
+print f"Invert of #FF8800: {inverted}"
+
+# Get contrast color (black or white) for text readability
+bg = "#FFFF00"
+text_color = color_contrast bg
+print f"Best text color on {bg}: {text_color}"
+
+bg2 = "#000080"
+text_color2 = color_contrast bg2
+print f"Best text color on {bg2}: {text_color2}"
+
+# Convert between formats
+rgb = color_to_rgb "#1E90FF"
+print f"Dodger blue RGB: {rgb}"
+
+hex_val = color_to_hex 30 144 255
+print f"RGB to hex: {hex_val}"
+
+hsl = color_to_hsl "#1E90FF"
+print f"Dodger blue HSL: {hsl}"
+
+# Build a color palette by blending
+print "Color palette from red to blue:"
+for i in range 5
+    ratio = i / 4
+    c = color_blend "#FF0000" "#0000FF" ratio
+    print f"  {ratio}: {c}"
