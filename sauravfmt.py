@@ -266,18 +266,24 @@ def _split_trailing_comment(line):
     Returns (line, None) if there is no trailing comment.
     """
     in_string = False
-    for i, ch in enumerate(line):
+    i = 0
+    while i < len(line):
+        ch = line[i]
         if ch == '"' and not in_string:
             in_string = True
+            i += 1
             continue
         if in_string:
-            if ch == '\\':
-                continue  # skip next char
+            if ch == '\\' and i + 1 < len(line):
+                i += 2  # properly skip escaped character
+                continue
             if ch == '"':
                 in_string = False
+            i += 1
             continue
         if ch == '#':
             return line[:i], line[i:]
+        i += 1
     return line, None
 
 
