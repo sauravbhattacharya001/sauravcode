@@ -26,6 +26,7 @@ import sys
 import time
 import hashlib
 import json
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -260,78 +261,99 @@ def run_file(file_path, mode="run", debug=False):
         return False, f"Error: {e}", duration_ms
 
 
+# ── Watch configuration ─────────────────────────────────────────────────
+@dataclass
+class WatchConfig:
+    """Consolidated configuration for the watch loop, replacing loose params."""
+    target: str
+    mode: str = "run"           # "run" | "test" | "compile"
+    interval: float = 1.0
+    recursive: bool = False
+    clear: bool = False
+    quiet: bool = False
+    debug: bool = False
+    show_stats: bool = False
+    notify: bool = False
+    on_success: str | None = None
+    on_failure: str | None = None
+
+    @classmethod
+    def from_args(cls, args) -> "WatchConfig":
+        """Build config from argparse namespace."""
+        mode = "run"
+        if args.test:
+            mode = "test"
+        elif args.compile:
+            mode = "compile"
+        return cls(
+            target=args.target,
+            mode=mode,
+            interval=args.interval,
+            recursive=args.recursive,
+            clear=args.clear,
+            quiet=args.quiet,
+            debug=args.debug,
+            show_stats=args.stats,
+            notify=args.notify,
+            on_success=args.on_success,
+            on_failure=args.on_failure,
+        )
+
+
 # ── Watcher ─────────────────────────────────────────────────────────────
 def watch(args):
     """Main watch loop."""
-    target = args.target
-    interval = args.interval
-    clear = args.clear
-    quiet = args.quiet
-    recursive = args.recursive
-    show_stats = args.stats
-    notify = args.notify
-    on_success = args.on_success
-    on_failure = args.on_failure
-    debug = args.debug
-
-    mode = "run"
-    if args.test:
-        mode = "test"
-    elif args.compile:
-        mode = "compile"
+    cfg = WatchConfig.from_args(args) if not isinstance(args, WatchConfig) else args
 
     # Resolve target
-    target_path = Path(target)
+    target_path = Path(cfg.target)
     if not target_path.exists():
-        print(f"{Color.RED}Error: '{target}' does not exist.{Color.RESET}")
+        print(f"{Color.RED}Error: '{cfg.target}' does not exist.{Color.RESET}")
         sys.exit(1)
 
     single_file = target_path.is_file()
     if single_file and target_path.suffix != ".srv":
-        print(f"{Color.RED}Error: '{target}' is not a .srv file.{Color.RESET}")
+        print(f"{Color.RED}Error: '{cfg.target}' is not a .srv file.{Color.RESET}")
         sys.exit(1)
 
     tracker = FileTracker()
     stats = RunStats()
 
     # Initial file list
-    files = discover_srv_files(target, recursive)
+    files = discover_srv_files(cfg.target, cfg.recursive)
     if not files:
-        print(f"{Color.RED}Error: No .srv files found in '{target}'.{Color.RESET}")
+        print(f"{Color.RED}Error: No .srv files found in '{cfg.target}'.{Color.RESET}")
         sys.exit(1)
 
     # Take initial snapshot
     tracker.snapshot(files)
 
     # Banner
-    if not quiet:
-        mode_label = {"run": "interpret", "test": "test", "compile": "compile"}[mode]
+    if not cfg.quiet:
+        mode_label = {"run": "interpret", "test": "test", "compile": "compile"}[cfg.mode]
         print(f"{Color.BOLD}{Color.CYAN}🔭 sauravwatch{Color.RESET}")
         print(f"{Color.GRAY}   Mode:     {mode_label}{Color.RESET}")
         if single_file:
-            print(f"{Color.GRAY}   Watching: {target}{Color.RESET}")
+            print(f"{Color.GRAY}   Watching: {cfg.target}{Color.RESET}")
         else:
-            print(f"{Color.GRAY}   Watching: {len(files)} .srv files in {target}"
-                  f"{'(recursive)' if recursive else ''}{Color.RESET}")
-        print(f"{Color.GRAY}   Interval: {interval}s{Color.RESET}")
+            print(f"{Color.GRAY}   Watching: {len(files)} .srv files in {cfg.target}"
+                  f"{'(recursive)' if cfg.recursive else ''}{Color.RESET}")
+        print(f"{Color.GRAY}   Interval: {cfg.interval}s{Color.RESET}")
         print(f"{Color.GRAY}   Press Ctrl+C to stop{Color.RESET}")
         print()
 
     # Do an initial run for single file mode
     if single_file:
-        _execute_and_report(
-            target, mode, debug, clear, quiet, stats,
-            notify, on_success, on_failure, initial=True,
-        )
+        _execute_and_report(cfg.target, cfg, stats, initial=True)
 
     # Watch loop
     try:
         while True:
-            time.sleep(interval)
+            time.sleep(cfg.interval)
 
             # Re-discover files (new files may appear)
             if not single_file:
-                files = discover_srv_files(target, recursive)
+                files = discover_srv_files(cfg.target, cfg.recursive)
 
             changes = tracker.detect_changes(files)
             if not changes:
@@ -341,13 +363,13 @@ def watch(args):
             for change_type, changed_path in changes:
                 rel = os.path.relpath(changed_path)
                 if change_type == "new":
-                    if not quiet:
+                    if not cfg.quiet:
                         print(f"{Color.GREEN}+ New: {rel}{Color.RESET}")
                 elif change_type == "modified":
-                    if not quiet:
+                    if not cfg.quiet:
                         print(f"{Color.YELLOW}~ Modified: {rel}{Color.RESET}")
                 elif change_type == "deleted":
-                    if not quiet:
+                    if not cfg.quiet:
                         print(f"{Color.RED}- Deleted: {rel}{Color.RESET}")
 
             # Determine which files to run
@@ -355,47 +377,40 @@ def watch(args):
                               if ct in ("new", "modified") and p.endswith(".srv")]
 
             if single_file and modified_files:
-                _execute_and_report(
-                    target, mode, debug, clear, quiet, stats,
-                    notify, on_success, on_failure,
-                )
+                _execute_and_report(cfg.target, cfg, stats)
             elif modified_files:
                 for f in modified_files:
-                    _execute_and_report(
-                        f, mode, debug, clear, quiet, stats,
-                        notify, on_success, on_failure,
-                    )
+                    _execute_and_report(f, cfg, stats)
 
     except KeyboardInterrupt:
-        if not quiet:
+        if not cfg.quiet:
             print(f"\n{Color.CYAN}👋 Stopped watching.{Color.RESET}")
-        if show_stats and stats.total_runs > 0:
+        if cfg.show_stats and stats.total_runs > 0:
             print(stats.summary())
 
 
-def _execute_and_report(file_path, mode, debug, clear, quiet, stats,
-                        notify, on_success, on_failure, initial=False):
+def _execute_and_report(file_path, cfg, stats, initial=False):
     """Execute a file and print results."""
-    if clear:
+    if cfg.clear:
         os.system("cls" if os.name == "nt" else "clear")
 
     now = datetime.now().strftime("%H:%M:%S")
     rel = os.path.relpath(file_path)
 
-    if not quiet:
+    if not cfg.quiet:
         label = "Initial run" if initial else "Re-running"
         print(f"\n{Color.BOLD}{'─' * 50}{Color.RESET}")
         print(f"{Color.GRAY}[{now}]{Color.RESET} {label}: "
               f"{Color.BOLD}{rel}{Color.RESET}")
         print(f"{'─' * 50}")
 
-    success, output, duration_ms = run_file(file_path, mode, debug)
+    success, output, duration_ms = run_file(file_path, cfg.mode, cfg.debug)
     stats.record(duration_ms, success, file_path)
 
     if output:
         print(output)
 
-    if not quiet:
+    if not cfg.quiet:
         if success:
             print(f"\n{Color.GREEN}✓ OK{Color.RESET} "
                   f"{Color.GRAY}({duration_ms:.0f}ms){Color.RESET}")
@@ -404,18 +419,18 @@ def _execute_and_report(file_path, mode, debug, clear, quiet, stats,
                   f"{Color.GRAY}({duration_ms:.0f}ms){Color.RESET}")
 
     # Notifications
-    if notify and not success:
+    if cfg.notify and not success:
         send_notification("sauravwatch", f"❌ {rel} failed")
 
     # Hooks
-    if success and on_success:
+    if success and cfg.on_success:
         try:
-            subprocess.run(on_success, shell=True, timeout=10)
+            subprocess.run(cfg.on_success, shell=True, timeout=10)
         except Exception:
             pass
-    elif not success and on_failure:
+    elif not success and cfg.on_failure:
         try:
-            subprocess.run(on_failure, shell=True, timeout=10)
+            subprocess.run(cfg.on_failure, shell=True, timeout=10)
         except Exception:
             pass
 
