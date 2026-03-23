@@ -4541,7 +4541,9 @@ class Interpreter:
             raise RuntimeError("sort_by: first argument must be a function or lambda")
         if not isinstance(lst, list):
             raise RuntimeError("sort_by: second argument must be a list")
-        return sorted(lst, key=lambda x: self._call_function_with_args(func, [x]))
+        kind, obj = self._resolve_callable(func)
+        call = self._call_resolved
+        return sorted(lst, key=lambda x: call(kind, obj, [x]))
 
     def _builtin_min_by(self, args):
         """min_by(func, list) - element with minimum key function result"""
@@ -4553,7 +4555,9 @@ class Interpreter:
             raise RuntimeError("min_by: second argument must be a list")
         if len(lst) == 0:
             raise RuntimeError("min_by: empty list")
-        return min(lst, key=lambda x: self._call_function_with_args(func, [x]))
+        kind, obj = self._resolve_callable(func)
+        call = self._call_resolved
+        return min(lst, key=lambda x: call(kind, obj, [x]))
 
     def _builtin_max_by(self, args):
         """max_by(func, list) - element with maximum key function result"""
@@ -4565,7 +4569,9 @@ class Interpreter:
             raise RuntimeError("max_by: second argument must be a list")
         if len(lst) == 0:
             raise RuntimeError("max_by: empty list")
-        return max(lst, key=lambda x: self._call_function_with_args(func, [x]))
+        kind, obj = self._resolve_callable(func)
+        call = self._call_resolved
+        return max(lst, key=lambda x: call(kind, obj, [x]))
 
     def _builtin_partition(self, args):
         """partition(func, list) - split list into [truthy, falsy] by predicate"""
@@ -4575,9 +4581,11 @@ class Interpreter:
             raise RuntimeError("partition: first argument must be a function or lambda")
         if not isinstance(lst, list):
             raise RuntimeError("partition: second argument must be a list")
+        kind, obj = self._resolve_callable(func)
+        call = self._call_resolved
         truthy, falsy = [], []
         for item in lst:
-            if self._call_function_with_args(func, [item]):
+            if call(kind, obj, [item]):
                 truthy.append(item)
             else:
                 falsy.append(item)
@@ -4941,6 +4949,48 @@ class Interpreter:
                 self._call_depth -= 1
         return result
 
+    def _resolve_callable(self, func_ref):
+        """Resolve a callable reference to a direct (kind, obj) pair.
+
+        Returns a tuple ``(kind, obj)`` where *kind* is one of
+        ``'lambda'``, ``'func'``, or ``'builtin'``, and *obj* is the
+        resolved callable (``LambdaValue``, ``FunctionNode``, or the
+        built-in function itself).
+
+        This allows higher-order functions (map, filter, reduce, each)
+        to resolve the callable *once* outside the hot loop, then use
+        the appropriate fast path on every iteration — eliminating N
+        repeated ``isinstance`` checks and dict lookups for an
+        N-element list.
+        """
+        if isinstance(func_ref, LambdaValue):
+            return ('lambda', func_ref)
+        if isinstance(func_ref, FunctionNode):
+            return ('func', func_ref)
+        # String name — resolve to concrete callable
+        func_name = func_ref
+        func = self.functions.get(func_name)
+        if func:
+            return ('func', func)
+        if func_name in self.builtins:
+            return ('builtin', self.builtins[func_name])
+        if func_name in self.variables:
+            var_val = self.variables[func_name]
+            if isinstance(var_val, FunctionNode):
+                return ('func', var_val)
+            elif isinstance(var_val, LambdaValue):
+                return ('lambda', var_val)
+        raise RuntimeError(f"Function '{func_name}' is not defined.")
+
+    def _call_resolved(self, kind, obj, evaluated_args):
+        """Invoke a pre-resolved callable. See ``_resolve_callable``."""
+        if kind == 'lambda':
+            return self._call_lambda(obj, evaluated_args)
+        if kind == 'func':
+            return self._invoke_func_node(obj, evaluated_args)
+        # builtin
+        return obj(evaluated_args)
+
     def _call_function_with_args(self, func_ref, evaluated_args):
         """Call a user-defined function, built-in, or lambda with pre-evaluated args.
         
@@ -4952,29 +5002,8 @@ class Interpreter:
         - A LambdaValue (anonymous function)
         - A FunctionNode (closure / first-class function value)
         """
-        # Lambda value — call directly
-        if isinstance(func_ref, LambdaValue):
-            return self._call_lambda(func_ref, evaluated_args)
-
-        # FunctionNode value (closure returned from higher-order function)
-        if isinstance(func_ref, FunctionNode):
-            return self._invoke_func_node(func_ref, evaluated_args)
-
-        # Named function
-        func_name = func_ref
-        func = self.functions.get(func_name)
-        if func:
-            return self._invoke_func_node(func, evaluated_args)
-        if func_name in self.builtins:
-            return self.builtins[func_name](evaluated_args)
-        # Check if the name refers to a variable holding a callable
-        if func_name in self.variables:
-            var_val = self.variables[func_name]
-            if isinstance(var_val, FunctionNode):
-                return self._invoke_func_node(var_val, evaluated_args)
-            elif isinstance(var_val, LambdaValue):
-                return self._call_lambda(var_val, evaluated_args)
-        raise RuntimeError(f"Function '{func_name}' is not defined.")
+        kind, obj = self._resolve_callable(func_ref)
+        return self._call_resolved(kind, obj, evaluated_args)
 
     def _builtin_map(self, args):
         """map func list → apply function to each element, return new list.
@@ -4989,7 +5018,11 @@ class Interpreter:
             raise RuntimeError("map expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("map expects a list as second argument")
-        return [self._call_function_with_args(func_ref, [item]) for item in lst]
+        # Resolve callable once outside the loop to avoid N isinstance
+        # checks and dict lookups for an N-element list.
+        kind, obj = self._resolve_callable(func_ref)
+        call = self._call_resolved
+        return [call(kind, obj, [item]) for item in lst]
 
     def _builtin_filter(self, args):
         """filter func list → keep elements where function returns truthy.
@@ -5004,8 +5037,11 @@ class Interpreter:
             raise RuntimeError("filter expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("filter expects a list as second argument")
+        kind, obj = self._resolve_callable(func_ref)
+        call = self._call_resolved
+        truthy = self._is_truthy
         return [item for item in lst
-                if self._is_truthy(self._call_function_with_args(func_ref, [item]))]
+                if truthy(call(kind, obj, [item]))]
 
     def _builtin_reduce(self, args):
         """reduce func list initial → fold list with binary function.
@@ -5020,9 +5056,11 @@ class Interpreter:
             raise RuntimeError("reduce expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("reduce expects a list as second argument")
+        kind, obj = self._resolve_callable(func_ref)
+        call = self._call_resolved
         acc = init
         for item in lst:
-            acc = self._call_function_with_args(func_ref, [acc, item])
+            acc = call(kind, obj, [acc, item])
         return acc
 
     def _builtin_each(self, args):
@@ -5039,8 +5077,10 @@ class Interpreter:
             raise RuntimeError("each expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("each expects a list as second argument")
+        kind, obj = self._resolve_callable(func_ref)
+        call = self._call_resolved
         for item in lst:
-            self._call_function_with_args(func_ref, [item])
+            call(kind, obj, [item])
         return lst
 
     # --- Random built-ins ---
