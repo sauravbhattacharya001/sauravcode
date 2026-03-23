@@ -203,6 +203,7 @@ DEBUG = False
 
 # Security limits to prevent denial-of-service attacks
 MAX_RECURSION_DEPTH = 500      # Maximum nested function call depth
+MAX_EVAL_DEPTH = 500           # Maximum expression nesting depth
 MAX_LOOP_ITERATIONS = 10_000_000  # Maximum iterations per loop
 MAX_ALLOC_SIZE = 10_000_000    # Maximum elements in a single allocation (list/string repeat/range)
 MAX_EXPONENT = 10_000          # Maximum exponent to prevent memory exhaustion via huge integers
@@ -1941,6 +1942,7 @@ class Interpreter:
         self.variables = {}  # Store variable values
         self.enums = {}      # Store enum definitions: {name: {VARIANT: value, ...}}
         self._call_depth = 0  # Track recursion depth for DoS protection
+        self._eval_depth = 0  # Track expression nesting depth for DoS protection
         self._imported_modules = set()  # Track imported modules (circular import prevention)
         self._source_dir = None  # Directory of the currently executing file (for relative imports)
         self._init_builtins()
@@ -6754,21 +6756,32 @@ class Interpreter:
         )
 
     def evaluate(self, node):
-        if DEBUG:
-            debug(f"Evaluating node: {node}")
-        handler = self._evaluate_dispatch.get(type(node))
-        if handler is not None:
-            try:
-                return handler(node)
-            except SauravRuntimeError:
-                raise  # already enriched
-            except (ReturnSignal, ThrowSignal, BreakSignal, ContinueSignal, YieldSignal):
-                raise  # control flow signals, not errors
-            except RuntimeError as e:
-                line = getattr(node, 'line_num', None)
-                raise SauravRuntimeError(str(e), line=line) from None
-        else:
-            raise ValueError(f'Unknown node type: {node}')
+        self._eval_depth += 1
+        if self._eval_depth > MAX_EVAL_DEPTH:
+            self._eval_depth -= 1
+            line = getattr(node, 'line_num', None)
+            raise SauravRuntimeError(
+                f"Maximum expression nesting depth ({MAX_EVAL_DEPTH}) exceeded",
+                line=line
+            )
+        try:
+            if DEBUG:
+                debug(f"Evaluating node: {node}")
+            handler = self._evaluate_dispatch.get(type(node))
+            if handler is not None:
+                try:
+                    return handler(node)
+                except SauravRuntimeError:
+                    raise  # already enriched
+                except (ReturnSignal, ThrowSignal, BreakSignal, ContinueSignal, YieldSignal):
+                    raise  # control flow signals, not errors
+                except RuntimeError as e:
+                    line = getattr(node, 'line_num', None)
+                    raise SauravRuntimeError(str(e), line=line) from None
+            else:
+                raise ValueError(f'Unknown node type: {node}')
+        finally:
+            self._eval_depth -= 1
 
     # ── evaluate dispatch handlers ───────────────────────────
 
