@@ -5479,6 +5479,16 @@ class Interpreter:
     # --- HTTP built-ins ---
 
     @staticmethod
+    def _is_private_address(ip_str):
+        """Check if an IP address string is private/reserved."""
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            return ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local
+        except ValueError:
+            return True  # unparseable → block
+
+    @staticmethod
     def _is_private_ip(hostname):
         """Check if a hostname resolves to a private/reserved IP (SSRF protection)."""
         import ipaddress
@@ -5495,6 +5505,60 @@ class Interpreter:
             return True
         return False
 
+    @staticmethod
+    def _make_ssrf_safe_opener():
+        """Create a urllib opener that validates resolved IPs at connection time.
+
+        This prevents DNS rebinding attacks where a hostname resolves to a
+        public IP during the initial check but a private IP when the actual
+        connection is made.  The custom handler intercepts the socket connect
+        call and rejects private/reserved IPs.
+        """
+        import urllib.request
+        import http.client
+        import socket
+        import ipaddress
+
+        class SSRFSafeHTTPConnection(http.client.HTTPConnection):
+            def connect(self):
+                """Override connect to validate resolved IP before connecting."""
+                for info in socket.getaddrinfo(self.host, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                    af, socktype, proto, canonname, sa = info
+                    addr = sa[0]
+                    ip = ipaddress.ip_address(addr)
+                    if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                        raise RuntimeError(
+                            f"SSRF protection: connection blocked — "
+                            f"'{self.host}' resolved to private IP {addr} at connect time "
+                            f"(possible DNS rebinding attack)."
+                        )
+                super().connect()
+
+        class SSRFSafeHTTPSConnection(http.client.HTTPSConnection):
+            def connect(self):
+                """Override connect to validate resolved IP before connecting."""
+                for info in socket.getaddrinfo(self.host, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                    af, socktype, proto, canonname, sa = info
+                    addr = sa[0]
+                    ip = ipaddress.ip_address(addr)
+                    if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                        raise RuntimeError(
+                            f"SSRF protection: connection blocked — "
+                            f"'{self.host}' resolved to private IP {addr} at connect time "
+                            f"(possible DNS rebinding attack)."
+                        )
+                super().connect()
+
+        class SSRFSafeHTTPHandler(urllib.request.HTTPHandler):
+            def http_open(self, req):
+                return self.do_open(SSRFSafeHTTPConnection, req)
+
+        class SSRFSafeHTTPSHandler(urllib.request.HTTPSHandler):
+            def https_open(self, req):
+                return self.do_open(SSRFSafeHTTPSConnection, req)
+
+        return urllib.request.build_opener(SSRFSafeHTTPHandler, SSRFSafeHTTPSHandler)
+
     def _http_request(self, method, url, body=None, headers=None):
         """Perform an HTTP request and return a map with status, body, and headers."""
         import urllib.request
@@ -5506,7 +5570,7 @@ class Interpreter:
         if not url.startswith(('http://', 'https://')):
             raise RuntimeError(f"http_{method.lower()}: URL must start with http:// or https://")
 
-        # SSRF protection: block requests to private/internal networks
+        # Pre-flight SSRF check (fast-fail for obviously private hosts)
         parsed = urlparse(url)
         hostname = parsed.hostname
         if not hostname:
@@ -5536,8 +5600,12 @@ class Interpreter:
 
         req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
 
+        # Use SSRF-safe opener that validates IPs at connect time,
+        # preventing DNS rebinding attacks (TOCTOU between resolve and connect)
+        opener = self._make_ssrf_safe_opener()
+
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with opener.open(req, timeout=30) as resp:
                 resp_body = resp.read().decode('utf-8', errors='replace')
                 resp_headers = {k: v for k, v in resp.getheaders()}
                 # Try to auto-parse JSON responses
