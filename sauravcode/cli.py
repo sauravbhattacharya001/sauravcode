@@ -15,91 +15,54 @@ def _project_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def main_interpret():
-    """Entry point for the ``sauravcode`` console script (interpreter + REPL)."""
-    root = _project_root()
-    script = os.path.join(root, "saurav.py")
+def _run_module(filename, label):
+    """Load and execute a top-level script by filename.
 
-    # If running from an installed package, saurav.py lives alongside the
-    # sauravcode/ package directory.  Fall back to importlib for editable
-    # installs where the layout is different.
-    if os.path.isfile(script):
-        # Inject root so that ``import saurav`` inside the script resolves.
-        if root not in sys.path:
-            sys.path.insert(0, root)
+    Locates *filename* relative to the project root, ensures the root
+    is on ``sys.path`` so sibling imports resolve, then calls the
+    module's ``main()`` function.
 
-    # Import the interpreter's main() and call it.
-    # This avoids exec/subprocess overhead.
+    Parameters
+    ----------
+    filename : str
+        Script filename (e.g. ``"saurav.py"``).
+    label : str
+        Human-readable label for error messages (e.g. ``"interpreter"``).
+    """
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("saurav", script)
+    root = _project_root()
+    script = os.path.join(root, filename)
+
+    if os.path.isfile(script) and root not in sys.path:
+        sys.path.insert(0, root)
+
+    module_name = os.path.splitext(filename)[0]
+    spec = importlib.util.spec_from_file_location(module_name, script)
     if spec is None or spec.loader is None:
-        print("Error: Cannot locate saurav.py interpreter", file=sys.stderr)
+        print("Error: Cannot locate %s %s" % (filename, label), file=sys.stderr)
         sys.exit(1)
 
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.main()
+
+
+def main_interpret():
+    """Entry point for the ``sauravcode`` console script (interpreter + REPL)."""
+    _run_module("saurav.py", "interpreter")
 
 
 def main_compile():
     """Entry point for the ``sauravcode-compile`` console script (compiler)."""
-    root = _project_root()
-    script = os.path.join(root, "sauravcc.py")
-
-    if os.path.isfile(script):
-        if root not in sys.path:
-            sys.path.insert(0, root)
-
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("sauravcc", script)
-    if spec is None or spec.loader is None:
-        print("Error: Cannot locate sauravcc.py compiler", file=sys.stderr)
-        sys.exit(1)
-
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    mod.main()
+    _run_module("sauravcc.py", "compiler")
 
 
 def main_snap():
     """Entry point for the ``sauravcode-snap`` console script (snapshot testing)."""
-    root = _project_root()
-    script = os.path.join(root, "sauravsnap.py")
-
-    if os.path.isfile(script):
-        if root not in sys.path:
-            sys.path.insert(0, root)
-
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("sauravsnap", script)
-    if spec is None or spec.loader is None:
-        print("Error: Cannot locate sauravsnap.py snapshot tester", file=sys.stderr)
-        sys.exit(1)
-
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    mod.main()
+    _run_module("sauravsnap.py", "snapshot tester")
 
 
 def main_api():
     """Entry point for the ``sauravcode-api`` console script (REST API server)."""
-    root = _project_root()
-    script = os.path.join(root, "sauravapi.py")
-
-    if os.path.isfile(script):
-        if root not in sys.path:
-            sys.path.insert(0, root)
-
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("sauravapi", script)
-    if spec is None or spec.loader is None:
-        print("Error: Cannot locate sauravapi.py API server", file=sys.stderr)
-        sys.exit(1)
-
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    mod.main()
+    _run_module("sauravapi.py", "API server")
