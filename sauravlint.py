@@ -218,6 +218,29 @@ class Scope:
     assigned_without_read: Dict[str, int] = field(default_factory=dict)
 
 
+@dataclass
+class _ParsedLine:
+    """Pre-parsed information for a single source line.
+
+    Computed once by ``_scan_lines`` and shared across all checkers so
+    that regex matching and identifier extraction happen only once per
+    line instead of once per checker.
+    """
+    lineno: int            # 1-based
+    raw: str               # original text
+    stripped: str           # raw.strip()
+    indent: int            # leading whitespace depth
+    keyword: Optional[str] # first keyword token (via _line_keyword)
+    code_no_str: str       # code with strings and comments removed
+    identifiers: Set[str]  # identifiers (minus keywords)
+    func_match: Optional[re.Match] = None   # _FUNC_DEF_RE result
+    assign_match: Optional[re.Match] = None # _ASSIGN_RE result
+    import_match: Optional[re.Match] = None # _IMPORT_RE result
+    for_match: Optional[re.Match] = None    # _FOR_RE result
+    catch_match: Optional[re.Match] = None  # _CATCH_RE result
+    is_blank: bool = False  # blank or comment-only
+
+
 class SauravLinter:
     """Static analysis linter for sauravcode .srv files."""
 
@@ -227,14 +250,50 @@ class SauravLinter:
     def lint(self, source: str, filename: str = "<stdin>") -> LintReport:
         report = LintReport(file=filename)
         lines = source.split('\n')
+        parsed = self._scan_lines(lines)
 
-        self._check_structure(lines, report)
+        self._check_structure(lines, report, parsed)
         self._check_style(lines, report, source)
-        self._check_variables(lines, report)
+        self._check_variables(lines, report, parsed)
 
         # Sort by line, then column
         report.issues.sort(key=lambda i: (i.line, i.column))
         return report
+
+    @staticmethod
+    def _scan_lines(lines: List[str]) -> List[_ParsedLine]:
+        """Single-pass line scanner that pre-computes regex matches and
+        identifier sets used by both structural and variable checkers."""
+        result = []
+        for lineno_0, raw in enumerate(lines):
+            lineno = lineno_0 + 1
+            stripped = raw.strip()
+            is_blank = not stripped or stripped.startswith('#')
+
+            indent = _get_indent(raw) if not is_blank else 0
+            keyword = _line_keyword(raw) if not is_blank else None
+
+            # Strip comments/strings for code analysis
+            code_part = _strip_comment(raw)
+            code_no_str = re.sub(r'f?"(?:[^"\\]|\\.)*"', '', code_part)
+
+            identifiers = _extract_identifiers(raw) if not is_blank else set()
+
+            pl = _ParsedLine(
+                lineno=lineno, raw=raw, stripped=stripped, indent=indent,
+                keyword=keyword, code_no_str=code_no_str,
+                identifiers=identifiers, is_blank=is_blank,
+            )
+
+            if not is_blank:
+                pl.func_match = _FUNC_DEF_RE.match(raw)
+                pl.assign_match = _ASSIGN_RE.match(raw)
+                pl.import_match = _IMPORT_RE.match(raw)
+                pl.for_match = _FOR_RE.match(raw)
+                pl.catch_match = _CATCH_RE.match(raw)
+
+            result.append(pl)
+        return result
 
     def _emit(self, report: LintReport, rule: str, severity: Severity,
               line: int, col: int, msg: str, src: str = ""):
@@ -243,7 +302,8 @@ class SauravLinter:
 
     # -- Structural checks --
 
-    def _check_structure(self, lines: List[str], report: LintReport):
+    def _check_structure(self, lines: List[str], report: LintReport,
+                         parsed: List[_ParsedLine]):
         """Check for structural issues: unreachable code, empty blocks, etc."""
         func_defs: Dict[str, List[int]] = {}  # name -> [line numbers]
         imports: Dict[str, int] = {}  # module -> line
@@ -256,21 +316,17 @@ class SauravLinter:
         max_nesting = 5
         block_indents = []  # stack of indent levels where blocks started
 
-        for lineno_0, raw in enumerate(lines):
-            lineno = lineno_0 + 1
-            stripped = raw.strip()
-
-            if not stripped or stripped.startswith('#'):
+        for pl in parsed:
+            if pl.is_blank:
                 continue
 
-            indent = _get_indent(raw)
-            cleaned = _strip_comment(raw).strip()
+            lineno = pl.lineno
+            raw = pl.raw
+            indent = pl.indent
+            kw = pl.keyword
 
             # Collect all identifiers for import usage check
-            all_idents |= _extract_identifiers(raw)
-
-            # Track nesting depth
-            kw = _line_keyword(raw)
+            all_idents |= pl.identifiers
 
             # Reset terminated state when we dedent below the terminator
             if in_terminated and indent < terminated_indent:
@@ -282,7 +338,7 @@ class SauravLinter:
                            "Unreachable code after return/throw/break/continue", raw)
 
             # Function definition
-            m = _FUNC_DEF_RE.match(raw)
+            m = pl.func_match
             if m:
                 fname = m.group(2)
                 params_str = m.group(3).strip()
@@ -295,16 +351,14 @@ class SauravLinter:
                                f"Function '{fname}' has {param_count} parameters (max 5)", raw)
 
             # Import
-            m = _IMPORT_RE.match(raw)
+            m = pl.import_match
             if m:
                 mod = m.group(2)
                 imports[mod] = lineno
 
             # Division by zero (E003)
-            code_part = _strip_comment(raw)
-            code_no_str = re.sub(r'f?"(?:[^"\\]|\\.)*"', '', code_part)
-            if _DIVISION_RE.search(code_no_str):
-                col = _DIVISION_RE.search(code_no_str).start() + 1
+            if _DIVISION_RE.search(pl.code_no_str):
+                col = _DIVISION_RE.search(pl.code_no_str).start() + 1
                 self._emit(report, "E003", Severity.ERROR, lineno, col,
                            "Division by zero", raw)
 
@@ -324,7 +378,7 @@ class SauravLinter:
                            f"'{kw}' outside of loop", raw)
 
             # Self-comparison (W004)
-            m = _SELF_COMPARE_RE.search(code_no_str)
+            m = _SELF_COMPARE_RE.search(pl.code_no_str)
             if m:
                 var = m.group(1)
                 if var not in _KEYWORDS:
@@ -356,12 +410,10 @@ class SauravLinter:
                 # Look ahead for body
                 block_indent = indent
                 has_body = False
-                for next_line in lines[lineno_0 + 1:]:
-                    next_stripped = next_line.strip()
-                    if not next_stripped or next_stripped.startswith('#'):
+                for next_pl in parsed[pl.lineno:]:  # lineno is 1-based, so parsed[lineno:] skips current
+                    if next_pl.is_blank:
                         continue
-                    next_indent = _get_indent(next_line)
-                    if next_indent > block_indent:
+                    if next_pl.indent > block_indent:
                         has_body = True
                     break
                 if not has_body:
@@ -390,26 +442,26 @@ class SauravLinter:
 
     # -- Variable analysis --
 
-    def _check_variables(self, lines: List[str], report: LintReport):
+    def _check_variables(self, lines: List[str], report: LintReport,
+                         parsed: List[_ParsedLine]):
         """Check for undefined/unused variables and parameters."""
-        # Simplified scope analysis: track defines and uses globally
-        defined: Dict[str, int] = {}  # var -> first definition line
+        defined: Dict[str, int] = {}
         used: Set[str] = set()
-        func_params: Dict[str, Dict[str, int]] = {}  # func -> {param: line}
-        func_body_idents: Dict[str, Set[str]] = {}  # func -> identifiers used in body
+        func_params: Dict[str, Dict[str, int]] = {}
+        func_body_idents: Dict[str, Set[str]] = {}
         current_func: Optional[str] = None
         current_func_indent = -1
 
-        for lineno_0, raw in enumerate(lines):
-            lineno = lineno_0 + 1
-            stripped = raw.strip()
-            if not stripped or stripped.startswith('#'):
+        for pl in parsed:
+            if pl.is_blank:
                 continue
 
-            indent = _get_indent(raw)
+            lineno = pl.lineno
+            raw = pl.raw
+            indent = pl.indent
 
             # Track current function context
-            m = _FUNC_DEF_RE.match(raw)
+            m = pl.func_match
             if m:
                 fname = m.group(2)
                 params_str = m.group(3).strip()
@@ -420,7 +472,6 @@ class SauravLinter:
                 func_body_idents[fname] = set()
                 for p in params:
                     func_params[fname][p] = lineno
-                    # W003: shadow check
                     if p in defined:
                         self._emit(report, "W003", Severity.WARNING, lineno,
                                    raw.index(p) + 1,
@@ -434,20 +485,10 @@ class SauravLinter:
                 current_func_indent = -1
 
             # Assignment
-            m = _ASSIGN_RE.match(raw)
+            m = pl.assign_match
             if m:
                 var = m.group(2)
                 if var not in _KEYWORDS and var not in _BUILTIN_FUNCTIONS:
-                    # W003: shadow check for assignments
-                    if current_func and var in defined and defined[var] < lineno:
-                        # Only warn if the outer def is outside this function
-                        pass  # simplified; skip for now to reduce false positives
-
-                    # W010: reassignment without read
-                    if var in defined and var not in used and defined[var] != lineno:
-                        # Only flag if same scope (approximate)
-                        pass  # too many false positives without proper scoping
-
                     defined[var] = lineno
 
                 # Collect identifiers on RHS
@@ -459,11 +500,10 @@ class SauravLinter:
                 continue
 
             # For loop variable
-            m = _FOR_RE.match(raw)
+            m = pl.for_match
             if m:
                 var = m.group(2)
                 defined[var] = lineno
-                # Rest of line has identifiers used
                 rest_idents = _extract_identifiers(raw[m.end():])
                 used |= rest_idents
                 if current_func and current_func in func_body_idents:
@@ -471,17 +511,16 @@ class SauravLinter:
                 continue
 
             # Catch variable
-            m = _CATCH_RE.match(raw)
+            m = pl.catch_match
             if m:
                 var = m.group(2)
                 defined[var] = lineno
                 continue
 
-            # General usage: collect all identifiers
-            idents = _extract_identifiers(raw)
-            used |= idents
+            # General usage
+            used |= pl.identifiers
             if current_func and current_func in func_body_idents:
-                func_body_idents[current_func] |= idents
+                func_body_idents[current_func] |= pl.identifiers
 
         # W001: unused variables (only for non-function, non-param vars)
         for var, ln in defined.items():
