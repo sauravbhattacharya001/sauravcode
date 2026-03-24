@@ -882,9 +882,34 @@ class Parser:
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create'})
 
+    # ── Keyword dispatch table for _parse_statement_inner ──────────
+    # Maps keyword values to method names. Methods that need special
+    # inline logic (return, yield, print, break, continue) use small
+    # wrapper lambdas defined in _parse_statement_inner; the rest are
+    # direct method references initialised once in __init__.
+
     def __init__(self, tokens):
         self.tokens = tokens
         self.pos = 0
+        self._keyword_dispatch = {
+            'function': self.parse_function,
+            'import':   self.parse_import,
+            'if':       self.parse_if,
+            'while':    self.parse_while,
+            'for':      self.parse_for,
+            'try':      self.parse_try_catch,
+            'throw':    self.parse_throw,
+            'match':    self.parse_match,
+            'enum':     self.parse_enum,
+            'assert':   self.parse_assert,
+            'append':   self.parse_append,
+            'pop':      self.parse_pop,
+            'return':   self._parse_return,
+            'yield':    self._parse_yield,
+            'print':    self._parse_print,
+            'break':    self._parse_break,
+            'continue': self._parse_continue,
+        }
 
     def _current_line(self):
         """Return the line number of the current token, or None."""
@@ -920,54 +945,47 @@ class Parser:
             node.line_num = line
         return node
 
+    def _parse_return(self):
+        """Parse ``return <expression>``."""
+        self.expect('KEYWORD', 'return')
+        return ReturnNode(self.parse_full_expression())
+
+    def _parse_yield(self):
+        """Parse ``yield <expression>``."""
+        self.expect('KEYWORD', 'yield')
+        return YieldNode(self.parse_full_expression())
+
+    def _parse_print(self):
+        """Parse ``print <expression>``."""
+        self.expect('KEYWORD', 'print')
+        return PrintNode(self.parse_full_expression())
+
+    def _parse_break(self):
+        """Parse ``break``."""
+        self.advance()
+        return BreakNode()
+
+    def _parse_continue(self):
+        """Parse ``continue``."""
+        self.advance()
+        return ContinueNode()
+
     def _parse_statement_inner(self):
         token_type, value, *_ = self.peek()
         if DEBUG:
             debug(f"Parsing statement: token_type={token_type}, value={repr(value)}")
 
-        if token_type == 'KEYWORD' and value == 'function':
-            return self.parse_function()
-        elif token_type == 'KEYWORD' and value == 'import':
-            return self.parse_import()
-        elif token_type == 'KEYWORD' and value == 'return':
-            self.expect('KEYWORD', 'return')
-            expression = self.parse_full_expression()
-            return ReturnNode(expression)
-        elif token_type == 'KEYWORD' and value == 'yield':
-            self.expect('KEYWORD', 'yield')
-            expression = self.parse_full_expression()
-            return YieldNode(expression)
-        elif token_type == 'KEYWORD' and value == 'print':
-            self.expect('KEYWORD', 'print')
-            expression = self.parse_full_expression()
-            return PrintNode(expression)
-        elif token_type == 'KEYWORD' and value == 'if':
-            return self.parse_if()
-        elif token_type == 'KEYWORD' and value == 'while':
-            return self.parse_while()
-        elif token_type == 'KEYWORD' and value == 'for':
-            return self.parse_for()
-        elif token_type == 'KEYWORD' and value == 'try':
-            return self.parse_try_catch()
-        elif token_type == 'KEYWORD' and value == 'throw':
-            return self.parse_throw()
-        elif token_type == 'KEYWORD' and value == 'match':
-            return self.parse_match()
-        elif token_type == 'KEYWORD' and value == 'enum':
-            return self.parse_enum()
-        elif token_type == 'KEYWORD' and value == 'break':
-            self.advance()
-            return BreakNode()
-        elif token_type == 'KEYWORD' and value == 'continue':
-            self.advance()
-            return ContinueNode()
-        elif token_type == 'KEYWORD' and value == 'assert':
-            return self.parse_assert()
-        elif token_type == 'KEYWORD' and value == 'append':
-            return self.parse_append()
-        elif token_type == 'KEYWORD' and value == 'pop':
-            return self.parse_pop()
-        elif token_type == 'IDENT':
+        # O(1) keyword dispatch — replaces long if/elif chain
+        if token_type == 'KEYWORD':
+            handler = self._keyword_dispatch.get(value)
+            if handler is not None:
+                return handler()
+            # Skip type annotation keywords (int, float, bool, string)
+            if value in _TYPE_KEYWORDS:
+                self.advance()
+                return None
+
+        if token_type == 'IDENT':
             name = self.expect('IDENT')[1]
             if self.peek()[0] == 'ASSIGN':
                 self.expect('ASSIGN')
@@ -993,10 +1011,6 @@ class Parser:
         elif token_type in {'INDENT', 'DEDENT'}:
             if DEBUG:
                 debug(f"Skipping unexpected {token_type} with value={value}")
-            self.advance()
-            return None
-        # Skip type annotations
-        elif token_type == 'KEYWORD' and value in _TYPE_KEYWORDS:
             self.advance()
             return None
         else:
