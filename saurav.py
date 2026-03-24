@@ -5227,25 +5227,64 @@ class Interpreter:
         """Perform an HTTP request and return a map with status, body, and headers."""
         import urllib.request
         import urllib.error
-        from urllib.parse import urlparse
+        from urllib.parse import urlparse, urlunparse
+        import ipaddress
+        import socket
 
         if not isinstance(url, str):
             raise RuntimeError(f"http_{method.lower()} expects a string URL")
         if not url.startswith(('http://', 'https://')):
             raise RuntimeError(f"http_{method.lower()}: URL must start with http:// or https://")
 
-        # SSRF protection: block requests to private/internal networks
+        # SSRF protection: resolve hostname ONCE, validate, then pin the
+        # resolved IP for the actual request.  This prevents DNS rebinding
+        # attacks where a hostname resolves to a public IP during the check
+        # but to a private IP (e.g. 127.0.0.1) during the real connection.
         parsed = urlparse(url)
         hostname = parsed.hostname
         if not hostname:
             raise RuntimeError(f"http_{method.lower()}: could not parse hostname from URL")
-        if self._is_private_ip(hostname):
+
+        # Resolve and validate all addresses up-front
+        resolved_ip = None
+        try:
+            for info in socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                addr = info[4][0]
+                ip = ipaddress.ip_address(addr)
+                if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                    raise RuntimeError(
+                        f"http_{method.lower()}: requests to private/internal networks are blocked "
+                        f"(SSRF protection). Host '{hostname}' resolves to a private IP ({addr})."
+                    )
+                if resolved_ip is None:
+                    resolved_ip = addr
+        except (socket.gaierror, ValueError):
             raise RuntimeError(
                 f"http_{method.lower()}: requests to private/internal networks are blocked "
-                f"(SSRF protection). Host '{hostname}' resolves to a private IP."
+                f"(SSRF protection). Host '{hostname}' could not be resolved."
             )
 
-        req_headers = {'User-Agent': 'sauravcode/1.0'}
+        if resolved_ip is None:
+            raise RuntimeError(f"http_{method.lower()}: could not resolve hostname '{hostname}'")
+
+        # Build a pinned URL that connects to the validated IP directly,
+        # preserving the original Host header for virtual-host routing.
+        port = parsed.port
+        if ':' in resolved_ip:
+            # IPv6 — bracket it in the URL
+            pinned_host = f"[{resolved_ip}]" + (f":{port}" if port else "")
+        else:
+            pinned_host = resolved_ip + (f":{port}" if port else "")
+        pinned_url = urlunparse((
+            parsed.scheme, pinned_host, parsed.path,
+            parsed.params, parsed.query, parsed.fragment,
+        ))
+
+        req_headers = {
+            'User-Agent': 'sauravcode/1.0',
+            # Preserve original hostname for virtual-host routing / TLS SNI
+            'Host': hostname + (f":{port}" if port else ""),
+        }
         if headers and isinstance(headers, dict):
             for k, v in headers.items():
                 req_headers[str(k)] = str(v)
@@ -5262,7 +5301,7 @@ class Interpreter:
             else:
                 data = str(body).encode('utf-8')
 
-        req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
+        req = urllib.request.Request(pinned_url, data=data, headers=req_headers, method=method)
 
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
