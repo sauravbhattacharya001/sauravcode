@@ -1,0 +1,65 @@
+# linkedlist_demo.srv - Doubly-Linked List builtins demo
+# sauravcode provides a full doubly-linked list data structure with
+# O(1) push/pop at both ends and O(n) indexed access.
+
+print "--- Linked List Builtins Demo ---"
+print ""
+
+# Create an empty linked list
+ll = ll_create
+
+# Push elements to the back
+ll_push_back (ll) "Alice"
+ll_push_back (ll) "Bob"
+ll_push_back (ll) "Charlie"
+print "After push_back x3: " + to_string(ll_to_list(ll))
+
+# Push to the front
+ll_push_front (ll) "Zara"
+print "After push_front Zara: " + to_string(ll_to_list(ll))
+
+# Peek at front and back
+print "Front: " + ll_peek_front(ll)
+print "Back:  " + ll_peek_back(ll)
+print "Size:  " + to_string(ll_size(ll))
+
+# Get element by index
+print "Index 2: " + ll_get (ll) 2
+
+# Insert at a specific position
+ll_insert_at (ll) 2 "Eve"
+print "After insert Eve at 2: " + to_string(ll_to_list(ll))
+
+# Remove at a specific position
+removed = ll_remove_at (ll) 3
+print "Removed index 3: " + removed
+print "After remove: " + to_string(ll_to_list(ll))
+
+# Pop from front and back
+front = ll_pop_front(ll)
+back = ll_pop_back(ll)
+print "Popped front: " + front + ", back: " + back
+print "Remaining: " + to_string(ll_to_list(ll))
+
+# Reverse the list
+ll_reverse(ll)
+print "Reversed: " + to_string(ll_to_list(ll))
+
+# Create from an existing list
+ll2 = ll_from_list([10, 20, 30, 40, 50])
+print ""
+print "Created from list: " + to_string(ll_to_list(ll2))
+print "Size: " + to_string(ll_size(ll2))
+print "Empty? " + to_string(ll_is_empty(ll2))
+
+# Clear
+ll_clear(ll2)
+print "After clear, empty? " + to_string(ll_is_empty(ll2))
+
+# type_of check
+ll3 = ll_create
+print ""
+print "type_of(ll_create): " + type_of(ll3)
+
+print ""
+print "--- Done! ---"

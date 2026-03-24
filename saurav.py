@@ -198,6 +198,134 @@ class _SrvGraph:
         return f"Graph({kind}, {n} nodes, {e} edges)"
 
 
+class _SrvLLNode:
+    """Internal node for the sauravcode doubly-linked list."""
+    __slots__ = ('value', 'prev', 'next')
+    def __init__(self, value, prev=None, nxt=None):
+        self.value = value
+        self.prev = prev
+        self.next = nxt
+
+
+class _SrvLinkedList:
+    """Doubly-linked list data structure for sauravcode."""
+    __slots__ = ('_head', '_tail', '_size')
+    def __init__(self, items=None):
+        self._head = None
+        self._tail = None
+        self._size = 0
+        if items:
+            for item in items:
+                self.push_back(item)
+    def push_front(self, val):
+        node = _SrvLLNode(val, nxt=self._head)
+        if self._head:
+            self._head.prev = node
+        self._head = node
+        if self._tail is None:
+            self._tail = node
+        self._size += 1
+    def push_back(self, val):
+        node = _SrvLLNode(val, prev=self._tail)
+        if self._tail:
+            self._tail.next = node
+        self._tail = node
+        if self._head is None:
+            self._head = node
+        self._size += 1
+    def pop_front(self):
+        if not self._head:
+            raise RuntimeError("ll_pop_front: list is empty")
+        val = self._head.value
+        self._head = self._head.next
+        if self._head:
+            self._head.prev = None
+        else:
+            self._tail = None
+        self._size -= 1
+        return val
+    def pop_back(self):
+        if not self._tail:
+            raise RuntimeError("ll_pop_back: list is empty")
+        val = self._tail.value
+        self._tail = self._tail.prev
+        if self._tail:
+            self._tail.next = None
+        else:
+            self._head = None
+        self._size -= 1
+        return val
+    def get(self, index):
+        if index < 0 or index >= self._size:
+            raise RuntimeError(f"ll_get: index {index} out of range (size {self._size})")
+        node = self._head
+        for _ in range(int(index)):
+            node = node.next
+        return node.value
+    def insert_at(self, index, val):
+        if index < 0 or index > self._size:
+            raise RuntimeError(f"ll_insert_at: index {index} out of range (size {self._size})")
+        if index == 0:
+            self.push_front(val)
+            return
+        if index == self._size:
+            self.push_back(val)
+            return
+        node = self._head
+        for _ in range(int(index)):
+            node = node.next
+        new_node = _SrvLLNode(val, prev=node.prev, nxt=node)
+        node.prev.next = new_node
+        node.prev = new_node
+        self._size += 1
+    def remove_at(self, index):
+        if index < 0 or index >= self._size:
+            raise RuntimeError(f"ll_remove_at: index {index} out of range (size {self._size})")
+        if index == 0:
+            return self.pop_front()
+        if index == self._size - 1:
+            return self.pop_back()
+        node = self._head
+        for _ in range(int(index)):
+            node = node.next
+        val = node.value
+        node.prev.next = node.next
+        node.next.prev = node.prev
+        self._size -= 1
+        return val
+    def reverse(self):
+        node = self._head
+        while node:
+            node.prev, node.next = node.next, node.prev
+            node = node.prev
+        self._head, self._tail = self._tail, self._head
+    def to_list(self):
+        result = []
+        node = self._head
+        while node:
+            result.append(node.value)
+            node = node.next
+        return result
+    def size(self):
+        return float(self._size)
+    def is_empty(self):
+        return self._size == 0
+    def clear(self):
+        self._head = None
+        self._tail = None
+        self._size = 0
+    def peek_front(self):
+        if not self._head:
+            raise RuntimeError("ll_peek_front: list is empty")
+        return self._head.value
+    def peek_back(self):
+        if not self._tail:
+            raise RuntimeError("ll_peek_back: list is empty")
+        return self._tail.value
+    def __repr__(self):
+        return f"LinkedList({self.to_list()})"
+
+
 # Debug flag — enabled with --debug command-line argument
 DEBUG = False
 
@@ -874,13 +1002,18 @@ class Parser:
         'trie_create', 'trie_insert', 'trie_search', 'trie_starts_with',
         'trie_delete', 'trie_autocomplete', 'trie_size', 'trie_words',
         'trie_longest_prefix', 'trie_count_prefix',
+        'll_create', 'll_push_front', 'll_push_back', 'll_pop_front', 'll_pop_back',
+        'll_get', 'll_insert_at', 'll_remove_at', 'll_size', 'll_is_empty',
+        'll_to_list', 'll_reverse', 'll_clear', 'll_peek_front', 'll_peek_back',
+        'll_from_list',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
     ZERO_ARG_BUILTINS = frozenset({'now', 'timestamp', 'pi', 'euler',
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
-        'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create'})
+        'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
+        'll_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -2163,6 +2296,7 @@ class Interpreter:
         self._register_color_builtins()
         self._register_regex_builtins()
         self._register_heap_builtins()
+        self._register_linkedlist_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -4535,6 +4669,142 @@ class Interpreter:
         self.builtins['trie_longest_prefix'] = _trie_longest_prefix
         self.builtins['trie_count_prefix'] = _trie_count_prefix
 
+    def _register_linkedlist_builtins(self):
+        """Register linked-list builtins."""
+        def _ll_create(args):
+            if len(args) == 0:
+                return _SrvLinkedList()
+            if len(args) == 1 and isinstance(args[0], list):
+                return _SrvLinkedList(args[0])
+            raise RuntimeError("ll_create: expects 0 args or 1 list argument")
+
+        def _ll_push_front(args):
+            self._expect_args('ll_push_front', args, 2)
+            ll, val = args
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_push_front: first argument must be a linked list")
+            ll.push_front(val)
+            return val
+
+        def _ll_push_back(args):
+            self._expect_args('ll_push_back', args, 2)
+            ll, val = args
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_push_back: first argument must be a linked list")
+            ll.push_back(val)
+            return val
+
+        def _ll_pop_front(args):
+            self._expect_args('ll_pop_front', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_pop_front: argument must be a linked list")
+            return ll.pop_front()
+
+        def _ll_pop_back(args):
+            self._expect_args('ll_pop_back', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_pop_back: argument must be a linked list")
+            return ll.pop_back()
+
+        def _ll_get(args):
+            self._expect_args('ll_get', args, 2)
+            ll, idx = args
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_get: first argument must be a linked list")
+            return ll.get(int(idx))
+
+        def _ll_insert_at(args):
+            self._expect_args('ll_insert_at', args, 3)
+            ll, idx, val = args
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_insert_at: first argument must be a linked list")
+            ll.insert_at(int(idx), val)
+            return val
+
+        def _ll_remove_at(args):
+            self._expect_args('ll_remove_at', args, 2)
+            ll, idx = args
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_remove_at: first argument must be a linked list")
+            return ll.remove_at(int(idx))
+
+        def _ll_size(args):
+            self._expect_args('ll_size', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_size: argument must be a linked list")
+            return ll.size()
+
+        def _ll_is_empty(args):
+            self._expect_args('ll_is_empty', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_is_empty: argument must be a linked list")
+            return ll.is_empty()
+
+        def _ll_to_list(args):
+            self._expect_args('ll_to_list', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_to_list: argument must be a linked list")
+            return ll.to_list()
+
+        def _ll_reverse(args):
+            self._expect_args('ll_reverse', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_reverse: argument must be a linked list")
+            ll.reverse()
+            return ll
+
+        def _ll_clear(args):
+            self._expect_args('ll_clear', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_clear: argument must be a linked list")
+            ll.clear()
+            return ll
+
+        def _ll_peek_front(args):
+            self._expect_args('ll_peek_front', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_peek_front: argument must be a linked list")
+            return ll.peek_front()
+
+        def _ll_peek_back(args):
+            self._expect_args('ll_peek_back', args, 1)
+            ll = args[0]
+            if not isinstance(ll, _SrvLinkedList):
+                raise RuntimeError("ll_peek_back: argument must be a linked list")
+            return ll.peek_back()
+
+        def _ll_from_list(args):
+            self._expect_args('ll_from_list', args, 1)
+            lst = args[0]
+            if not isinstance(lst, list):
+                raise RuntimeError("ll_from_list: argument must be a list")
+            return _SrvLinkedList(lst)
+
+        self.builtins['ll_create'] = _ll_create
+        self.builtins['ll_push_front'] = _ll_push_front
+        self.builtins['ll_push_back'] = _ll_push_back
+        self.builtins['ll_pop_front'] = _ll_pop_front
+        self.builtins['ll_pop_back'] = _ll_pop_back
+        self.builtins['ll_get'] = _ll_get
+        self.builtins['ll_insert_at'] = _ll_insert_at
+        self.builtins['ll_remove_at'] = _ll_remove_at
+        self.builtins['ll_size'] = _ll_size
+        self.builtins['ll_is_empty'] = _ll_is_empty
+        self.builtins['ll_to_list'] = _ll_to_list
+        self.builtins['ll_reverse'] = _ll_reverse
+        self.builtins['ll_clear'] = _ll_clear
+        self.builtins['ll_peek_front'] = _ll_peek_front
+        self.builtins['ll_peek_back'] = _ll_peek_back
+        self.builtins['ll_from_list'] = _ll_from_list
+
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
         self._expect_args('sort_by', args, 2)
@@ -4808,6 +5078,8 @@ class Interpreter:
             return "lambda"
         if isinstance(val, GeneratorValue):
             return "generator"
+        if isinstance(val, _SrvLinkedList):
+            return "linkedlist"
         return "unknown"
 
     def _builtin_to_string(self, args):
