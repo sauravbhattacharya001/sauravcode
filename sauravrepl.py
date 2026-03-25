@@ -173,6 +173,8 @@ class SauravRepl:
             "~/.sauravcode_history")
         self._show_timing = False
 
+        self._pending_line = None  # Line consumed during block peek-ahead
+
         # Set up readline if available
         try:
             import readline
@@ -191,11 +193,16 @@ class SauravRepl:
 
         while True:
             try:
-                line = self._read_line()
-                if line is None:
-                    # EOF (Ctrl+D)
-                    print()
-                    break
+                # Check for a line consumed during block peek-ahead
+                if self._pending_line is not None:
+                    line = self._pending_line
+                    self._pending_line = None
+                else:
+                    line = self._read_line()
+                    if line is None:
+                        # EOF (Ctrl+D)
+                        print()
+                        break
 
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
@@ -265,9 +272,9 @@ class SauravRepl:
                             break
                         else:
                             # Non-continuation, non-blank = end block,
-                            # but we already read it — execute block
-                            # then execute this line separately
-                            lines.append("")
+                            # but we already read it — save for next
+                            # iteration so it doesn't get dropped
+                            self._pending_line = peek
                             break
                     except EOFError:
                         break
