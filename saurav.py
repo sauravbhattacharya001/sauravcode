@@ -5554,43 +5554,37 @@ class Interpreter:
         except OSError as e:
             raise RuntimeError(f"read_file: error reading file: {e}")
 
-    def _builtin_write_file(self, args):
-        """write_file path content → write content to file (creates or overwrites)."""
-        self._expect_args('write_file', args, 2)
+    def _write_file_impl(self, func_name, args, mode):
+        """Shared implementation for write_file and append_file.
+
+        Validates arguments, coerces content to string, resolves the path
+        through the sandbox validator, and writes with the given mode.
+        """
+        self._expect_args(func_name, args, 2)
         path = args[0]
         content = args[1]
         if not isinstance(path, str):
-            raise RuntimeError("write_file expects a string path as first argument")
+            raise RuntimeError(f"{func_name} expects a string path as first argument")
         if not isinstance(content, str):
             content = str(content)
-        full_path = self._validate_file_path('write_file', path)
+        full_path = self._validate_file_path(func_name, path)
+        action = "writing" if mode == "w" else "appending to"
         try:
-            with open(full_path, 'w', encoding='utf-8') as f:
+            with open(full_path, mode, encoding='utf-8') as f:
                 f.write(content)
             return True
         except PermissionError:
-            raise RuntimeError(f"write_file: permission denied: {path}")
+            raise RuntimeError(f"{func_name}: permission denied: {path}")
         except OSError as e:
-            raise RuntimeError(f"write_file: error writing file: {e}")
+            raise RuntimeError(f"{func_name}: error {action} file: {e}")
+
+    def _builtin_write_file(self, args):
+        """write_file path content → write content to file (creates or overwrites)."""
+        return self._write_file_impl('write_file', args, 'w')
 
     def _builtin_append_file(self, args):
         """append_file path content → append content to file (creates if missing)."""
-        self._expect_args('append_file', args, 2)
-        path = args[0]
-        content = args[1]
-        if not isinstance(path, str):
-            raise RuntimeError("append_file expects a string path as first argument")
-        if not isinstance(content, str):
-            content = str(content)
-        full_path = self._validate_file_path('append_file', path)
-        try:
-            with open(full_path, 'a', encoding='utf-8') as f:
-                f.write(content)
-            return True
-        except PermissionError:
-            raise RuntimeError(f"append_file: permission denied: {path}")
-        except OSError as e:
-            raise RuntimeError(f"append_file: error appending to file: {e}")
+        return self._write_file_impl('append_file', args, 'a')
 
     def _builtin_file_exists(self, args):
         """file_exists path → return true if file exists, false otherwise."""
