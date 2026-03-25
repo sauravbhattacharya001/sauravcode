@@ -1,0 +1,45 @@
+# http_demo.srv - HTTP and Network Builtins Demo
+
+print "=== URL Parsing ==="
+parsed = url_parse "https://example.com:8080/api/users?name=alice#top"
+print "Scheme:"
+print parsed["scheme"]
+print "Host:"
+print parsed["host"]
+print "Port:"
+print parsed["port"]
+print "Path:"
+print parsed["path"]
+print "Fragment:"
+print parsed["fragment"]
+
+print "\n=== URL Encode/Decode ==="
+encoded = url_encode "hello world"
+print "Encoded:"
+print encoded
+decoded = url_decode encoded
+print "Decoded:"
+print decoded
+
+print "\n=== Base64 ==="
+b64 = base64_encode "Hello, sauravcode!"
+print "Encoded:"
+print b64
+decoded64 = base64_decode b64
+print "Decoded:"
+print decoded64
+
+print "\n=== HTTP GET ==="
+resp = http_get "https://httpbin.org/get"
+print "Status:"
+print resp["status"]
+print "Body length:"
+print len(resp["body"])
+
+print "\n=== HTTP POST ==="
+payload = {"language": "sauravcode", "version": "1.0"}
+post_resp = http_post "https://httpbin.org/post" payload
+print "POST status:"
+print post_resp["status"]
+
+print "\nDone! All HTTP/Network builtins working."

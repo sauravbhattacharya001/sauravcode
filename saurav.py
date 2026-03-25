@@ -1009,6 +1009,8 @@ class Parser:
         'bloom_create', 'bloom_add', 'bloom_contains', 'bloom_size',
         'bloom_clear', 'bloom_false_positive_rate', 'bloom_merge',
         'bloom_info',
+        'http_get', 'http_post', 'url_parse', 'url_encode', 'url_decode',
+        'base64_encode', 'base64_decode',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -4946,6 +4948,127 @@ class Interpreter:
         self.builtins['bloom_false_positive_rate'] = _bloom_false_positive_rate
         self.builtins['bloom_merge'] = _bloom_merge
         self.builtins['bloom_info'] = _bloom_info
+
+        # ── HTTP / Network builtins ──────────────────────────────
+        import urllib.request, urllib.parse, urllib.error, base64 as _b64, json as _json_mod, ssl as _ssl_mod
+
+        def _http_get(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("http_get: expected 1-2 arguments (url, headers?)")
+            url = args[0]
+            if not isinstance(url, str):
+                raise RuntimeError("http_get: url must be a string")
+            headers = {}
+            if len(args) == 2:
+                if not isinstance(args[1], dict):
+                    raise RuntimeError("http_get: headers must be a map")
+                headers = {str(k): str(v) for k, v in args[1].items()}
+            req = urllib.request.Request(url, headers=headers)
+            ctx = _ssl_mod.create_default_context()
+            try:
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                    body = resp.read().decode('utf-8', errors='replace')
+                    status = resp.status
+                    resp_headers = {k: v for k, v in resp.getheaders()}
+            except urllib.error.HTTPError as e:
+                body = e.read().decode('utf-8', errors='replace') if e.fp else ""
+                status = e.code
+                resp_headers = {}
+            except Exception as e:
+                raise RuntimeError(f"http_get: {e}")
+            return {"status": status, "body": body, "headers": resp_headers}
+
+        def _http_post(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("http_post: expected 2-3 arguments (url, body, headers?)")
+            url = args[0]
+            body_data = args[1]
+            if not isinstance(url, str):
+                raise RuntimeError("http_post: url must be a string")
+            headers = {"Content-Type": "application/json"}
+            if len(args) == 3:
+                if not isinstance(args[2], dict):
+                    raise RuntimeError("http_post: headers must be a map")
+                headers = {str(k): str(v) for k, v in args[2].items()}
+            if isinstance(body_data, (dict, list)):
+                body_bytes = _json_mod.dumps(body_data).encode('utf-8')
+            elif isinstance(body_data, str):
+                body_bytes = body_data.encode('utf-8')
+            else:
+                body_bytes = str(body_data).encode('utf-8')
+            req = urllib.request.Request(url, data=body_bytes, headers=headers, method='POST')
+            ctx = _ssl_mod.create_default_context()
+            try:
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                    rbody = resp.read().decode('utf-8', errors='replace')
+                    status = resp.status
+                    resp_headers = {k: v for k, v in resp.getheaders()}
+            except urllib.error.HTTPError as e:
+                rbody = e.read().decode('utf-8', errors='replace') if e.fp else ""
+                status = e.code
+                resp_headers = {}
+            except Exception as e:
+                raise RuntimeError(f"http_post: {e}")
+            return {"status": status, "body": rbody, "headers": resp_headers}
+
+        def _url_parse(args):
+            if len(args) != 1:
+                raise RuntimeError("url_parse: expected 1 argument (url)")
+            url = args[0]
+            if not isinstance(url, str):
+                raise RuntimeError("url_parse: argument must be a string")
+            p = urllib.parse.urlparse(url)
+            query_params = {}
+            for k, v in urllib.parse.parse_qs(p.query).items():
+                query_params[k] = v[0] if len(v) == 1 else v
+            return {
+                "scheme": p.scheme, "host": p.hostname or "",
+                "port": p.port if p.port else 0,
+                "path": p.path, "query": p.query,
+                "fragment": p.fragment, "params": query_params
+            }
+
+        def _url_encode(args):
+            if len(args) != 1:
+                raise RuntimeError("url_encode: expected 1 argument (string or map)")
+            val = args[0]
+            if isinstance(val, dict):
+                return urllib.parse.urlencode({str(k): str(v) for k, v in val.items()})
+            if isinstance(val, str):
+                return urllib.parse.quote(val, safe='')
+            raise RuntimeError("url_encode: argument must be a string or map")
+
+        def _url_decode(args):
+            if len(args) != 1:
+                raise RuntimeError("url_decode: expected 1 argument (string)")
+            if not isinstance(args[0], str):
+                raise RuntimeError("url_decode: argument must be a string")
+            return urllib.parse.unquote(args[0])
+
+        def _base64_encode(args):
+            if len(args) != 1:
+                raise RuntimeError("base64_encode: expected 1 argument (string)")
+            if not isinstance(args[0], str):
+                raise RuntimeError("base64_encode: argument must be a string")
+            return _b64.b64encode(args[0].encode('utf-8')).decode('ascii')
+
+        def _base64_decode(args):
+            if len(args) != 1:
+                raise RuntimeError("base64_decode: expected 1 argument (string)")
+            if not isinstance(args[0], str):
+                raise RuntimeError("base64_decode: argument must be a string")
+            try:
+                return _b64.b64decode(args[0]).decode('utf-8')
+            except Exception as e:
+                raise RuntimeError(f"base64_decode: {e}")
+
+        self.builtins['http_get'] = _http_get
+        self.builtins['http_post'] = _http_post
+        self.builtins['url_parse'] = _url_parse
+        self.builtins['url_encode'] = _url_encode
+        self.builtins['url_decode'] = _url_decode
+        self.builtins['base64_encode'] = _base64_encode
+        self.builtins['base64_decode'] = _base64_decode
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

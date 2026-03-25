@@ -371,3 +371,17 @@ A trie (prefix tree) for efficient string storage, prefix search, and autocomple
 | `trie_words` | `trie_words t` | Get sorted list of all words |
 | `trie_longest_prefix` | `trie_longest_prefix (t) "hello world"` | Longest word that is a prefix of input |
 | `trie_count_prefix` | `trie_count_prefix (t) "he"` | Count words starting with prefix |
+
+## HTTP / Network
+
+Make HTTP requests, parse URLs, and encode/decode data. All networking uses Python's stdlib (`urllib`) under the hood.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `http_get url [headers]` | `r = http_get "https://httpbin.org/get"` | HTTP GET; returns map with `status`, `body`, `headers` |
+| `http_post url body [headers]` | `r = http_post "https://httpbin.org/post" {"key": "val"}` | HTTP POST (body auto-JSON-encoded if map/list) |
+| `url_parse url` | `url_parse "https://example.com:8080/path?q=1#frag"` | Parse URL → map: scheme, host, port, path, query, fragment, params |
+| `url_encode val` | `url_encode "hello world"` → `"hello%20world"` | Percent-encode string, or urlencode a map to query string |
+| `url_decode str` | `url_decode "hello%20world"` → `"hello world"` | Decode percent-encoded string |
+| `base64_encode str` | `base64_encode "hello"` → `"aGVsbG8="` | Base64 encode a string |
+| `base64_decode str` | `base64_decode "aGVsbG8="` → `"hello"` | Base64 decode a string |
