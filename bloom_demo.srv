@@ -1,0 +1,57 @@
+# bloom_demo.srv - Bloom Filter data structure demo
+
+print "=== Bloom Filter Demo ==="
+
+# Create a bloom filter (size=256 bits, 3 hash functions)
+bf = bloom_create 256 3
+print bf
+
+# Add some items
+bloom_add (bf) "apple"
+bloom_add (bf) "banana"
+bloom_add (bf) "cherry"
+bloom_add (bf) "date"
+bloom_add (bf) "elderberry"
+
+print "Items added:"
+print bloom_size bf
+
+# Membership tests
+print "Contains apple:"
+print bloom_contains (bf) "apple"
+print "Contains banana:"
+print bloom_contains (bf) "banana"
+print "Contains fig:"
+print bloom_contains (bf) "fig"
+print "Contains grape:"
+print bloom_contains (bf) "grape"
+
+# Check false positive rate
+print "Estimated FPR:"
+print bloom_false_positive_rate bf
+
+# Get info
+info = bloom_info bf
+print "Filter info:"
+print info
+
+# Merge two filters
+print "=== Merge Demo ==="
+bf2 = bloom_create 256 3
+bloom_add (bf2) "fig"
+bloom_add (bf2) "grape"
+
+merged = bloom_merge (bf) (bf2)
+print "Merged contains apple:"
+print bloom_contains (merged) "apple"
+print "Merged contains fig:"
+print bloom_contains (merged) "fig"
+
+# Clear
+bloom_clear bf
+print "After clear, size:"
+print bloom_size bf
+print "Contains apple after clear:"
+print bloom_contains (bf) "apple"
+
+print "Done!"

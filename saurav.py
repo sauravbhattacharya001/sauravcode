@@ -1006,6 +1006,9 @@ class Parser:
         'll_get', 'll_insert_at', 'll_remove_at', 'll_size', 'll_is_empty',
         'll_to_list', 'll_reverse', 'll_clear', 'll_peek_front', 'll_peek_back',
         'll_from_list',
+        'bloom_create', 'bloom_add', 'bloom_contains', 'bloom_size',
+        'bloom_clear', 'bloom_false_positive_rate', 'bloom_merge',
+        'bloom_info',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1013,7 +1016,7 @@ class Parser:
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
-        'll_create'})
+        'll_create', 'bloom_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -2297,6 +2300,7 @@ class Interpreter:
         self._register_regex_builtins()
         self._register_heap_builtins()
         self._register_linkedlist_builtins()
+        self._register_bloom_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -4804,6 +4808,144 @@ class Interpreter:
         self.builtins['ll_peek_front'] = _ll_peek_front
         self.builtins['ll_peek_back'] = _ll_peek_back
         self.builtins['ll_from_list'] = _ll_from_list
+
+    def _register_bloom_builtins(self):
+        """Register Bloom filter builtins."""
+        import hashlib as _hashlib
+        import struct as _struct
+
+        class _BloomFilter:
+            """Simple Bloom filter backed by a Python bytearray."""
+            __slots__ = ('_bits', '_size', '_num_hashes', '_count')
+
+            def __init__(self, size=1024, num_hashes=3):
+                self._size = max(8, int(size))
+                self._num_hashes = max(1, int(num_hashes))
+                self._bits = bytearray(self._size)
+                self._count = 0
+
+            def _hashes(self, item):
+                raw = str(item).encode('utf-8')
+                h1 = int.from_bytes(_hashlib.md5(raw).digest()[:8], 'little')
+                h2 = int.from_bytes(_hashlib.md5(raw).digest()[8:], 'little')
+                for i in range(self._num_hashes):
+                    yield (h1 + i * h2) % self._size
+
+            def add(self, item):
+                for idx in self._hashes(item):
+                    self._bits[idx] = 1
+                self._count += 1
+
+            def contains(self, item):
+                return all(self._bits[idx] for idx in self._hashes(item))
+
+            def clear(self):
+                self._bits = bytearray(self._size)
+                self._count = 0
+
+            def false_positive_rate(self):
+                if self._count == 0:
+                    return 0.0
+                bits_set = sum(self._bits)
+                return (bits_set / self._size) ** self._num_hashes
+
+            def info(self):
+                bits_set = sum(self._bits)
+                return {
+                    'size': self._size,
+                    'num_hashes': self._num_hashes,
+                    'items_added': self._count,
+                    'bits_set': bits_set,
+                    'fill_ratio': round(bits_set / self._size, 4),
+                    'est_fpr': round(self.false_positive_rate(), 6),
+                }
+
+            def __repr__(self):
+                return f"BloomFilter(size={self._size}, hashes={self._num_hashes}, items={self._count})"
+
+        def _bloom_create(args):
+            size = 1024
+            num_hashes = 3
+            if len(args) >= 1:
+                size = int(args[0])
+            if len(args) >= 2:
+                num_hashes = int(args[1])
+            if len(args) > 2:
+                raise RuntimeError("bloom_create: expected 0-2 arguments (size, num_hashes)")
+            return _BloomFilter(size, num_hashes)
+
+        def _bloom_add(args):
+            if len(args) != 2:
+                raise RuntimeError("bloom_add: expected 2 arguments (bloom, item)")
+            bf, item = args
+            if not isinstance(bf, _BloomFilter):
+                raise RuntimeError("bloom_add: first argument must be a bloom filter")
+            bf.add(item)
+            return None
+
+        def _bloom_contains(args):
+            if len(args) != 2:
+                raise RuntimeError("bloom_contains: expected 2 arguments (bloom, item)")
+            bf, item = args
+            if not isinstance(bf, _BloomFilter):
+                raise RuntimeError("bloom_contains: first argument must be a bloom filter")
+            return bf.contains(item)
+
+        def _bloom_size(args):
+            if len(args) != 1:
+                raise RuntimeError("bloom_size: expected 1 argument (bloom)")
+            bf = args[0]
+            if not isinstance(bf, _BloomFilter):
+                raise RuntimeError("bloom_size: argument must be a bloom filter")
+            return bf._count
+
+        def _bloom_clear(args):
+            if len(args) != 1:
+                raise RuntimeError("bloom_clear: expected 1 argument (bloom)")
+            bf = args[0]
+            if not isinstance(bf, _BloomFilter):
+                raise RuntimeError("bloom_clear: argument must be a bloom filter")
+            bf.clear()
+            return None
+
+        def _bloom_false_positive_rate(args):
+            if len(args) != 1:
+                raise RuntimeError("bloom_false_positive_rate: expected 1 argument (bloom)")
+            bf = args[0]
+            if not isinstance(bf, _BloomFilter):
+                raise RuntimeError("bloom_false_positive_rate: argument must be a bloom filter")
+            return bf.false_positive_rate()
+
+        def _bloom_merge(args):
+            if len(args) != 2:
+                raise RuntimeError("bloom_merge: expected 2 arguments (bloom1, bloom2)")
+            bf1, bf2 = args
+            if not isinstance(bf1, _BloomFilter) or not isinstance(bf2, _BloomFilter):
+                raise RuntimeError("bloom_merge: both arguments must be bloom filters")
+            if bf1._size != bf2._size or bf1._num_hashes != bf2._num_hashes:
+                raise RuntimeError("bloom_merge: filters must have same size and num_hashes")
+            merged = _BloomFilter(bf1._size, bf1._num_hashes)
+            for i in range(bf1._size):
+                merged._bits[i] = bf1._bits[i] | bf2._bits[i]
+            merged._count = bf1._count + bf2._count
+            return merged
+
+        def _bloom_info(args):
+            if len(args) != 1:
+                raise RuntimeError("bloom_info: expected 1 argument (bloom)")
+            bf = args[0]
+            if not isinstance(bf, _BloomFilter):
+                raise RuntimeError("bloom_info: argument must be a bloom filter")
+            return bf.info()
+
+        self.builtins['bloom_create'] = _bloom_create
+        self.builtins['bloom_add'] = _bloom_add
+        self.builtins['bloom_contains'] = _bloom_contains
+        self.builtins['bloom_size'] = _bloom_size
+        self.builtins['bloom_clear'] = _bloom_clear
+        self.builtins['bloom_false_positive_rate'] = _bloom_false_positive_rate
+        self.builtins['bloom_merge'] = _bloom_merge
+        self.builtins['bloom_info'] = _bloom_info
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
