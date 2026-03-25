@@ -30,10 +30,12 @@ Then:
 """
 
 import argparse
+import copy
 import io
 import json
 import os
 import sys
+import threading
 import time
 import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -46,7 +48,10 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from saurav import tokenize, Parser, Interpreter, FunctionNode, ThrowSignal, format_value  # noqa: E402
+from saurav import (  # noqa: E402
+    tokenize, Parser, Interpreter, FunctionNode, ThrowSignal, format_value,
+    ReturnSignal, FunctionCallNode, NumberNode, StringNode, ListNode,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +109,14 @@ MAX_BODY_SIZE = 1_048_576  # 1 MB
 
 # Maximum execution time per request (seconds).
 MAX_EXEC_TIME = 10
+
+# Maximum concurrent function executions to prevent thread-leak DoS.
+# When a request times out the daemon thread keeps running; capping
+# concurrency limits the blast radius.
+MAX_CONCURRENT_EXECUTIONS = 16
+_exec_semaphore = threading.Semaphore(MAX_CONCURRENT_EXECUTIONS)
+_active_threads: int = 0
+_active_threads_lock = threading.Lock()
 
 
 class APIHandler(BaseHTTPRequestHandler):
@@ -222,13 +235,21 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Execute in an isolated interpreter copy to prevent cross-request
         # state pollution (shared mutable variables are a security risk).
-        import copy
-        import threading
+        #
+        # Concurrency guard: a semaphore caps the number of in-flight
+        # execution threads.  Timed-out threads are daemon threads, so
+        # they don't prevent shutdown, but without a cap an attacker
+        # could launch many slow requests and exhaust server resources.
+        if not _exec_semaphore.acquire(timeout=2):
+            self._json_response(503, {
+                "error": "Server is at maximum concurrent execution capacity. "
+                         "Try again shortly."
+            })
+            return
+
         t0 = time.monotonic()
         stdout_capture = io.StringIO()
         try:
-            from saurav import FunctionCallNode, NumberNode, StringNode, ListNode
-
             # Deep-copy the interpreter so each request gets clean state
             req_interp = copy.deepcopy(self.interp)
             for p, v in zip(params, arg_values):
@@ -237,7 +258,6 @@ class APIHandler(BaseHTTPRequestHandler):
             # Execute function body with a timeout guard
             result = None
             exc_info = [None]
-            from saurav import ReturnSignal
             timed_out = [False]
 
             def _execute():
@@ -253,12 +273,15 @@ class APIHandler(BaseHTTPRequestHandler):
                     exc_info[0] = e
                 finally:
                     sys.stdout = old_stdout
+                    _exec_semaphore.release()
 
             thread = threading.Thread(target=_execute, daemon=True)
             thread.start()
             thread.join(timeout=MAX_EXEC_TIME)
             if thread.is_alive():
                 timed_out[0] = True
+                # Note: semaphore is released by _execute when it
+                # eventually finishes (or on process exit for daemon threads).
 
             if timed_out[0]:
                 self._json_response(504, {
