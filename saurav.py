@@ -966,6 +966,9 @@ class Parser:
         'stack_size', 'stack_is_empty', 'stack_to_list', 'stack_clear',
         'queue_create', 'queue_enqueue', 'queue_dequeue', 'queue_peek',
         'queue_size', 'queue_is_empty', 'queue_to_list', 'queue_clear',
+        'deque_create', 'deque_push_front', 'deque_push_back',
+        'deque_pop_front', 'deque_pop_back', 'deque_peek_front', 'deque_peek_back',
+        'deque_size', 'deque_is_empty', 'deque_to_list', 'deque_rotate', 'deque_clear',
         'path_join', 'path_dir', 'path_base', 'path_ext', 'path_stem',
         'path_abs', 'path_exists', 'list_dir', 'make_dir', 'is_dir', 'is_file',
         'sort_by', 'min_by', 'max_by', 'partition', 'rotate',
@@ -1018,7 +1021,7 @@ class Parser:
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
-        'll_create', 'bloom_create'})
+        'll_create', 'bloom_create', 'deque_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -2303,6 +2306,7 @@ class Interpreter:
         self._register_heap_builtins()
         self._register_linkedlist_builtins()
         self._register_bloom_builtins()
+        self._register_deque_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -4948,6 +4952,125 @@ class Interpreter:
         self.builtins['bloom_false_positive_rate'] = _bloom_false_positive_rate
         self.builtins['bloom_merge'] = _bloom_merge
         self.builtins['bloom_info'] = _bloom_info
+
+    def _register_deque_builtins(self):
+        """Register double-ended queue (deque) builtins."""
+        from collections import deque as _deque
+
+        class _SrvDeque:
+            """Double-ended queue for sauravcode."""
+            __slots__ = ('_data',)
+            def __init__(self, items=None):
+                self._data = _deque(items) if items else _deque()
+            def __repr__(self):
+                return f"Deque({list(self._data)})"
+
+        def _deque_create(args):
+            if len(args) == 0:
+                return _SrvDeque()
+            if len(args) == 1:
+                if isinstance(args[0], list):
+                    return _SrvDeque(args[0])
+                raise RuntimeError("deque_create: argument must be a list")
+            raise RuntimeError("deque_create: expected 0-1 arguments")
+
+        def _check_deque(fn, dq):
+            if not isinstance(dq, _SrvDeque):
+                raise RuntimeError(f"{fn}: first argument must be a deque")
+
+        def _deque_push_front(args):
+            if len(args) != 2:
+                raise RuntimeError("deque_push_front: expected 2 arguments (deque, item)")
+            _check_deque('deque_push_front', args[0])
+            args[0]._data.appendleft(args[1])
+            return None
+
+        def _deque_push_back(args):
+            if len(args) != 2:
+                raise RuntimeError("deque_push_back: expected 2 arguments (deque, item)")
+            _check_deque('deque_push_back', args[0])
+            args[0]._data.append(args[1])
+            return None
+
+        def _deque_pop_front(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_pop_front: expected 1 argument (deque)")
+            _check_deque('deque_pop_front', args[0])
+            if not args[0]._data:
+                raise RuntimeError("deque_pop_front: deque is empty")
+            return args[0]._data.popleft()
+
+        def _deque_pop_back(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_pop_back: expected 1 argument (deque)")
+            _check_deque('deque_pop_back', args[0])
+            if not args[0]._data:
+                raise RuntimeError("deque_pop_back: deque is empty")
+            return args[0]._data.pop()
+
+        def _deque_peek_front(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_peek_front: expected 1 argument (deque)")
+            _check_deque('deque_peek_front', args[0])
+            if not args[0]._data:
+                raise RuntimeError("deque_peek_front: deque is empty")
+            return args[0]._data[0]
+
+        def _deque_peek_back(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_peek_back: expected 1 argument (deque)")
+            _check_deque('deque_peek_back', args[0])
+            if not args[0]._data:
+                raise RuntimeError("deque_peek_back: deque is empty")
+            return args[0]._data[-1]
+
+        def _deque_size(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_size: expected 1 argument (deque)")
+            _check_deque('deque_size', args[0])
+            return float(len(args[0]._data))
+
+        def _deque_is_empty(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_is_empty: expected 1 argument (deque)")
+            _check_deque('deque_is_empty', args[0])
+            return len(args[0]._data) == 0
+
+        def _deque_to_list(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_to_list: expected 1 argument (deque)")
+            _check_deque('deque_to_list', args[0])
+            return list(args[0]._data)
+
+        def _deque_rotate(args):
+            if len(args) != 2:
+                raise RuntimeError("deque_rotate: expected 2 arguments (deque, n)")
+            _check_deque('deque_rotate', args[0])
+            n = args[1]
+            if not isinstance(n, (int, float)):
+                raise RuntimeError("deque_rotate: n must be a number")
+            args[0]._data.rotate(int(n))
+            return None
+
+        def _deque_clear(args):
+            if len(args) != 1:
+                raise RuntimeError("deque_clear: expected 1 argument (deque)")
+            _check_deque('deque_clear', args[0])
+            args[0]._data.clear()
+            return None
+
+        self.builtins['deque_create'] = _deque_create
+        self.builtins['deque_push_front'] = _deque_push_front
+        self.builtins['deque_push_back'] = _deque_push_back
+        self.builtins['deque_pop_front'] = _deque_pop_front
+        self.builtins['deque_pop_back'] = _deque_pop_back
+        self.builtins['deque_peek_front'] = _deque_peek_front
+        self.builtins['deque_peek_back'] = _deque_peek_back
+        self.builtins['deque_size'] = _deque_size
+        self.builtins['deque_is_empty'] = _deque_is_empty
+        self.builtins['deque_to_list'] = _deque_to_list
+        self.builtins['deque_rotate'] = _deque_rotate
+        self.builtins['deque_clear'] = _deque_clear
 
         # ── HTTP / Network builtins ──────────────────────────────
         import urllib.request, urllib.parse, urllib.error, base64 as _b64, json as _json_mod, ssl as _ssl_mod
@@ -7839,6 +7962,18 @@ def repl():
                 'is_credit_card':'is_credit_card str    — true if valid card number (Luhn)',
                 'is_json':       'is_json str           — true if valid JSON string',
                 'validate':      'validate val rules... — multi-rule validation → {valid, errors}',
+                'deque_create':     'deque_create [list]     — create a double-ended queue',
+                'deque_push_front': 'deque_push_front dq val — push item to front',
+                'deque_push_back':  'deque_push_back dq val  — push item to back',
+                'deque_pop_front':  'deque_pop_front dq      — remove & return front item',
+                'deque_pop_back':   'deque_pop_back dq       — remove & return back item',
+                'deque_peek_front': 'deque_peek_front dq     — view front item without removing',
+                'deque_peek_back':  'deque_peek_back dq      — view back item without removing',
+                'deque_size':       'deque_size dq           — number of items in deque',
+                'deque_is_empty':   'deque_is_empty dq       — true if deque has no items',
+                'deque_to_list':    'deque_to_list dq        — convert deque to list',
+                'deque_rotate':     'deque_rotate dq n       — rotate deque n steps (positive=right)',
+                'deque_clear':      'deque_clear dq          — remove all items from deque',
             }
             print("Built-in functions:")
             for name in sorted(builtin_info.keys()):

@@ -1,0 +1,62 @@
+# deque_demo.srv - Double-ended Queue builtins demo
+
+# Create an empty deque
+string dq = deque_create
+print "Created deque:"
+print dq
+
+# Push items to back and front
+deque_push_back (dq) "B"
+deque_push_back (dq) "C"
+deque_push_front (dq) "A"
+print "After push A(front), B(back), C(back):"
+print deque_to_list (dq)
+
+# Peek at front and back
+print "Front:"
+print deque_peek_front (dq)
+print "Back:"
+print deque_peek_back (dq)
+
+# Size
+print "Size:"
+print deque_size (dq)
+
+# Pop from both ends
+string front = deque_pop_front (dq)
+print "Popped front:"
+print front
+
+string back = deque_pop_back (dq)
+print "Popped back:"
+print back
+
+print "Remaining:"
+print deque_to_list (dq)
+
+# Create from a list
+string dq2 = deque_create ([1, 2, 3, 4, 5])
+print "Deque from list [1,2,3,4,5]:"
+print deque_to_list (dq2)
+
+# Rotate right by 2
+deque_rotate (dq2) 2
+print "After rotate right by 2:"
+print deque_to_list (dq2)
+
+# Rotate left by 1
+float neg1 = 0 - 1
+deque_rotate (dq2) neg1
+print "After rotate left by 1:"
+print deque_to_list (dq2)
+
+# Check empty
+print "Is empty?"
+print deque_is_empty (dq2)
+
+# Clear
+deque_clear (dq2)
+print "After clear, is empty?"
+print deque_is_empty (dq2)
+
+print "Done!"

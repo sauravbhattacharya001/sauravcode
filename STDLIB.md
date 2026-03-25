@@ -372,6 +372,25 @@ A trie (prefix tree) for efficient string storage, prefix search, and autocomple
 | `trie_longest_prefix` | `trie_longest_prefix (t) "hello world"` | Longest word that is a prefix of input |
 | `trie_count_prefix` | `trie_count_prefix (t) "he"` | Count words starting with prefix |
 
+## Deque (Double-ended Queue)
+
+A deque supports efficient push/pop from both ends. Great for sliding windows, BFS, undo/redo stacks, and task scheduling.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `deque_create` | `dq = deque_create` | Create empty deque (or from list: `deque_create ([1,2,3])`) |
+| `deque_push_front dq val` | `deque_push_front (dq) "A"` | Push item to front |
+| `deque_push_back dq val` | `deque_push_back (dq) "Z"` | Push item to back |
+| `deque_pop_front dq` | `deque_pop_front (dq)` | Remove & return front item |
+| `deque_pop_back dq` | `deque_pop_back (dq)` | Remove & return back item |
+| `deque_peek_front dq` | `deque_peek_front (dq)` | View front item without removing |
+| `deque_peek_back dq` | `deque_peek_back (dq)` | View back item without removing |
+| `deque_size dq` | `deque_size (dq)` | Number of items |
+| `deque_is_empty dq` | `deque_is_empty (dq)` | True if deque has no items |
+| `deque_to_list dq` | `deque_to_list (dq)` | Convert deque to list |
+| `deque_rotate dq n` | `deque_rotate (dq) 2` | Rotate n steps right (negative = left) |
+| `deque_clear dq` | `deque_clear (dq)` | Remove all items |
+
 ## HTTP / Network
 
 Make HTTP requests, parse URLs, and encode/decode data. All networking uses Python's stdlib (`urllib`) under the hood.
