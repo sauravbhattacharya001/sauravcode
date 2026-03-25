@@ -627,6 +627,23 @@ python saurav.py test_all.srv
 python sauravcc.py test_all.srv
 ```
 
+## 🔄 Language Comparison
+
+See how sauravcode compares to other languages for common tasks:
+
+| Task | sauravcode | Python | JavaScript |
+|------|-----------|--------|------------|
+| Print | `print "hello"` | `print("hello")` | `console.log("hello")` |
+| Function | `function add a b`<br>`    return a + b` | `def add(a, b):`<br>`    return a + b` | `function add(a, b) {`<br>`    return a + b; }` |
+| Call | `add 3 5` | `add(3, 5)` | `add(3, 5)` |
+| For loop | `for i 1 6`<br>`    print i` | `for i in range(1, 6):`<br>`    print(i)` | `for (let i=1; i<6; i++)`<br>`    console.log(i)` |
+| Lambda | `lambda x -> x * 2` | `lambda x: x * 2` | `x => x * 2` |
+| Pipe | `"hi" \|> upper \|> reverse` | N/A (nested calls) | N/A (method chaining) |
+| F-string | `f"Hi {name}"` | `f"Hi {name}"` | `` `Hi ${name}` `` |
+| List comp | `[x * 2 for x in range 1 6]` | `[x*2 for x in range(1,6)]` | `[...Array(5)].map((_,i)=>(i+1)*2)` |
+
+**Key differences:** No parentheses for calls, no commas between arguments, no semicolons, no braces. Indentation defines blocks (like Python), but function calls are cleaner.
+
 ## 🎯 Design Philosophy
 
 > Code should read like thought. No ceremony, no noise — just logic.
