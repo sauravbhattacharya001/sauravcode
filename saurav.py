@@ -2072,6 +2072,9 @@ class Interpreter:
     _BINARY_OP_DISPATCH = {
         '+': operator.add,
         '-': operator.sub,
+        '*': operator.mul,
+        '/': operator.truediv,
+        '%': operator.mod,
     }
     _COMPARE_OP_DISPATCH = {
         '==': operator.eq,
@@ -7613,31 +7616,43 @@ class Interpreter:
         right = self.evaluate(node.right)
         if DEBUG:
             debug(f"Performing operation: {left} {node.operator} {right}")
+        op = node.operator
         try:
-            # Multiplication needs special handling for repetition guards
-            if node.operator == '*':
+            # Fast path: both operands are numbers — pure dispatch, no guards needed.
+            # This avoids isinstance checks on the hot path for arithmetic-heavy code.
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                if op == '/' and right == 0:
+                    raise RuntimeError("Division by zero")
+                if op == '%' and right == 0:
+                    raise RuntimeError("Modulo by zero")
+                return self._BINARY_OP_DISPATCH[op](left, right)
+
+            # Repetition guard for string/list * int
+            if op == '*':
                 if isinstance(left, (str, list)) and isinstance(right, (int, float)):
                     return self._guarded_repeat(left, int(right))
                 elif isinstance(right, (str, list)) and isinstance(left, (int, float)):
                     return self._guarded_repeat(right, int(left))
                 return left * right
-            # O(1) dispatch for +, -
-            op_fn = self._BINARY_OP_DISPATCH.get(node.operator)
-            if op_fn is not None:
-                return op_fn(left, right)
-            # Division and modulo need zero-checks
-            if node.operator == '/':
+
+            # Division / modulo zero-checks for non-numeric types that support them
+            if op == '/':
                 if right == 0:
                     raise RuntimeError("Division by zero")
                 return left / right
-            if node.operator == '%':
+            if op == '%':
                 if right == 0:
                     raise RuntimeError("Modulo by zero")
                 return left % right
-            raise ValueError(f'Unknown operator: {node.operator}')
+
+            # O(1) dispatch for +, - (handles string concat, list concat, etc.)
+            op_fn = self._BINARY_OP_DISPATCH.get(op)
+            if op_fn is not None:
+                return op_fn(left, right)
+            raise ValueError(f'Unknown operator: {op}')
         except TypeError:
             raise RuntimeError(
-                f"Cannot use '{node.operator}' on "
+                f"Cannot use '{op}' on "
                 f"{self._type_name(left)} and {self._type_name(right)}"
             )
 
