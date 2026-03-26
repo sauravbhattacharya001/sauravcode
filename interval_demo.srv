@@ -1,0 +1,76 @@
+# interval_demo.srv - Interval builtins demo
+
+# Create intervals
+a = interval_create 1 5
+b = interval_create 3 8
+c = interval_create 10 15
+
+print "Interval A:"
+print a
+print "Interval B:"
+print b
+print "Interval C:"
+print c
+
+# Width
+print "Width of A:"
+print interval_width (a)
+print "Width of B:"
+print interval_width (b)
+
+# Contains check
+print "A contains 3?"
+print interval_contains (a) 3
+print "A contains 7?"
+print interval_contains (a) 7
+print "C contains 12?"
+print interval_contains (c) 12
+
+# Overlap detection
+print "A overlaps B?"
+print interval_overlaps (a) (b)
+print "A overlaps C?"
+print interval_overlaps (a) (c)
+
+# Intersection
+ab_inter = interval_intersection (a) (b)
+print "A intersect B:"
+print ab_inter
+ac_inter = interval_intersection (a) (c)
+print "A intersect C (should be none):"
+print ac_inter
+
+# Merge overlapping intervals
+merged = interval_merge (a) (b)
+print "A merge B:"
+print merged
+
+# Span (bounding interval)
+span = interval_span (a) (c)
+print "Span of A and C:"
+print span
+
+# Gap between non-overlapping intervals
+gap = interval_gap (a) (c)
+print "Gap between A and C:"
+print gap
+print "Gap width:"
+print interval_width (gap)
+
+# Convert to list
+print "A as list:"
+print interval_to_list (a)
+
+# Merge all - consolidate overlapping intervals
+i1 = interval_create 1 3
+i2 = interval_create 2 6
+i3 = interval_create 8 10
+i4 = interval_create 9 12
+intervals = [i1, i2, i3, i4]
+print "Before merge_all:"
+print intervals
+result = interval_merge_all (intervals)
+print "After merge_all:"
+print result
+
+print "Done!"

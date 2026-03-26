@@ -404,3 +404,20 @@ Make HTTP requests, parse URLs, and encode/decode data. All networking uses Pyth
 | `url_decode str` | `url_decode "hello%20world"` → `"hello world"` | Decode percent-encoded string |
 | `base64_encode str` | `base64_encode "hello"` → `"aGVsbG8="` | Base64 encode a string |
 | `base64_decode str` | `base64_decode "aGVsbG8="` → `"hello"` | Base64 decode a string |
+
+## Interval Data Structure
+
+Numeric intervals `[low, high]` with overlap detection, merging, intersection, and gap operations.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `interval_create low high` | `a = interval_create 1 5` | Create interval [1, 5] |
+| `interval_width iv` | `interval_width (a)` → `4` | Width (high - low) |
+| `interval_contains iv val` | `interval_contains (a) 3` → `true` | Check if value is within interval |
+| `interval_overlaps iv1 iv2` | `interval_overlaps (a) (b)` | Check if two intervals overlap |
+| `interval_intersection iv1 iv2` | `interval_intersection (a) (b)` | Return overlapping region, or None |
+| `interval_merge iv1 iv2` | `interval_merge (a) (b)` | Merge two overlapping intervals |
+| `interval_gap iv1 iv2` | `interval_gap (a) (c)` | Return gap between non-overlapping intervals, or None |
+| `interval_span iv1 iv2` | `interval_span (a) (c)` | Bounding interval covering both |
+| `interval_to_list iv` | `interval_to_list (a)` → `[1, 5]` | Convert to [low, high] list |
+| `interval_merge_all list` | `interval_merge_all (intervals)` | Merge all overlapping intervals in a list |

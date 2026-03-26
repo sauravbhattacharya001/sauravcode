@@ -969,6 +969,10 @@ class Parser:
         'deque_create', 'deque_push_front', 'deque_push_back',
         'deque_pop_front', 'deque_pop_back', 'deque_peek_front', 'deque_peek_back',
         'deque_size', 'deque_is_empty', 'deque_to_list', 'deque_rotate', 'deque_clear',
+        'interval_create', 'interval_contains', 'interval_overlaps',
+        'interval_merge', 'interval_intersection', 'interval_gap',
+        'interval_span', 'interval_width', 'interval_to_list',
+        'interval_merge_all',
         'path_join', 'path_dir', 'path_base', 'path_ext', 'path_stem',
         'path_abs', 'path_exists', 'list_dir', 'make_dir', 'is_dir', 'is_file',
         'sort_by', 'min_by', 'max_by', 'partition', 'rotate',
@@ -2307,6 +2311,7 @@ class Interpreter:
         self._register_linkedlist_builtins()
         self._register_bloom_builtins()
         self._register_deque_builtins()
+        self._register_interval_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -5192,6 +5197,131 @@ class Interpreter:
         self.builtins['url_decode'] = _url_decode
         self.builtins['base64_encode'] = _base64_encode
         self.builtins['base64_decode'] = _base64_decode
+
+    def _register_interval_builtins(self):
+        """Register numeric interval/range builtins."""
+
+        class _SrvInterval:
+            """Closed numeric interval [low, high] for sauravcode."""
+            __slots__ = ('low', 'high')
+            def __init__(self, low, high):
+                self.low = float(min(low, high))
+                self.high = float(max(low, high))
+            def __repr__(self):
+                return f"Interval({self.low}, {self.high})"
+
+        def _check_num(fn, v, name='argument'):
+            if not isinstance(v, (int, float)):
+                raise RuntimeError(f"{fn}: {name} must be a number")
+
+        def _check_interval(fn, v):
+            if not isinstance(v, _SrvInterval):
+                raise RuntimeError(f"{fn}: argument must be an interval")
+
+        def _interval_create(args):
+            if len(args) != 2:
+                raise RuntimeError("interval_create: expected 2 arguments (low, high)")
+            _check_num('interval_create', args[0], 'low')
+            _check_num('interval_create', args[1], 'high')
+            return _SrvInterval(args[0], args[1])
+
+        def _interval_contains(args):
+            if len(args) != 2:
+                raise RuntimeError("interval_contains: expected 2 arguments (interval, value)")
+            _check_interval('interval_contains', args[0])
+            _check_num('interval_contains', args[1], 'value')
+            return args[0].low <= args[1] <= args[0].high
+
+        def _interval_overlaps(args):
+            if len(args) != 2:
+                raise RuntimeError("interval_overlaps: expected 2 arguments (interval, interval)")
+            _check_interval('interval_overlaps', args[0])
+            _check_interval('interval_overlaps', args[1])
+            return args[0].low <= args[1].high and args[1].low <= args[0].high
+
+        def _interval_merge(args):
+            if len(args) != 2:
+                raise RuntimeError("interval_merge: expected 2 arguments (interval, interval)")
+            _check_interval('interval_merge', args[0])
+            _check_interval('interval_merge', args[1])
+            a, b = args[0], args[1]
+            if a.low > b.high or b.low > a.high:
+                raise RuntimeError("interval_merge: intervals do not overlap or touch")
+            return _SrvInterval(min(a.low, b.low), max(a.high, b.high))
+
+        def _interval_intersection(args):
+            if len(args) != 2:
+                raise RuntimeError("interval_intersection: expected 2 arguments (interval, interval)")
+            _check_interval('interval_intersection', args[0])
+            _check_interval('interval_intersection', args[1])
+            a, b = args[0], args[1]
+            lo = max(a.low, b.low)
+            hi = min(a.high, b.high)
+            if lo > hi:
+                return None
+            return _SrvInterval(lo, hi)
+
+        def _interval_gap(args):
+            if len(args) != 2:
+                raise RuntimeError("interval_gap: expected 2 arguments (interval, interval)")
+            _check_interval('interval_gap', args[0])
+            _check_interval('interval_gap', args[1])
+            a, b = args[0], args[1]
+            if a.low <= b.high and b.low <= a.high:
+                return None  # overlapping, no gap
+            if a.high < b.low:
+                return _SrvInterval(a.high, b.low)
+            return _SrvInterval(b.high, a.low)
+
+        def _interval_span(args):
+            if len(args) != 2:
+                raise RuntimeError("interval_span: expected 2 arguments (interval, interval)")
+            _check_interval('interval_span', args[0])
+            _check_interval('interval_span', args[1])
+            return _SrvInterval(min(args[0].low, args[1].low), max(args[0].high, args[1].high))
+
+        def _interval_width(args):
+            if len(args) != 1:
+                raise RuntimeError("interval_width: expected 1 argument (interval)")
+            _check_interval('interval_width', args[0])
+            return args[0].high - args[0].low
+
+        def _interval_to_list(args):
+            if len(args) != 1:
+                raise RuntimeError("interval_to_list: expected 1 argument (interval)")
+            _check_interval('interval_to_list', args[0])
+            return [args[0].low, args[0].high]
+
+        def _interval_merge_all(args):
+            if len(args) != 1:
+                raise RuntimeError("interval_merge_all: expected 1 argument (list of intervals)")
+            lst = args[0]
+            if not isinstance(lst, list):
+                raise RuntimeError("interval_merge_all: argument must be a list of intervals")
+            if len(lst) == 0:
+                return []
+            for item in lst:
+                _check_interval('interval_merge_all', item)
+            sorted_ivs = sorted(lst, key=lambda iv: iv.low)
+            merged = [_SrvInterval(sorted_ivs[0].low, sorted_ivs[0].high)]
+            for iv in sorted_ivs[1:]:
+                top = merged[-1]
+                if iv.low <= top.high:
+                    merged[-1] = _SrvInterval(top.low, max(top.high, iv.high))
+                else:
+                    merged.append(_SrvInterval(iv.low, iv.high))
+            return merged
+
+        self.builtins['interval_create'] = _interval_create
+        self.builtins['interval_contains'] = _interval_contains
+        self.builtins['interval_overlaps'] = _interval_overlaps
+        self.builtins['interval_merge'] = _interval_merge
+        self.builtins['interval_intersection'] = _interval_intersection
+        self.builtins['interval_gap'] = _interval_gap
+        self.builtins['interval_span'] = _interval_span
+        self.builtins['interval_width'] = _interval_width
+        self.builtins['interval_to_list'] = _interval_to_list
+        self.builtins['interval_merge_all'] = _interval_merge_all
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
