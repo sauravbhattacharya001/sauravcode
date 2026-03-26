@@ -1018,6 +1018,8 @@ class Parser:
         'bloom_info',
         'http_get', 'http_post', 'url_parse', 'url_encode', 'url_decode',
         'base64_encode', 'base64_decode',
+        'compress', 'decompress', 'gzip_compress', 'gzip_decompress',
+        'compress_ratio',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2315,6 +2317,7 @@ class Interpreter:
         self._register_bloom_builtins()
         self._register_deque_builtins()
         self._register_interval_builtins()
+        self._register_compression_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -5325,6 +5328,62 @@ class Interpreter:
         self.builtins['interval_width'] = _interval_width
         self.builtins['interval_to_list'] = _interval_to_list
         self.builtins['interval_merge_all'] = _interval_merge_all
+
+    def _register_compression_builtins(self):
+        """Register data compression builtins (zlib & gzip)."""
+        import zlib as _zlib
+        import gzip as _gzip
+        import base64 as _b64
+
+        def _compress(args):
+            """compress(string [, level]) → base64-encoded zlib-compressed data."""
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("compress: expected 1-2 arguments (data, level)")
+            data = str(args[0]).encode('utf-8')
+            level = int(args[1]) if len(args) == 2 else 6
+            level = max(-1, min(9, level))
+            compressed = _zlib.compress(data, level)
+            return _b64.b64encode(compressed).decode('ascii')
+
+        def _decompress(args):
+            """decompress(base64_string) → original string."""
+            if len(args) != 1:
+                raise RuntimeError("decompress: expected 1 argument (compressed_data)")
+            raw = _b64.b64decode(str(args[0]))
+            return _zlib.decompress(raw).decode('utf-8')
+
+        def _gzip_compress(args):
+            """gzip_compress(string [, level]) → base64-encoded gzip data."""
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("gzip_compress: expected 1-2 arguments (data, level)")
+            data = str(args[0]).encode('utf-8')
+            level = int(args[1]) if len(args) == 2 else 9
+            level = max(0, min(9, level))
+            compressed = _gzip.compress(data, compresslevel=level)
+            return _b64.b64encode(compressed).decode('ascii')
+
+        def _gzip_decompress(args):
+            """gzip_decompress(base64_string) → original string."""
+            if len(args) != 1:
+                raise RuntimeError("gzip_decompress: expected 1 argument (compressed_data)")
+            raw = _b64.b64decode(str(args[0]))
+            return _gzip.decompress(raw).decode('utf-8')
+
+        def _compress_ratio(args):
+            """compress_ratio(string) → compression ratio as float (original/compressed)."""
+            if len(args) != 1:
+                raise RuntimeError("compress_ratio: expected 1 argument (data)")
+            data = str(args[0]).encode('utf-8')
+            if len(data) == 0:
+                return 1.0
+            compressed = _zlib.compress(data)
+            return round(len(data) / len(compressed), 4)
+
+        self.builtins['compress'] = _compress
+        self.builtins['decompress'] = _decompress
+        self.builtins['gzip_compress'] = _gzip_compress
+        self.builtins['gzip_decompress'] = _gzip_decompress
+        self.builtins['compress_ratio'] = _compress_ratio
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

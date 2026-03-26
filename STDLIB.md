@@ -391,6 +391,19 @@ A deque supports efficient push/pop from both ends. Great for sliding windows, B
 | `deque_rotate dq n` | `deque_rotate (dq) 2` | Rotate n steps right (negative = left) |
 | `deque_clear dq` | `deque_clear (dq)` | Remove all items |
 
+## Compression
+
+Compress and decompress data using zlib and gzip. Compressed output is base64-encoded for safe storage/transmission.
+
+| Function | Example | Description |
+|---|---|---|
+| `compress(s)` | `compress("hello")` | Zlib-compress string, return base64 |
+| `compress s level` | `compress "hello" 9` | Zlib-compress with level (0-9) |
+| `decompress(s)` | `decompress(data)` | Decompress base64-encoded zlib data |
+| `gzip_compress(s)` | `gzip_compress("hello")` | Gzip-compress string, return base64 |
+| `gzip_decompress(s)` | `gzip_decompress(data)` | Decompress base64-encoded gzip data |
+| `compress_ratio(s)` | `compress_ratio("hello")` | Compression ratio (original/compressed) |
+
 ## HTTP / Network
 
 Make HTTP requests, parse URLs, and encode/decode data. All networking uses Python's stdlib (`urllib`) under the hood.

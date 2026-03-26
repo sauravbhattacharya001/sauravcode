@@ -1,0 +1,35 @@
+# compression_demo.srv - Compression builtins demo
+
+print "=== Compression Builtins Demo ==="
+
+# Basic zlib compression
+text = "Hello World! This is a test of compression builtins in sauravcode."
+compressed = compress(text)
+print "Original:"
+print text
+print "Compressed:"
+print compressed
+
+# Decompress back
+restored = decompress(compressed)
+print "Decompressed:"
+print restored
+
+# Gzip compression
+gz = gzip_compress(text)
+print "Gzip compressed:"
+print gz
+gz_restored = gzip_decompress(gz)
+print "Gzip decompressed:"
+print gz_restored
+
+# Check compression ratio
+ratio = compress_ratio(text)
+print "Compression ratio:"
+print ratio
+
+# Compress a larger repetitive string for better ratio
+big = repeat "abcdefghij" 100
+big_ratio = compress_ratio(big)
+print "Repetitive string ratio:"
+print big_ratio
