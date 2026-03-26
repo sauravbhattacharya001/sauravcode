@@ -103,76 +103,66 @@ def _build_rename_map(identifiers):
     return {name: next(gen) for name in identifiers}
 
 
+def _scan_tokens(source):
+    """Yield (kind, text, start, end) for each segment of source.
+
+    Kinds: 'string', 'comment', 'ident', 'other'.
+    Correctly handles escape sequences inside strings and #-comments.
+    """
+    _IDENT_RE = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
+    i = 0
+    n = len(source)
+    while i < n:
+        ch = source[i]
+        if ch == '#':
+            start = i
+            while i < n and source[i] != '\n':
+                i += 1
+            yield ('comment', source[start:i], start, i)
+            continue
+        if ch in ('"', "'"):
+            quote = ch
+            start = i
+            i += 1
+            while i < n:
+                c = source[i]
+                if c == '\\' and i + 1 < n:
+                    i += 2
+                    continue
+                if c == quote:
+                    i += 1
+                    break
+                i += 1
+            yield ('string', source[start:i], start, i)
+            continue
+        if ch.isalpha() or ch == '_':
+            m = _IDENT_RE.match(source, i)
+            if m:
+                yield ('ident', m.group(0), i, m.end())
+                i = m.end()
+                continue
+        yield ('other', ch, i, i + 1)
+        i += 1
+
+
 def _apply_renames(source, rename_map):
     """Replace identifiers in source, preserving strings and comments."""
     if not rename_map:
         return source
-    names = sorted(rename_map.keys(), key=len, reverse=True)
-    pattern = re.compile(
-        r'(?<![a-zA-Z0-9_])(' + '|'.join(re.escape(n) for n in names) + r')(?![a-zA-Z0-9_])'
-    )
     result = []
-    i = 0
-    in_string = None
-    in_comment = False
-
-    while i < len(source):
-        ch = source[i]
-        if in_comment:
-            result.append(ch)
-            if ch == '\n':
-                in_comment = False
-            i += 1
-            continue
-        if in_string:
-            result.append(ch)
-            if ch == '\\' and i + 1 < len(source):
-                result.append(source[i + 1])
-                i += 2
-                continue
-            if ch == in_string:
-                in_string = None
-            i += 1
-            continue
-        if ch == '#':
-            in_comment = True
-            result.append(ch)
-            i += 1
-            continue
-        if ch in ('"', "'"):
-            in_string = ch
-            result.append(ch)
-            i += 1
-            continue
-        if ch.isalpha() or ch == '_':
-            m = re.match(r'[a-zA-Z_][a-zA-Z0-9_]*', source[i:])
-            if m:
-                word = m.group(0)
-                result.append(rename_map.get(word, word))
-                i += len(word)
-                continue
-        result.append(ch)
-        i += 1
+    for kind, text, _start, _end in _scan_tokens(source):
+        if kind == 'ident':
+            result.append(rename_map.get(text, text))
+        else:
+            result.append(text)
     return ''.join(result)
 
 
 def _strip_comments(line):
     """Remove comments from a line, preserving strings."""
-    in_string = None
-    i = 0
-    while i < len(line):
-        ch = line[i]
-        if in_string:
-            if ch == '\\' and i + 1 < len(line):
-                i += 2
-                continue
-            if ch == in_string:
-                in_string = None
-        elif ch in ('"', "'"):
-            in_string = ch
-        elif ch == '#':
-            return line[:i].rstrip()
-        i += 1
+    for kind, _text, start, _end in _scan_tokens(line):
+        if kind == 'comment':
+            return line[:start].rstrip()
     return line
 
 
