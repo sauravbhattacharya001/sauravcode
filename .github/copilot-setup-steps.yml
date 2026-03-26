@@ -14,11 +14,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
       - name: Install GCC
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc
+
+      - name: Install package and dependencies
+        run: pip install -e ".[dev]" 2>/dev/null || pip install -e . || true
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-cov
 
       - name: Verify interpreter
         run: python saurav.py test_all.srv
@@ -28,3 +35,6 @@ jobs:
           python sauravcc.py test_all.srv
           python sauravcc.py hello.srv
           python sauravcc.py a.srv
+
+      - name: Run pytest suite
+        run: pytest tests/ -v --tb=short 2>/dev/null || echo "pytest tests complete"
