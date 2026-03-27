@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -377,7 +378,8 @@ def _execute_and_report(file_path, mode, debug, clear, quiet, stats,
                         notify, on_success, on_failure, initial=False):
     """Execute a file and print results."""
     if clear:
-        os.system("cls" if os.name == "nt" else "clear")
+        # Use ANSI escape sequence instead of os.system to avoid shell invocation
+        print("\033[2J\033[H", end="", flush=True)
 
     now = datetime.now().strftime("%H:%M:%S")
     rel = os.path.relpath(file_path)
@@ -410,12 +412,12 @@ def _execute_and_report(file_path, mode, debug, clear, quiet, stats,
     # Hooks
     if success and on_success:
         try:
-            subprocess.run(on_success, shell=True, timeout=10)
+            subprocess.run(shlex.split(on_success), shell=False, timeout=10)
         except Exception:
             pass
     elif not success and on_failure:
         try:
-            subprocess.run(on_failure, shell=True, timeout=10)
+            subprocess.run(shlex.split(on_failure), shell=False, timeout=10)
         except Exception:
             pass
 

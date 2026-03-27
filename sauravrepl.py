@@ -440,7 +440,8 @@ class SauravRepl:
             return True
 
         elif command == ".clear":
-            os.system("cls" if os.name == "nt" else "clear")
+            # Use ANSI escape sequence instead of os.system to avoid shell invocation
+            print("\033[2J\033[H", end="", flush=True)
             return True
 
         elif command == ".reset":
