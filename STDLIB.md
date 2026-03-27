@@ -404,6 +404,23 @@ Compress and decompress data using zlib and gzip. Compressed output is base64-en
 | `gzip_decompress(s)` | `gzip_decompress(data)` | Decompress base64-encoded gzip data |
 | `compress_ratio(s)` | `compress_ratio("hello")` | Compression ratio (original/compressed) |
 
+## Logging & Diagnostics
+
+Structured logging with colored output and performance timers for profiling code.
+
+| Function | Example | Description |
+|---|---|---|
+| `log_info msg` | `log_info "Server started"` | Log an INFO-level message (cyan) |
+| `log_warn msg` | `log_warn "Disk 90% full"` | Log a WARN-level message (yellow) |
+| `log_error msg` | `log_error "Connection failed"` | Log an ERROR-level message (red) |
+| `log_debug msg` | `log_debug "x = 42"` | Log a DEBUG-level message (grey) |
+| `log_to_file f` | `log_to_file "app.log"` | Write log buffer to file, returns count |
+| `log_history level` | `log_history "error"` | Get log entries filtered by level |
+| `log_clear` | `cleared = log_clear` | Clear log buffer, returns cleared count |
+| `perf_start label` | `perf_start "task1"` | Start a named performance timer |
+| `perf_stop label` | `perf_stop "task1"` | Stop timer, return elapsed seconds |
+| `perf_elapsed label` | `perf_elapsed "task1"` | Check elapsed without stopping timer |
+
 ## HTTP / Network
 
 Make HTTP requests, parse URLs, and encode/decode data. All networking uses Python's stdlib (`urllib`) under the hood.

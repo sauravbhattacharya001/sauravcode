@@ -1020,6 +1020,9 @@ class Parser:
         'base64_encode', 'base64_decode',
         'compress', 'decompress', 'gzip_compress', 'gzip_decompress',
         'compress_ratio',
+        'log_info', 'log_warn', 'log_error', 'log_debug',
+        'log_to_file', 'log_clear', 'log_history',
+        'perf_start', 'perf_stop', 'perf_elapsed',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1027,7 +1030,8 @@ class Parser:
         'sys_args', 'sys_platform', 'sys_cwd', 'sys_pid', 'sys_uptime', 'sys_hostname',
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
-        'll_create', 'bloom_create', 'deque_create'})
+        'll_create', 'bloom_create', 'deque_create',
+        'log_clear'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -2318,6 +2322,7 @@ class Interpreter:
         self._register_deque_builtins()
         self._register_interval_builtins()
         self._register_compression_builtins()
+        self._register_logging_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -5384,6 +5389,117 @@ class Interpreter:
         self.builtins['gzip_compress'] = _gzip_compress
         self.builtins['gzip_decompress'] = _gzip_decompress
         self.builtins['compress_ratio'] = _compress_ratio
+
+    def _register_logging_builtins(self):
+        """Register logging & diagnostics builtins."""
+        import sys as _sys
+
+        # Internal log storage
+        _log_buffer = []
+        _perf_timers = {}
+
+        _LEVEL_NAMES = {'INFO': 'INFO', 'WARN': 'WARN', 'ERROR': 'ERROR', 'DEBUG': 'DEBUG'}
+        _LEVEL_COLORS = {
+            'INFO':  '\033[36m',   # cyan
+            'WARN':  '\033[33m',   # yellow
+            'ERROR': '\033[31m',   # red
+            'DEBUG': '\033[90m',   # grey
+        }
+        _RESET = '\033[0m'
+
+        def _log_at_level(level, args):
+            if len(args) < 1:
+                raise RuntimeError(f"log_{level.lower()}: expected at least 1 argument")
+            msg = ' '.join(str(a) for a in args)
+            timestamp = _datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            entry = {'level': level, 'message': msg, 'timestamp': timestamp}
+            _log_buffer.append(entry)
+            color = _LEVEL_COLORS.get(level, '')
+            print(f"{color}[{level}] {timestamp} | {msg}{_RESET}")
+            return msg
+
+        def _log_info(args):
+            return _log_at_level('INFO', args)
+
+        def _log_warn(args):
+            return _log_at_level('WARN', args)
+
+        def _log_error(args):
+            return _log_at_level('ERROR', args)
+
+        def _log_debug(args):
+            return _log_at_level('DEBUG', args)
+
+        def _log_to_file(args):
+            """log_to_file(filename [, clear]) → write log buffer to file. Pass true as 2nd arg to clear buffer."""
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("log_to_file: expected 1-2 arguments (filename [, clear])")
+            filename = str(args[0])
+            clear_after = bool(args[1]) if len(args) == 2 else False
+            with open(filename, 'w', encoding='utf-8') as f:
+                for entry in _log_buffer:
+                    f.write(f"[{entry['level']}] {entry['timestamp']} | {entry['message']}\n")
+            count = len(_log_buffer)
+            if clear_after:
+                _log_buffer.clear()
+            return float(count)
+
+        def _log_clear(args):
+            """log_clear() → clear the in-memory log buffer. Returns count of cleared entries."""
+            count = len(_log_buffer)
+            _log_buffer.clear()
+            return float(count)
+
+        def _log_history(args):
+            """log_history([level]) → return list of log entries, optionally filtered by level."""
+            if len(args) > 1:
+                raise RuntimeError("log_history: expected 0-1 arguments ([level])")
+            level_filter = str(args[0]).upper() if len(args) == 1 else None
+            results = []
+            for entry in _log_buffer:
+                if level_filter is None or entry['level'] == level_filter:
+                    results.append(f"[{entry['level']}] {entry['timestamp']} | {entry['message']}")
+            return results
+
+        def _perf_start(args):
+            """perf_start(label) → start a performance timer with the given label."""
+            if len(args) != 1:
+                raise RuntimeError("perf_start: expected 1 argument (label)")
+            label = str(args[0])
+            _perf_timers[label] = _time.time()
+            return label
+
+        def _perf_stop(args):
+            """perf_stop(label) → stop timer and return elapsed seconds."""
+            if len(args) != 1:
+                raise RuntimeError("perf_stop: expected 1 argument (label)")
+            label = str(args[0])
+            if label not in _perf_timers:
+                raise RuntimeError(f"perf_stop: no timer named '{label}'")
+            elapsed = _time.time() - _perf_timers[label]
+            del _perf_timers[label]
+            return round(elapsed, 6)
+
+        def _perf_elapsed(args):
+            """perf_elapsed(label) → return elapsed seconds without stopping the timer."""
+            if len(args) != 1:
+                raise RuntimeError("perf_elapsed: expected 1 argument (label)")
+            label = str(args[0])
+            if label not in _perf_timers:
+                raise RuntimeError(f"perf_elapsed: no timer named '{label}'")
+            elapsed = _time.time() - _perf_timers[label]
+            return round(elapsed, 6)
+
+        self.builtins['log_info'] = _log_info
+        self.builtins['log_warn'] = _log_warn
+        self.builtins['log_error'] = _log_error
+        self.builtins['log_debug'] = _log_debug
+        self.builtins['log_to_file'] = _log_to_file
+        self.builtins['log_clear'] = _log_clear
+        self.builtins['log_history'] = _log_history
+        self.builtins['perf_start'] = _perf_start
+        self.builtins['perf_stop'] = _perf_stop
+        self.builtins['perf_elapsed'] = _perf_elapsed
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

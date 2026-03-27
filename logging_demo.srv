@@ -1,0 +1,61 @@
+# logging_demo.srv - Logging & Diagnostics builtins demo
+
+# --- Structured Logging ---
+print "=== Logging ==="
+log_info "Application started"
+log_debug "Initializing subsystems..."
+log_warn "Cache directory not found, using default"
+log_error "Failed to connect to backup server"
+
+# --- Performance Timers ---
+print ""
+print "=== Performance Timers ==="
+
+# Time a computation
+perf_start "sort_task"
+data = [50, 30, 10, 40, 20]
+sorted_data = sort data
+elapsed = perf_stop "sort_task"
+print "Sort took (seconds):"
+print elapsed
+
+# Check elapsed without stopping
+perf_start "long_task"
+sleep 0.1
+mid = perf_elapsed "long_task"
+print "Mid-point elapsed:"
+print mid
+sleep 0.1
+total = perf_stop "long_task"
+print "Total elapsed:"
+print total
+
+# --- Log History ---
+print ""
+print "=== Log History ==="
+
+# Filter by level
+errors = log_history "error"
+print "Error entries:"
+print len errors
+
+warnings = log_history "warn"
+print "Warning entries:"
+print len warnings
+
+# --- Export & Clear ---
+print ""
+print "=== Export & Clear ==="
+
+# Write logs to file
+written = log_to_file "app.log"
+print "Wrote entries to app.log:"
+print written
+
+# Clear the buffer
+cleared = log_clear
+print "Cleared entries:"
+print cleared
+
+print ""
+print "Done! Check app.log for the exported log file."
