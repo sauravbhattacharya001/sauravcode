@@ -1,0 +1,95 @@
+# omap_demo.srv - Ordered Map (Sorted Dictionary) builtins demo
+
+print "=== Ordered Map Demo ==="
+
+# Create an empty ordered map
+m = omap_create
+print "Empty ordered map:"
+print m
+
+# Insert key-value pairs (maintained in sorted key order)
+omap_set (m) "cherry" 3
+omap_set (m) "apple" 1
+omap_set (m) "banana" 2
+omap_set (m) "date" 4
+omap_set (m) "elderberry" 5
+print "After inserts:"
+print m
+
+# Get a value by key
+v = omap_get (m) "banana"
+print "banana ="
+print v
+
+# Get with default for missing key
+d = omap_get (m) "fig" 0
+print "fig (default 0) ="
+print d
+
+# Check existence
+print "Has apple:"
+print omap_has (m) "apple"
+
+# Size
+print "Size:"
+print omap_size (m)
+
+# Keys come back in sorted order
+ks = omap_keys (m)
+print "Keys (sorted):"
+print ks
+
+# Values in key order
+vs = omap_values (m)
+print "Values:"
+print vs
+
+# Entries as [key, value] pairs
+es = omap_entries (m)
+print "Entries:"
+print es
+
+# Min and max key
+mn = omap_min (m)
+print "Min key-value:"
+print mn
+
+mx = omap_max (m)
+print "Max key-value:"
+print mx
+
+# Range query: keys between "banana" and "date" inclusive
+rng = omap_range (m) "banana" "date"
+print "Range banana..date:"
+print rng
+
+# Floor: greatest key <= "cat"
+fl = omap_floor (m) "cat"
+print "Floor of cat:"
+print fl
+
+# Ceil: smallest key >= "cat"
+cl = omap_ceil (m) "cat"
+print "Ceil of cat:"
+print cl
+
+# Update existing key
+omap_set (m) "banana" 22
+print "After updating banana to 22:"
+print m
+
+# Delete a key
+removed = omap_delete (m) "cherry"
+print "Removed cherry, value was:"
+print removed
+print m
+
+# Convert to regular map
+regular = omap_to_map (m)
+print "As regular map:"
+print regular
+
+# Clear
+omap_clear (m)
+print "After clear, size:"
+print omap_size (m)

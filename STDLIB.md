@@ -451,3 +451,27 @@ Numeric intervals `[low, high]` with overlap detection, merging, intersection, a
 | `interval_span iv1 iv2` | `interval_span (a) (c)` | Bounding interval covering both |
 | `interval_to_list iv` | `interval_to_list (a)` → `[1, 5]` | Convert to [low, high] list |
 | `interval_merge_all list` | `interval_merge_all (intervals)` | Merge all overlapping intervals in a list |
+
+## Ordered Map (Sorted Dictionary)
+
+A key-value store that keeps keys in sorted order. Supports range queries, floor/ceil lookups, and min/max operations. Keys are stored as strings.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `omap_create` | `m = omap_create` | Create empty ordered map |
+| `omap_create map` | `m = omap_create ({"b": 2, "a": 1})` | Create from map (auto-sorted) |
+| `omap_set om key val` | `omap_set (m) "apple" 1` | Insert or update a key-value pair |
+| `omap_get om key [default]` | `omap_get (m) "apple"` → `1` | Get value by key (optional default) |
+| `omap_delete om key` | `omap_delete (m) "apple"` → `1` | Remove key and return its value |
+| `omap_has om key` | `omap_has (m) "apple"` → `true` | Check if key exists |
+| `omap_size om` | `omap_size (m)` → `3` | Number of entries |
+| `omap_keys om` | `omap_keys (m)` → `["a", "b", "c"]` | All keys in sorted order |
+| `omap_values om` | `omap_values (m)` → `[1, 2, 3]` | All values in key order |
+| `omap_entries om` | `omap_entries (m)` → `[["a",1],["b",2]]` | All [key, value] pairs |
+| `omap_min om` | `omap_min (m)` → `["a", 1]` | Smallest key and its value |
+| `omap_max om` | `omap_max (m)` → `["z", 26]` | Largest key and its value |
+| `omap_range om lo hi` | `omap_range (m) "b" "d"` | All entries with keys in [lo, hi] |
+| `omap_floor om key` | `omap_floor (m) "cat"` | Greatest key ≤ given key, or None |
+| `omap_ceil om key` | `omap_ceil (m) "cat"` | Smallest key ≥ given key, or None |
+| `omap_to_map om` | `omap_to_map (m)` | Convert to regular map |
+| `omap_clear om` | `omap_clear (m)` | Remove all entries |

@@ -1049,6 +1049,10 @@ class Parser:
         'table_create', 'table_add_row', 'table_headers', 'table_print',
         'table_sort', 'table_filter', 'table_to_csv', 'table_to_json',
         'table_column', 'table_size', 'table_row', 'table_reverse',
+        'omap_create', 'omap_set', 'omap_get', 'omap_delete',
+        'omap_has', 'omap_size', 'omap_keys', 'omap_values',
+        'omap_entries', 'omap_min', 'omap_max', 'omap_range',
+        'omap_floor', 'omap_ceil', 'omap_to_map', 'omap_clear',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1057,7 +1061,7 @@ class Parser:
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
         'll_create', 'bloom_create', 'deque_create',
-        'log_clear', 'table_create'})
+        'log_clear', 'table_create', 'omap_create'})
 
     # ── Keyword dispatch table for _parse_statement_inner ──────────
     # Maps keyword values to method names. Methods that need special
@@ -2363,6 +2367,7 @@ class Interpreter:
         self._register_interval_builtins()
         self._register_compression_builtins()
         self._register_logging_builtins()
+        self._register_omap_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -5616,6 +5621,181 @@ class Interpreter:
         self.builtins['table_reverse'] = _table_reverse
         self.builtins['table_to_csv'] = _table_to_csv
         self.builtins['table_to_json'] = _table_to_json
+
+    def _register_omap_builtins(self):
+        """Register ordered map (sorted dictionary) builtins using bisect."""
+        import bisect as _bisect
+
+        class _SrvOMap:
+            """Ordered map that keeps keys in sorted order."""
+            __slots__ = ('_keys', '_vals')
+            def __init__(self):
+                self._keys = []
+                self._vals = []
+            def __repr__(self):
+                pairs = ', '.join(f'{k}: {v}' for k, v in zip(self._keys, self._vals))
+                return f"OMap({{{pairs}}})"
+
+        def _check_omap(fn, m):
+            if not isinstance(m, _SrvOMap):
+                raise RuntimeError(f"{fn}: first argument must be an ordered map")
+
+        def _omap_create(args):
+            if len(args) > 1:
+                raise RuntimeError("omap_create: expected 0-1 arguments ([map])")
+            om = _SrvOMap()
+            if len(args) == 1:
+                if isinstance(args[0], dict):
+                    for k in sorted(args[0].keys(), key=str):
+                        om._keys.append(str(k))
+                        om._vals.append(args[0][k])
+                else:
+                    raise RuntimeError("omap_create: argument must be a map")
+            return om
+
+        def _omap_set(args):
+            if len(args) != 3:
+                raise RuntimeError("omap_set: expected 3 arguments (omap, key, value)")
+            _check_omap('omap_set', args[0])
+            om, key, val = args[0], str(args[1]), args[2]
+            idx = _bisect.bisect_left(om._keys, key)
+            if idx < len(om._keys) and om._keys[idx] == key:
+                om._vals[idx] = val
+            else:
+                om._keys.insert(idx, key)
+                om._vals.insert(idx, val)
+            return None
+
+        def _omap_get(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("omap_get: expected 2-3 arguments (omap, key, [default])")
+            _check_omap('omap_get', args[0])
+            om, key = args[0], str(args[1])
+            idx = _bisect.bisect_left(om._keys, key)
+            if idx < len(om._keys) and om._keys[idx] == key:
+                return om._vals[idx]
+            if len(args) == 3:
+                return args[2]
+            raise RuntimeError(f"omap_get: key '{key}' not found")
+
+        def _omap_delete(args):
+            if len(args) != 2:
+                raise RuntimeError("omap_delete: expected 2 arguments (omap, key)")
+            _check_omap('omap_delete', args[0])
+            om, key = args[0], str(args[1])
+            idx = _bisect.bisect_left(om._keys, key)
+            if idx < len(om._keys) and om._keys[idx] == key:
+                om._keys.pop(idx)
+                return om._vals.pop(idx)
+            raise RuntimeError(f"omap_delete: key '{key}' not found")
+
+        def _omap_has(args):
+            if len(args) != 2:
+                raise RuntimeError("omap_has: expected 2 arguments (omap, key)")
+            _check_omap('omap_has', args[0])
+            om, key = args[0], str(args[1])
+            idx = _bisect.bisect_left(om._keys, key)
+            return idx < len(om._keys) and om._keys[idx] == key
+
+        def _omap_size(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_size: expected 1 argument (omap)")
+            _check_omap('omap_size', args[0])
+            return float(len(args[0]._keys))
+
+        def _omap_keys(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_keys: expected 1 argument (omap)")
+            _check_omap('omap_keys', args[0])
+            return list(args[0]._keys)
+
+        def _omap_values(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_values: expected 1 argument (omap)")
+            _check_omap('omap_values', args[0])
+            return list(args[0]._vals)
+
+        def _omap_entries(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_entries: expected 1 argument (omap)")
+            _check_omap('omap_entries', args[0])
+            return [[k, v] for k, v in zip(args[0]._keys, args[0]._vals)]
+
+        def _omap_min(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_min: expected 1 argument (omap)")
+            _check_omap('omap_min', args[0])
+            if not args[0]._keys:
+                raise RuntimeError("omap_min: ordered map is empty")
+            return [args[0]._keys[0], args[0]._vals[0]]
+
+        def _omap_max(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_max: expected 1 argument (omap)")
+            _check_omap('omap_max', args[0])
+            if not args[0]._keys:
+                raise RuntimeError("omap_max: ordered map is empty")
+            return [args[0]._keys[-1], args[0]._vals[-1]]
+
+        def _omap_range(args):
+            if len(args) != 3:
+                raise RuntimeError("omap_range: expected 3 arguments (omap, low_key, high_key)")
+            _check_omap('omap_range', args[0])
+            om, lo, hi = args[0], str(args[1]), str(args[2])
+            lo_idx = _bisect.bisect_left(om._keys, lo)
+            hi_idx = _bisect.bisect_right(om._keys, hi)
+            return [[om._keys[i], om._vals[i]] for i in range(lo_idx, hi_idx)]
+
+        def _omap_floor(args):
+            if len(args) != 2:
+                raise RuntimeError("omap_floor: expected 2 arguments (omap, key)")
+            _check_omap('omap_floor', args[0])
+            om, key = args[0], str(args[1])
+            idx = _bisect.bisect_right(om._keys, key) - 1
+            if idx < 0:
+                return None
+            return [om._keys[idx], om._vals[idx]]
+
+        def _omap_ceil(args):
+            if len(args) != 2:
+                raise RuntimeError("omap_ceil: expected 2 arguments (omap, key)")
+            _check_omap('omap_ceil', args[0])
+            om, key = args[0], str(args[1])
+            idx = _bisect.bisect_left(om._keys, key)
+            if idx >= len(om._keys):
+                return None
+            return [om._keys[idx], om._vals[idx]]
+
+        def _omap_to_map(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_to_map: expected 1 argument (omap)")
+            _check_omap('omap_to_map', args[0])
+            return dict(zip(args[0]._keys, args[0]._vals))
+
+        def _omap_clear(args):
+            if len(args) != 1:
+                raise RuntimeError("omap_clear: expected 1 argument (omap)")
+            _check_omap('omap_clear', args[0])
+            args[0]._keys.clear()
+            args[0]._vals.clear()
+            return None
+
+        self.builtins['omap_create'] = _omap_create
+        self.builtins['omap_set'] = _omap_set
+        self.builtins['omap_get'] = _omap_get
+        self.builtins['omap_delete'] = _omap_delete
+        self.builtins['omap_has'] = _omap_has
+        self.builtins['omap_size'] = _omap_size
+        self.builtins['omap_keys'] = _omap_keys
+        self.builtins['omap_values'] = _omap_values
+        self.builtins['omap_entries'] = _omap_entries
+        self.builtins['omap_min'] = _omap_min
+        self.builtins['omap_max'] = _omap_max
+        self.builtins['omap_range'] = _omap_range
+        self.builtins['omap_floor'] = _omap_floor
+        self.builtins['omap_ceil'] = _omap_ceil
+        self.builtins['omap_to_map'] = _omap_to_map
+        self.builtins['omap_clear'] = _omap_clear
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
