@@ -1,0 +1,52 @@
+# number_theory_demo.srv - Number Theory builtins demo
+
+# Factorial
+float f5 = factorial 5
+print "5! ="
+print f5
+
+float f10 = factorial 10
+print "10! ="
+print f10
+
+# GCD and LCM
+float g = gcd 48 18
+print "gcd(48, 18) ="
+print g
+
+float l = lcm 12 8
+print "lcm(12, 8) ="
+print l
+
+# Primality testing
+bool p7 = is_prime 7
+print "is_prime(7) ="
+print p7
+
+bool p10 = is_prime 10
+print "is_prime(10) ="
+print p10
+
+# Prime factorization
+pf = prime_factors 360
+print "prime_factors(360) ="
+print pf
+
+# Fibonacci sequence
+float fib10 = fibonacci 10
+print "fibonacci(10) ="
+print fib10
+
+float fib20 = fibonacci 20
+print "fibonacci(20) ="
+print fib20
+
+# Modular exponentiation
+float mp = modpow 2 10 1000
+print "modpow(2, 10, 1000) = 2^10 mod 1000 ="
+print mp
+
+# Divisors
+d = divisors 36
+print "divisors(36) ="
+print d

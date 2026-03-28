@@ -977,6 +977,8 @@ class Parser:
         'hex_encode', 'hex_decode', 'crc32', 'url_encode', 'url_decode',
         'mean', 'median', 'stdev', 'variance', 'mode', 'percentile',
         'clamp', 'lerp', 'remap',
+        'factorial', 'gcd', 'lcm', 'is_prime', 'prime_factors',
+        'fibonacci', 'modpow', 'divisors',
         'http_get', 'http_post', 'http_put', 'http_delete',
         'bit_and', 'bit_or', 'bit_xor', 'bit_not', 'bit_lshift', 'bit_rshift',
         'group_by', 'take_while', 'drop_while', 'scan', 'zip_with',
@@ -2338,6 +2340,15 @@ class Interpreter:
             'clamp':          self._builtin_clamp,
             'lerp':           self._builtin_lerp,
             'remap':          self._builtin_remap,
+            # --- Number theory ---
+            'factorial':      self._builtin_factorial,
+            'gcd':            self._builtin_gcd,
+            'lcm':            self._builtin_lcm,
+            'is_prime':       self._builtin_is_prime,
+            'prime_factors':  self._builtin_prime_factors,
+            'fibonacci':      self._builtin_fibonacci,
+            'modpow':         self._builtin_modpow,
+            'divisors':       self._builtin_divisors,
             # --- Generator functions ---
             'collect':        self._builtin_collect,
             'is_generator':   self._builtin_is_generator,
@@ -7252,6 +7263,111 @@ class Interpreter:
             raise RuntimeError("remap: input range must not be zero-width")
         t = (val - in_lo) / (in_hi - in_lo)
         return float(out_lo) + t * (float(out_hi) - float(out_lo))
+
+    # --- Number theory built-ins ---
+
+    def _builtin_factorial(self, args):
+        """factorial(n) -> n! for non-negative integer n."""
+        self._expect_args('factorial', args, 1)
+        n = args[0]
+        if not isinstance(n, (int, float)) or n != int(n) or n < 0:
+            raise RuntimeError("factorial: argument must be a non-negative integer")
+        n = int(n)
+        if n > 170:
+            raise RuntimeError("factorial: argument too large (max 170)")
+        result = 1
+        for i in range(2, n + 1):
+            result *= i
+        return float(result)
+
+    def _builtin_gcd(self, args):
+        """gcd(a, b) -> greatest common divisor."""
+        self._expect_args('gcd', args, 2)
+        import math as _math
+        a, b = int(args[0]), int(args[1])
+        return float(_math.gcd(a, b))
+
+    def _builtin_lcm(self, args):
+        """lcm(a, b) -> least common multiple."""
+        self._expect_args('lcm', args, 2)
+        import math as _math
+        a, b = int(args[0]), int(args[1])
+        g = _math.gcd(a, b)
+        return float(abs(a * b) // g) if g else 0.0
+
+    def _builtin_is_prime(self, args):
+        """is_prime(n) -> true if n is a prime number."""
+        self._expect_args('is_prime', args, 1)
+        n = int(args[0])
+        if n < 2:
+            return False
+        if n < 4:
+            return True
+        if n % 2 == 0 or n % 3 == 0:
+            return False
+        i = 5
+        while i * i <= n:
+            if n % i == 0 or n % (i + 2) == 0:
+                return False
+            i += 6
+        return True
+
+    def _builtin_prime_factors(self, args):
+        """prime_factors(n) -> list of prime factors."""
+        self._expect_args('prime_factors', args, 1)
+        n = int(args[0])
+        if n < 2:
+            return []
+        factors = []
+        d = 2
+        while d * d <= n:
+            while n % d == 0:
+                factors.append(float(d))
+                n //= d
+            d += 1
+        if n > 1:
+            factors.append(float(n))
+        return factors
+
+    def _builtin_fibonacci(self, args):
+        """fibonacci(n) -> nth Fibonacci number (0-indexed)."""
+        self._expect_args('fibonacci', args, 1)
+        n = int(args[0])
+        if n < 0:
+            raise RuntimeError("fibonacci: argument must be non-negative")
+        if n > 1000:
+            raise RuntimeError("fibonacci: argument too large (max 1000)")
+        if n <= 1:
+            return float(n)
+        a, b = 0, 1
+        for _ in range(2, n + 1):
+            a, b = b, a + b
+        return float(b)
+
+    def _builtin_modpow(self, args):
+        """modpow(base, exp, mod) -> (base^exp) % mod."""
+        self._expect_args('modpow', args, 3)
+        base, exp, mod = int(args[0]), int(args[1]), int(args[2])
+        if mod == 0:
+            raise RuntimeError("modpow: modulus must not be zero")
+        return float(pow(base, exp, mod))
+
+    def _builtin_divisors(self, args):
+        """divisors(n) -> sorted list of all positive divisors of n."""
+        self._expect_args('divisors', args, 1)
+        n = int(args[0])
+        if n <= 0:
+            raise RuntimeError("divisors: argument must be a positive integer")
+        divs = []
+        i = 1
+        while i * i <= n:
+            if n % i == 0:
+                divs.append(float(i))
+                if i != n // i:
+                    divs.append(float(n // i))
+            i += 1
+        divs.sort()
+        return divs
 
     # --- Generator built-ins ---
 
