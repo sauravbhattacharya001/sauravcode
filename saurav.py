@@ -7658,12 +7658,18 @@ class Interpreter:
 
         result = None
         with self._scoped_env():
-            # Inject closure scope — variables from the defining scope are
-            # available but won't overwrite the caller's existing variables.
+            # Inject closure scope by splicing its maps into the ChainMap
+            # chain — O(1) instead of iterating all closure variables.
+            # The local scope (maps[0]) stays on top so params and local
+            # writes shadow closure variables correctly.
             if hasattr(func_node, 'closure_scope') and func_node.closure_scope:
-                for cname, cval in func_node.closure_scope.items():
-                    if cname not in self.variables:
-                        self.variables[cname] = cval
+                cs = func_node.closure_scope
+                # Extract the underlying maps from the closure ChainMap and
+                # insert them between the local scope and the parent scope.
+                closure_maps = cs.maps if isinstance(cs, ChainMap) else [cs] if isinstance(cs, dict) else []
+                if closure_maps:
+                    local = self.variables.maps[0]
+                    self.variables = ChainMap(local, *closure_maps, *self.variables.maps[1:])
 
             for param, arg_val in zip(func_node.params, evaluated_args):
                 self.variables[param] = arg_val
