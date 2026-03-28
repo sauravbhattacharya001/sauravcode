@@ -187,6 +187,11 @@ class ProgramGenerator:
         return "\n".join(lines) + "\n"
 
     def _gen_statement(self, depth):
+        """Generate a random statement, choosing from weighted categories.
+
+        Falls back to simple statements (assign/print) when *depth*
+        reaches ``max_depth`` to prevent unbounded recursion.
+        """
         if depth >= self.max_depth:
             return self._gen_simple_statement(depth)
 
@@ -204,6 +209,7 @@ class ProgramGenerator:
         return gen_fn(depth)
 
     def _gen_simple_statement(self, depth):
+        """Generate a leaf-level statement (assignment or print)."""
         choice = self.rng.choice(["assign", "print"])
         if choice == "assign":
             return self._gen_assign(depth)
@@ -211,6 +217,7 @@ class ProgramGenerator:
 
     @staticmethod
     def _indent(code, level=1):
+        """Indent every non-empty line in *code* by *level* tab stops (4 spaces each)."""
         prefix = "    " * level
         return "\n".join(prefix + line if line.strip() else line
                          for line in code.split("\n"))
@@ -218,6 +225,10 @@ class ProgramGenerator:
     # ── Expressions ─────────────────────────────────────────
 
     def _gen_expr(self, depth=0):
+        """Generate a random expression, choosing from weighted node types.
+
+        Returns an atom when *depth* exceeds ``max_depth``.
+        """
         if depth >= self.max_depth:
             return self._gen_atom()
 
@@ -242,6 +253,7 @@ class ProgramGenerator:
         return dispatch.get(choice, self._gen_atom)()
 
     def _gen_atom(self):
+        """Generate a terminal expression: int, float, string, bool, variable, or negative int."""
         choice = self.rng.choices(
             ["int", "float", "string", "bool", "var", "neg"],
             weights=[25, 10, 15, 10, 30, 10], k=1,
@@ -262,21 +274,25 @@ class ProgramGenerator:
         return str(-self.rng.randint(1, 100))
 
     def _gen_binary(self, depth):
+        """Generate a binary arithmetic expression (e.g. ``(a + b)``)."""
         left = self._gen_expr(depth + 1)
         right = self._gen_expr(depth + 1)
         op = self.rng.choice(["+", "-", "*", "/", "%", "**"])
         return f"({left} {op} {right})"
 
     def _gen_compare(self, depth):
+        """Generate a comparison expression (e.g. ``x == y``)."""
         left = self._gen_expr(depth + 1)
         right = self._gen_expr(depth + 1)
         op = self.rng.choice(["==", "!=", "<", ">", "<=", ">="])
         return f"{left} {op} {right}"
 
     def _gen_unary(self, depth):
+        """Generate a unary ``not`` expression."""
         return f"not {self._gen_expr(depth + 1)}"
 
     def _gen_call(self, depth):
+        """Generate a function call — uses a user-defined function if available, otherwise a builtin."""
         if self._defined_fns:
             fn = self.rng.choice(self._defined_fns)
             arg = self._gen_expr(depth + 1)
@@ -286,37 +302,44 @@ class ProgramGenerator:
         return f"{builtin}({self._gen_expr(depth + 1)})"
 
     def _gen_index(self, depth):
+        """Generate an indexing expression (e.g. ``var[0]``)."""
         if self._defined_vars:
             var = self.rng.choice(self._defined_vars)
             return f"{var}[{self.rng.randint(0, 3)}]"
         return self._gen_atom()
 
     def _gen_list_literal(self, depth):
+        """Generate a list literal with 0–5 random atoms."""
         n = self.rng.randint(0, 5)
         return "[" + ", ".join(self._gen_atom() for _ in range(n)) + "]"
 
     def _gen_ternary(self, depth):
+        """Generate a ternary ``value if cond else other`` expression."""
         cond = self._gen_compare(depth + 1)
         t = self._gen_expr(depth + 1)
         f = self._gen_expr(depth + 1)
         return f"{t} if {cond} else {f}"
 
     def _gen_lambda_expr(self, depth):
+        """Generate a lambda expression (e.g. ``lambda x: x * 2``)."""
         p = self.rng.choice(self.VARS[:5])
         return f"lambda {p}: {self._gen_expr(depth + 1)}"
 
     # ── Statements ──────────────────────────────────────────
 
     def _gen_assign(self, depth):
+        """Generate a variable assignment statement."""
         var = self.rng.choice(self.VARS)
         if var not in self._defined_vars:
             self._defined_vars.append(var)
         return f"{var} = {self._gen_expr(depth)}"
 
     def _gen_print(self, depth):
+        """Generate a print statement."""
         return f"print {self._gen_expr(depth)}"
 
     def _gen_if(self, depth):
+        """Generate an ``if``/``else`` conditional block."""
         cond = self._gen_compare(depth + 1)
         body = self._gen_body(depth + 1)
         result = f"if {cond}\n{body}"
@@ -325,6 +348,7 @@ class ProgramGenerator:
         return result
 
     def _gen_while(self, depth):
+        """Generate a bounded ``while`` loop with an auto-incrementing counter."""
         var = self.rng.choice(self.VARS[:3])
         limit = self.rng.randint(1, 5)
         if var not in self._defined_vars:
@@ -334,6 +358,7 @@ class ProgramGenerator:
         return f"{var} = 0\nwhile {var} < {limit}\n{body}\n{incr}"
 
     def _gen_for(self, depth):
+        """Generate a ``for var start end`` range loop."""
         var = self.rng.choice(self.VARS[:5])
         s = self.rng.randint(0, 3)
         e = s + self.rng.randint(1, 5)
@@ -342,6 +367,7 @@ class ProgramGenerator:
         return f"for {var} {s} {e}\n{self._gen_body(depth + 1)}"
 
     def _gen_foreach(self, depth):
+        """Generate a ``for var in list`` iteration loop."""
         var = self.rng.choice(self.VARS[:5])
         if var not in self._defined_vars:
             self._defined_vars.append(var)
@@ -349,6 +375,7 @@ class ProgramGenerator:
         return f"for {var} in {items}\n{self._gen_body(depth + 1)}"
 
     def _gen_function(self, depth):
+        """Generate a named function definition with random params and a return value."""
         name = self.rng.choice(self.FN_NAMES)
         params = self.rng.sample(self.VARS[:5], k=self.rng.randint(0, 3))
         old_vars = self._defined_vars[:]
@@ -361,11 +388,13 @@ class ProgramGenerator:
         return f"function {name} {' '.join(params)}\n{body}\n    return {ret}"
 
     def _gen_try_catch(self, depth):
+        """Generate a ``try``/``catch`` block."""
         var = self.rng.choice(["e", "err", "ex"])
         return (f"try\n{self._gen_body(depth + 1)}\n"
                 f"catch {var}\n{self._indent(f'print {var}')}")
 
     def _gen_list_ops(self, depth):
+        """Generate a list variable followed by a random list operation (append/len/pop/index)."""
         var = self.rng.choice(self.VARS[:5])
         if var not in self._defined_vars:
             self._defined_vars.append(var)
@@ -382,6 +411,7 @@ class ProgramGenerator:
         return "\n".join(lines)
 
     def _gen_map_ops(self, depth):
+        """Generate a map/dict literal and access one of its keys."""
         var = self.rng.choice(self.VARS[:5])
         if var not in self._defined_vars:
             self._defined_vars.append(var)
@@ -391,6 +421,7 @@ class ProgramGenerator:
         return f'{var} = {{{pairs}}}\nprint {var}["{keys[0]}"]'
 
     def _gen_match(self, depth):
+        """Generate a ``match`` expression with 1–3 cases."""
         expr = self._gen_expr(depth + 1)
         cases = []
         for _ in range(self.rng.randint(1, 3)):
@@ -399,25 +430,30 @@ class ProgramGenerator:
         return f"match {expr}\n" + "\n".join(cases)
 
     def _gen_assert(self, depth):
+        """Generate an ``assert`` statement with a random comparison."""
         return f"assert {self._gen_compare(depth + 1)}"
 
     def _gen_enum(self, depth):
+        """Generate an ``enum`` declaration with three colour variants."""
         name = f"Color{self.rng.randint(1, 99)}"
         variants = self.rng.sample(["Red", "Green", "Blue", "Yellow"], k=3)
         body = "\n".join(f"    {v}" for v in variants)
         return f"enum {name}\n{body}"
 
     def _gen_class(self, depth):
+        """Generate a ``class`` declaration with two fields."""
         name = f"Thing{self.rng.randint(1, 99)}"
         fields = self.rng.sample(["name", "value", "count"], k=2)
         body = "\n".join(f"    {f} = {self._gen_atom()}" for f in fields)
         return f"class {name}\n{body}"
 
     def _gen_fstring(self, depth):
+        """Generate an f-string print statement using a defined variable or literal."""
         var = self._defined_vars[0] if self._defined_vars else "42"
         return f'print f"value is {{{var}}}"'
 
     def _gen_body(self, depth, min_s=1, max_s=3):
+        """Generate a block body of 1–3 simple statements, indented one level."""
         n = self.rng.randint(min_s, max_s)
         stmts = [self._gen_simple_statement(depth) for _ in range(n)]
         stmts = [s for s in stmts if s] or [f"print {self.rng.randint(0, 99)}"]
@@ -532,6 +568,7 @@ class MutationFuzzer:
         self.rng = rng or random.Random()
 
     def mutate(self, code):
+        """Apply a single random mutation to *code* and return the result."""
         mutations = [
             self._swap_operator, self._duplicate_line,
             self._remove_line, self._change_number,
@@ -541,10 +578,12 @@ class MutationFuzzer:
         return self.rng.choice(mutations)(code)
 
     def _swap_operator(self, code):
+        """Replace the first occurrence of a random operator with another."""
         ops = ["+", "-", "*", "/", "%", "**", "==", "!=", "<", ">"]
         return code.replace(self.rng.choice(ops), self.rng.choice(ops), 1)
 
     def _duplicate_line(self, code):
+        """Pick a random line and duplicate it in place."""
         lines = code.split("\n")
         if lines:
             i = self.rng.randrange(len(lines))
@@ -552,12 +591,14 @@ class MutationFuzzer:
         return "\n".join(lines)
 
     def _remove_line(self, code):
+        """Remove a random line (keeps at least one)."""
         lines = code.split("\n")
         if len(lines) > 1:
             lines.pop(self.rng.randrange(len(lines)))
         return "\n".join(lines)
 
     def _change_number(self, code):
+        """Replace a random numeric literal with an edge-case value (0, -1, large int)."""
         nums = list(re.finditer(r'\b\d+\b', code))
         if nums:
             m = self.rng.choice(nums)
@@ -566,6 +607,7 @@ class MutationFuzzer:
         return code
 
     def _insert_keyword(self, code):
+        """Insert a random control-flow keyword at a random position to test error handling."""
         lines = code.split("\n")
         kws = ["break", "continue", "return", "throw", "yield", "next"]
         if lines:
@@ -575,6 +617,7 @@ class MutationFuzzer:
         return "\n".join(lines)
 
     def _swap_lines(self, code):
+        """Swap two random lines to create potentially invalid ordering."""
         lines = code.split("\n")
         if len(lines) >= 2:
             i, j = self.rng.sample(range(len(lines)), 2)
@@ -582,6 +625,7 @@ class MutationFuzzer:
         return "\n".join(lines)
 
     def _break_indent(self, code):
+        """Add or remove one level of indentation from a random line."""
         lines = code.split("\n")
         if lines:
             i = self.rng.randrange(len(lines))
@@ -592,6 +636,7 @@ class MutationFuzzer:
         return "\n".join(lines)
 
     def _inject_unicode(self, code):
+        """Inject a random unusual Unicode character to test encoding robustness."""
         chars = ["\u0000", "\uffff", "\u200b", "\U0001f600", "\t\t"]
         lines = code.split("\n")
         if lines:
@@ -643,6 +688,7 @@ class Fuzzer:
         self._seen = set()
 
     def run(self, iterations=100, progress=True):
+        """Execute *iterations* generative fuzz runs and return the :class:`FuzzReport`."""
         self.report.iterations = iterations
         start = time.perf_counter()
         gen = ProgramGenerator(rng=self.rng, max_depth=self.max_depth,
