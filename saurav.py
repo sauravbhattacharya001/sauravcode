@@ -6200,10 +6200,17 @@ class Interpreter:
             )
         result = None
         with self._scoped_env():
+            # Inject closure scope via ChainMap splicing — O(1) instead
+            # of iterating all closure variables.  Matches the approach
+            # used by _invoke_function(); previously this path did an
+            # O(k) loop per call which was a bottleneck for map/filter/
+            # reduce over large lists with closures.
             if hasattr(func_node, 'closure_scope') and func_node.closure_scope:
-                for cname, cval in func_node.closure_scope.items():
-                    if cname not in self.variables:
-                        self.variables[cname] = cval
+                cs = func_node.closure_scope
+                closure_maps = cs.maps if isinstance(cs, ChainMap) else [cs] if isinstance(cs, dict) else []
+                if closure_maps:
+                    local = self.variables.maps[0]
+                    self.variables = ChainMap(local, *closure_maps, *self.variables.maps[1:])
             for param, val in zip(func_node.params, evaluated_args):
                 self.variables[param] = val
             try:
