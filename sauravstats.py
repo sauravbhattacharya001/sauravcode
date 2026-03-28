@@ -50,6 +50,15 @@ _PRINT_RE = re.compile(r'^\s*print\s*\(')
 
 
 class FileMetrics:
+    """Per-file metrics container for a single .srv source file.
+
+    Tracks line counts (code, blank, comment), structural elements (functions,
+    classes, enums, imports), control-flow indicators (loops, branches, match
+    cases, try/catch), and derived metrics (nesting depth, complexity score).
+
+    Uses ``__slots__`` for memory efficiency when analyzing large codebases.
+    """
+
     __slots__ = (
         'path', 'rel_path', 'total_lines', 'code_lines', 'blank_lines',
         'comment_lines', 'functions', 'classes', 'enums', 'imports',
@@ -60,6 +69,12 @@ class FileMetrics:
     )
 
     def __init__(self, path, rel_path=None):
+        """Initialize metrics for a file, zeroing all counters.
+
+        Args:
+            path: Absolute or relative path to the .srv file.
+            rel_path: Display path relative to the analysis root.  Defaults to *path*.
+        """
         self.path = path
         self.rel_path = rel_path or path
         for s in self.__slots__:
@@ -73,6 +88,7 @@ class FileMetrics:
                 setattr(self, s, 0)
 
     def to_dict(self):
+        """Return all metrics as a plain dictionary (JSON-serializable)."""
         return {s: getattr(self, s) for s in self.__slots__}
 
     @property
@@ -85,6 +101,7 @@ class FileMetrics:
 
 
 def _indent_level(line):
+    """Calculate the indentation level of *line* in spaces (tabs count as 4)."""
     count = 0
     for ch in line:
         if ch == ' ':
@@ -97,6 +114,20 @@ def _indent_level(line):
 
 
 def analyze_file(filepath, base_dir=None):
+    """Parse a single .srv file and return a populated :class:`FileMetrics`.
+
+    Scans the file line-by-line using regex patterns to count structural
+    elements, control-flow constructs, and nesting depth.  A weighted
+    complexity score is derived from branches, loops, nesting, and more.
+
+    Args:
+        filepath: Path to the .srv source file.
+        base_dir: Root directory used to compute the relative display path.
+
+    Returns:
+        A :class:`FileMetrics` instance.  On read errors the metrics are
+        zeroed but the object is still returned.
+    """
     rel = os.path.relpath(filepath, base_dir) if base_dir else filepath
     fm = FileMetrics(filepath, rel)
     try:
@@ -172,6 +203,15 @@ def analyze_file(filepath, base_dir=None):
 
 
 def find_srv_files(path):
+    """Recursively discover all .srv files under *path*.
+
+    If *path* is a single file it is returned in a one-element list (provided
+    it has the ``.srv`` extension).  Directories starting with ``.`` are
+    skipped.
+
+    Returns:
+        Sorted list of absolute file paths.
+    """
     if os.path.isfile(path):
         return [path] if path.endswith('.srv') else []
     results = []
@@ -184,12 +224,20 @@ def find_srv_files(path):
 
 
 def analyze_path(path):
+    """Analyze all .srv files found at *path* and return a list of :class:`FileMetrics`."""
     base = path if os.path.isdir(path) else os.path.dirname(path) or '.'
     return [analyze_file(f, base) for f in find_srv_files(path)]
 
 
 class ProjectSummary:
+    """Aggregate metrics across all analyzed files in a project.
+
+    Computes totals (lines, functions, classes, etc.), averages (complexity,
+    file size), and a 0–100 health score with a letter grade.
+    """
+
     def __init__(self, file_metrics):
+        """Build a project summary by aggregating a list of :class:`FileMetrics`."""
         self.file_count = len(file_metrics)
         self.total_lines = sum(f.total_lines for f in file_metrics)
         self.code_lines = sum(f.code_lines for f in file_metrics)
@@ -214,6 +262,8 @@ class ProjectSummary:
         self.health_score = self._compute_health()
 
     def _compute_health(self):
+        """Derive a 0–100 health score based on comment ratio, function length,
+        complexity, nesting depth, and presence of assertions."""
         s = 100.0
         if self.comment_ratio < 0.05: s -= 10
         elif self.comment_ratio < 0.1: s -= 5
@@ -228,6 +278,7 @@ class ProjectSummary:
         return max(0, min(100, s))
 
     def to_dict(self):
+        """Serialize summary metrics to a JSON-friendly dictionary."""
         return {k: getattr(self, k) for k in (
             'file_count', 'total_lines', 'code_lines', 'blank_lines',
             'comment_lines', 'functions', 'classes', 'enums', 'imports',
@@ -239,6 +290,7 @@ class ProjectSummary:
 
     @property
     def health_grade(self):
+        """Map the numeric health score to a letter grade (A–F)."""
         s = self.health_score
         if s >= 90: return 'A'
         if s >= 80: return 'B'
@@ -248,6 +300,11 @@ class ProjectSummary:
 
 
 def find_hotspots(metrics, threshold=None):
+    """Return files whose complexity exceeds a threshold.
+
+    If *threshold* is ``None`` it defaults to 1.5× the average complexity
+    (minimum 5.0).  Results are sorted by descending complexity.
+    """
     if threshold is None:
         avg = sum(f.complexity_score for f in metrics) / max(len(metrics), 1)
         threshold = max(avg * 1.5, 5.0)
@@ -257,6 +314,7 @@ def find_hotspots(metrics, threshold=None):
 
 
 def render_treemap(metrics, width=60):
+    """Render an ASCII horizontal bar chart showing LOC distribution across files."""
     if not metrics:
         return "No files found."
     sorted_m = sorted(metrics, key=lambda f: f.code_lines, reverse=True)
@@ -278,6 +336,7 @@ _HISTORY_FILE = '.sauravstats.json'
 
 
 def save_snapshot(summary, path):
+    """Persist the current summary as a JSON snapshot for future comparison."""
     hist_path = os.path.join(path if os.path.isdir(path) else os.path.dirname(path) or '.', _HISTORY_FILE)
     data = summary.to_dict()
     data['timestamp'] = datetime.now().isoformat()
@@ -289,6 +348,7 @@ def save_snapshot(summary, path):
 
 
 def load_previous(path):
+    """Load the most recent saved snapshot, or ``None`` if unavailable."""
     hist_path = os.path.join(path if os.path.isdir(path) else os.path.dirname(path) or '.', _HISTORY_FILE)
     try:
         with open(hist_path, 'r', encoding='utf-8') as f:
@@ -298,6 +358,10 @@ def load_previous(path):
 
 
 def compare_snapshots(current, previous):
+    """Compare two snapshot dicts and return a dict of changed metrics.
+
+    Returns ``None`` when nothing differs.
+    """
     if not previous:
         return None
     diffs = {}
@@ -310,6 +374,7 @@ def compare_snapshots(current, previous):
 
 
 def generate_badge(summary):
+    """Return a one-line string suitable for a README badge or CI annotation."""
     return f"SauravCode Health: {summary.health_grade} ({int(summary.health_score)}/100)"
 
 
@@ -322,10 +387,12 @@ SORT_KEYS = {
 
 
 def _delta_str(val):
+    """Format a numeric delta with a leading ``+`` for positive values."""
     return f"+{val}" if val > 0 else str(val)
 
 
 def format_text(metrics, summary, args):
+    """Render metrics as a human-readable text table with a project summary."""
     out = []
     if not args.summary:
         sort_fn = SORT_KEYS.get(args.sort, SORT_KEYS['loc'])
@@ -366,6 +433,7 @@ def format_text(metrics, summary, args):
 
 
 def format_json(metrics, summary, args):
+    """Render metrics as a JSON string."""
     data = {'summary': summary.to_dict(), 'summary_grade': summary.health_grade}
     if not args.summary:
         data['files'] = [f.to_dict() for f in metrics]
@@ -373,6 +441,7 @@ def format_json(metrics, summary, args):
 
 
 def format_csv(metrics, summary, args):
+    """Render per-file metrics as CSV rows."""
     buf = io.StringIO()
     w = _csv.writer(buf)
     w.writerow(['file','total_lines','code_lines','blank_lines','comment_lines',
@@ -387,6 +456,7 @@ def format_csv(metrics, summary, args):
 
 
 def format_hotspots(metrics, summary, args):
+    """Render a report of files exceeding the complexity threshold."""
     hotspots = find_hotspots(metrics)
     if not hotspots:
         return "No complexity hotspots found. Your code is clean!"
@@ -404,6 +474,10 @@ def format_hotspots(metrics, summary, args):
 
 
 def format_history(metrics, summary, args, path):
+    """Compare current metrics against the saved snapshot and render a diff report.
+
+    Saves the current snapshot after comparison so the next run has a baseline.
+    """
     previous = load_previous(path)
     current = summary.to_dict()
     save_snapshot(summary, path)
@@ -421,6 +495,7 @@ def format_history(metrics, summary, args, path):
 
 
 def build_parser():
+    """Create the CLI argument parser for ``sauravstats``."""
     p = argparse.ArgumentParser(prog='sauravstats',
         description='Codebase metrics analyzer for SauravCode (.srv) projects.')
     p.add_argument('path', help='File or directory to analyze')
@@ -438,6 +513,12 @@ def build_parser():
 
 
 def main(argv=None):
+    """Entry point for the ``sauravstats`` CLI.
+
+    Parses arguments, discovers .srv files, computes metrics, and outputs
+    results in the requested format (text, JSON, CSV, hotspots, treemap,
+    history diff, or badge).
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     if not os.path.exists(args.path):
