@@ -5150,8 +5150,10 @@ class Interpreter:
             except Exception as e:
                 raise RuntimeError(f"base64_decode: {e}")
 
-        self.builtins['http_get'] = _http_get
-        self.builtins['http_post'] = _http_post
+        # NOTE: http_get and http_post are registered by _builtin_http_get /
+        # _builtin_http_post which use the SSRF-safe _http_request path.
+        # The old closures (_http_get / _http_post) above bypass SSRF
+        # protection, so we intentionally do NOT overwrite them here.
         self.builtins['url_parse'] = _url_parse
         self.builtins['url_encode'] = _url_encode
         self.builtins['url_decode'] = _url_decode
