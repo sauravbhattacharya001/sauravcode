@@ -4540,6 +4540,21 @@ class Interpreter:
                 t['size'] = max(0, t['size'] - 1)
             return t
 
+        def _trie_collect_words(node, prefix, limit=None):
+            """Collect words from a trie node, optionally up to *limit*."""
+            results = []
+            def _walk(n, current):
+                if limit is not None and len(results) >= limit:
+                    return
+                if n.is_end:
+                    results.append(current)
+                for ch in sorted(n.children.keys()):
+                    if limit is not None and len(results) >= limit:
+                        return
+                    _walk(n.children[ch], current + ch)
+            _walk(node, prefix)
+            return results
+
         def _trie_autocomplete(args):
             if len(args) < 2 or len(args) > 3:
                 raise RuntimeError("trie_autocomplete: expected 2-3 arguments (trie, prefix, [limit])")
@@ -4555,18 +4570,7 @@ class Interpreter:
                 if ch not in node.children:
                     return []
                 node = node.children[ch]
-            results = []
-            def _collect(node, current):
-                if len(results) >= limit:
-                    return
-                if node.is_end:
-                    results.append(current)
-                for ch in sorted(node.children.keys()):
-                    if len(results) >= limit:
-                        return
-                    _collect(node.children[ch], current + ch)
-            _collect(node, prefix)
-            return results
+            return _trie_collect_words(node, prefix, limit)
 
         def _trie_size(args):
             if len(args) != 1:
@@ -4582,14 +4586,7 @@ class Interpreter:
             t = args[0]
             if not isinstance(t, dict) or t.get('_type') != 'trie':
                 raise RuntimeError("trie_words: argument must be a trie")
-            results = []
-            def _collect(node, current):
-                if node.is_end:
-                    results.append(current)
-                for ch in sorted(node.children.keys()):
-                    _collect(node.children[ch], current + ch)
-            _collect(t['root'], "")
-            return results
+            return _trie_collect_words(t['root'], "")
 
         def _trie_longest_prefix(args):
             if len(args) != 2:
@@ -6557,9 +6554,9 @@ class Interpreter:
         import socket
         import ipaddress
 
-        class SSRFSafeHTTPConnection(http.client.HTTPConnection):
+        class _SSRFGuardMixin:
+            """Mixin that validates resolved IPs to block SSRF via DNS rebinding."""
             def connect(self):
-                """Override connect to validate resolved IP before connecting."""
                 for info in socket.getaddrinfo(self.host, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM):
                     af, socktype, proto, canonname, sa = info
                     addr = sa[0]
@@ -6572,20 +6569,11 @@ class Interpreter:
                         )
                 super().connect()
 
-        class SSRFSafeHTTPSConnection(http.client.HTTPSConnection):
-            def connect(self):
-                """Override connect to validate resolved IP before connecting."""
-                for info in socket.getaddrinfo(self.host, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM):
-                    af, socktype, proto, canonname, sa = info
-                    addr = sa[0]
-                    ip = ipaddress.ip_address(addr)
-                    if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
-                        raise RuntimeError(
-                            f"SSRF protection: connection blocked — "
-                            f"'{self.host}' resolved to private IP {addr} at connect time "
-                            f"(possible DNS rebinding attack)."
-                        )
-                super().connect()
+        class SSRFSafeHTTPConnection(_SSRFGuardMixin, http.client.HTTPConnection):
+            pass
+
+        class SSRFSafeHTTPSConnection(_SSRFGuardMixin, http.client.HTTPSConnection):
+            pass
 
         class SSRFSafeHTTPHandler(urllib.request.HTTPHandler):
             def http_open(self, req):
