@@ -7649,13 +7649,44 @@ class Interpreter:
         debug(f"YieldNode evaluated with result: {result}\n")
         raise YieldSignal(result)
 
-    # ── print formatting dispatch (avoids isinstance chain per call) ───
+    # ── Value → string formatting dispatch (shared by print + f-strings) ──
+    # O(1) type-based lookup; avoids isinstance chains on the hot path.
     _PRINT_FORMATTERS = {
         bool:  lambda v: "true" if v else "false",
         list:  lambda v: _format_list(v),
         dict:  lambda v: _format_map(v),
         set:   lambda v: _format_set(v),
     }
+
+    # String-coercion dispatch used by f-strings and any future
+    # value-to-string conversion.  Separated from _PRINT_FORMATTERS
+    # because print has special cases (Stack, Queue, Generator) that
+    # f-strings handle via the generic str() fallback.
+    _STR_FORMATTERS = {
+        bool:  lambda v: "true" if v else "false",
+        list:  lambda v: _format_list(v),
+        dict:  lambda v: _format_map(v),
+        set:   lambda v: _format_set(v),
+        int:   str,
+        str:   lambda v: v,      # identity — skip str() call overhead
+    }
+
+    @staticmethod
+    def _value_to_str(val):
+        """Convert a sauravcode value to its string representation.
+
+        Uses O(1) type dispatch for common types (bool, list, dict, set,
+        int, str).  Falls back to the float-integer check and generic
+        str() for uncommon types.  This is the single source of truth
+        for value → string formatting, used by both f-string evaluation
+        and print statements.
+        """
+        formatter = Interpreter._STR_FORMATTERS.get(type(val))
+        if formatter is not None:
+            return formatter(val)
+        if isinstance(val, float):
+            return str(int(val)) if val == int(val) else str(val)
+        return str(val)
 
     def _interp_print(self, ast):
         value = self.evaluate(ast.expression)
@@ -8371,18 +8402,9 @@ class Interpreter:
 
     def _eval_fstring(self, node):
         parts = []
+        _to_str = self._value_to_str  # local ref avoids repeated attr lookup
         for part in node.parts:
-            val = self.evaluate(part)
-            if isinstance(val, float) and val == int(val):
-                parts.append(str(int(val)))
-            elif isinstance(val, bool):
-                parts.append("true" if val else "false")
-            elif isinstance(val, list):
-                parts.append(_format_list(val))
-            elif isinstance(val, dict):
-                parts.append(_format_map(val))
-            else:
-                parts.append(str(val))
+            parts.append(_to_str(self.evaluate(part)))
         return ''.join(parts)
 
     def _eval_lambda(self, node):
