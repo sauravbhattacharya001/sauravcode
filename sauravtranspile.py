@@ -407,13 +407,25 @@ class PythonTranspiler:
         self._lines.append("")
 
     def _safe_name(self, name: str) -> str:
-        """Rename identifiers that clash with Python builtins/keywords."""
-        if name in ('print', 'type', 'list', 'map', 'filter', 'range',
-                     'input', 'len', 'sum', 'any', 'all', 'min', 'max',
-                     'sorted', 'reversed', 'enumerate', 'zip', 'round',
-                     'abs', 'int', 'float', 'str', 'bool', 'dict', 'set'):
+        """Rename identifiers that clash with Python builtins/keywords.
+
+        Uses the module-level ``_PYTHON_RESERVED`` frozenset as the single
+        source of truth — previously this method had its own hardcoded
+        subset that could drift out of sync.
+        """
+        if name in _PYTHON_RESERVED:
             return f"_{name}"
         return name
+
+    def _emit_body(self, body):
+        """Emit a list of statements as an indented block, or ``pass`` if empty."""
+        self._indent += 1
+        if not body:
+            self._line("pass")
+        else:
+            for stmt in body:
+                self._emit_statement(stmt)
+        self._indent -= 1
 
     # ── Statement emitters ──────────────────────────────────
 
@@ -441,13 +453,7 @@ class PythonTranspiler:
         params = ", ".join(self._safe_name(p) for p in node.params)
         self._blank()
         self._line(f"def {name}({params}):")
-        self._indent += 1
-        if not node.body:
-            self._line("pass")
-        else:
-            for stmt in node.body:
-                self._emit_statement(stmt)
-        self._indent -= 1
+        self._emit_body(node.body)
         self._blank()
 
     def _emit_return(self, node):
@@ -466,74 +472,38 @@ class PythonTranspiler:
     def _emit_if(self, node):
         cond = self._expr(node.condition)
         self._line(f"if {cond}:")
-        self._indent += 1
-        if not node.body:
-            self._line("pass")
-        else:
-            for stmt in node.body:
-                self._emit_statement(stmt)
-        self._indent -= 1
+        self._emit_body(node.body)
 
         for elif_cond, elif_body in (node.elif_chains or []):
             econd = self._expr(elif_cond)
             self._line(f"elif {econd}:")
-            self._indent += 1
-            if not elif_body:
-                self._line("pass")
-            else:
-                for stmt in elif_body:
-                    self._emit_statement(stmt)
-            self._indent -= 1
+            self._emit_body(elif_body)
 
         if node.else_body:
             self._line("else:")
-            self._indent += 1
-            for stmt in node.else_body:
-                self._emit_statement(stmt)
-            self._indent -= 1
+            self._emit_body(node.else_body)
 
     def _emit_while(self, node):
         cond = self._expr(node.condition)
         self._line(f"while {cond}:")
-        self._indent += 1
-        if not node.body:
-            self._line("pass")
-        else:
-            for stmt in node.body:
-                self._emit_statement(stmt)
-        self._indent -= 1
+        self._emit_body(node.body)
 
     def _emit_for(self, node):
         var = self._safe_name(node.var)
         start = self._expr(node.start)
         end = self._expr(node.end)
         self._line(f"for {var} in range({start}, {end}):")
-        self._indent += 1
-        if not node.body:
-            self._line("pass")
-        else:
-            for stmt in node.body:
-                self._emit_statement(stmt)
-        self._indent -= 1
+        self._emit_body(node.body)
 
     def _emit_for_each(self, node):
         var = self._safe_name(node.var)
         iterable = self._expr(node.iterable)
         self._line(f"for {var} in {iterable}:")
-        self._indent += 1
-        if not node.body:
-            self._line("pass")
-        else:
-            for stmt in node.body:
-                self._emit_statement(stmt)
-        self._indent -= 1
+        self._emit_body(node.body)
 
     def _emit_try_catch(self, node):
         self._line("try:")
-        self._indent += 1
-        for stmt in node.body:
-            self._emit_statement(stmt)
-        self._indent -= 1
+        self._emit_body(node.body)
         error_var = self._safe_name(node.error_var)
         self._line(f"except Exception as _exc:")
         self._indent += 1
@@ -594,13 +564,7 @@ class PythonTranspiler:
         else:
             self._line(f"case {pattern}:")
 
-        self._indent += 1
-        if not case.body:
-            self._line("pass")
-        else:
-            for stmt in case.body:
-                self._emit_statement(stmt)
-        self._indent -= 1
+        self._emit_body(case.body)
 
     def _emit_enum(self, node):
         self._used_runtime = True
