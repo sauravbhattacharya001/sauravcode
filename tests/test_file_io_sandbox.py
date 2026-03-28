@@ -232,6 +232,27 @@ class TestInteractiveModeNoRestriction:
         )
         assert output.strip() == "repl data"
 
+    def test_symlink_traversal_blocked(self, tmp_path):
+        """Symlinks pointing outside the sandbox must be rejected."""
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        secret = outside / "secret.txt"
+        secret.write_text("top secret")
+
+        link = sandbox / "escape"
+        try:
+            link.symlink_to(outside)
+        except OSError:
+            pytest.skip("symlinks not supported on this platform")
+
+        with pytest.raises(RuntimeError, match="path traversal"):
+            run_code_sandboxed(
+                'print (read_file "escape/secret.txt")',
+                str(sandbox),
+            )
+
     def test_write_absolute_path_in_repl(self, tmp_path):
         target = tmp_path / "output.txt"
         abs_path = str(target).replace("\\", "/")
