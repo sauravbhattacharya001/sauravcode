@@ -2713,161 +2713,65 @@ class Interpreter:
         self.builtins['sets_to_list'] = lambda args: _sets_to_list(self, args)
 
         # ── Stack & Queue builtins ────────────────────────────
-        # Stack: LIFO data structure (push/pop from top)
-        # Queue: FIFO data structure (enqueue at back, dequeue from front)
+        # Data-driven registration for stack (LIFO) and queue (FIFO) builtins.
+        # Each entry maps a builtin name to (arg_count, method_name, returns_container).
+        # For 2-arg methods the second arg is passed to the method; for 1-arg methods
+        # the method is called on the container directly.
 
-        def _stack_create(self_inner, args):
-            """stack_create() → empty stack; stack_create([1,2,3]) → stack from list"""
-            if len(args) == 0:
-                return _SrvStack()
-            self_inner._expect_args('stack_create', args, 1)
-            if not isinstance(args[0], list):
-                raise RuntimeError("stack_create expects a list argument")
-            return _SrvStack(args[0])
+        def _make_container_create(prefix, cls):
+            """Build a create handler for a container type."""
+            name = f'{prefix}_create'
+            def handler(args):
+                if len(args) == 0:
+                    return cls()
+                self._expect_args(name, args, 1)
+                if not isinstance(args[0], list):
+                    raise RuntimeError(f"{name} expects a list argument")
+                return cls(args[0])
+            return handler
 
-        def _stack_push(self_inner, args):
-            """stack_push(s, value) → pushes value, returns stack"""
-            self_inner._expect_args('stack_push', args, 2)
-            s, val = args
-            if not isinstance(s, _SrvStack):
-                raise RuntimeError("stack_push expects a stack as first argument")
-            s.push(val)
-            return s
+        def _make_container_method(prefix, cls, method, nargs, returns_self):
+            """Build a handler that delegates to a method on the container."""
+            builtin_name = f'{prefix}_{method}'
+            type_label = prefix
+            def handler(args):
+                self._expect_args(builtin_name, args, nargs)
+                obj = args[0]
+                if not isinstance(obj, cls):
+                    raise RuntimeError(
+                        f"{builtin_name} expects a {type_label} as first argument")
+                result = getattr(obj, method)(*args[1:])
+                return obj if returns_self else result
+            return handler
 
-        def _stack_pop(self_inner, args):
-            """stack_pop(s) → removes and returns top element"""
-            self_inner._expect_args('stack_pop', args, 1)
-            s = args[0]
-            if not isinstance(s, _SrvStack):
-                raise RuntimeError("stack_pop expects a stack as first argument")
-            return s.pop()
+        # (method_name, arg_count, returns_container)
+        _CONTAINER_METHODS = [
+            ('push',     2, True),   # stack only — mapped to enqueue for queue
+            ('pop',      1, False),
+            ('peek',     1, False),
+            ('size',     1, False),
+            ('is_empty', 1, False),
+            ('to_list',  1, False),
+            ('clear',    1, True),
+        ]
 
-        def _stack_peek(self_inner, args):
-            """stack_peek(s) → returns top element without removing"""
-            self_inner._expect_args('stack_peek', args, 1)
-            s = args[0]
-            if not isinstance(s, _SrvStack):
-                raise RuntimeError("stack_peek expects a stack as first argument")
-            return s.peek()
+        # Stack builtins
+        self.builtins['stack_create'] = _make_container_create('stack', _SrvStack)
+        for _method, _nargs, _ret_self in _CONTAINER_METHODS:
+            self.builtins[f'stack_{_method}'] = _make_container_method(
+                'stack', _SrvStack, _method, _nargs, _ret_self)
 
-        def _stack_size(self_inner, args):
-            """stack_size(s) → number of elements"""
-            self_inner._expect_args('stack_size', args, 1)
-            s = args[0]
-            if not isinstance(s, _SrvStack):
-                raise RuntimeError("stack_size expects a stack as first argument")
-            return s.size()
-
-        def _stack_is_empty(self_inner, args):
-            """stack_is_empty(s) → true/false"""
-            self_inner._expect_args('stack_is_empty', args, 1)
-            s = args[0]
-            if not isinstance(s, _SrvStack):
-                raise RuntimeError("stack_is_empty expects a stack as first argument")
-            return s.is_empty()
-
-        def _stack_to_list(self_inner, args):
-            """stack_to_list(s) → list of elements (bottom to top)"""
-            self_inner._expect_args('stack_to_list', args, 1)
-            s = args[0]
-            if not isinstance(s, _SrvStack):
-                raise RuntimeError("stack_to_list expects a stack as first argument")
-            return s.to_list()
-
-        def _stack_clear(self_inner, args):
-            """stack_clear(s) → clears all elements, returns stack"""
-            self_inner._expect_args('stack_clear', args, 1)
-            s = args[0]
-            if not isinstance(s, _SrvStack):
-                raise RuntimeError("stack_clear expects a stack as first argument")
-            s.clear()
-            return s
-
-        self.builtins['stack_create'] = lambda args: _stack_create(self, args)
-        self.builtins['stack_push'] = lambda args: _stack_push(self, args)
-        self.builtins['stack_pop'] = lambda args: _stack_pop(self, args)
-        self.builtins['stack_peek'] = lambda args: _stack_peek(self, args)
-        self.builtins['stack_size'] = lambda args: _stack_size(self, args)
-        self.builtins['stack_is_empty'] = lambda args: _stack_is_empty(self, args)
-        self.builtins['stack_to_list'] = lambda args: _stack_to_list(self, args)
-        self.builtins['stack_clear'] = lambda args: _stack_clear(self, args)
-
-        # Queue builtins
-        def _queue_create(self_inner, args):
-            """queue_create() → empty queue; queue_create([1,2,3]) → queue from list"""
-            if len(args) == 0:
-                return _SrvQueue()
-            self_inner._expect_args('queue_create', args, 1)
-            if not isinstance(args[0], list):
-                raise RuntimeError("queue_create expects a list argument")
-            return _SrvQueue(args[0])
-
-        def _queue_enqueue(self_inner, args):
-            """queue_enqueue(q, value) → adds value to back, returns queue"""
-            self_inner._expect_args('queue_enqueue', args, 2)
-            q, val = args
-            if not isinstance(q, _SrvQueue):
-                raise RuntimeError("queue_enqueue expects a queue as first argument")
-            q.enqueue(val)
-            return q
-
-        def _queue_dequeue(self_inner, args):
-            """queue_dequeue(q) → removes and returns front element"""
-            self_inner._expect_args('queue_dequeue', args, 1)
-            q = args[0]
-            if not isinstance(q, _SrvQueue):
-                raise RuntimeError("queue_dequeue expects a queue as first argument")
-            return q.dequeue()
-
-        def _queue_peek(self_inner, args):
-            """queue_peek(q) → returns front element without removing"""
-            self_inner._expect_args('queue_peek', args, 1)
-            q = args[0]
-            if not isinstance(q, _SrvQueue):
-                raise RuntimeError("queue_peek expects a queue as first argument")
-            return q.peek()
-
-        def _queue_size(self_inner, args):
-            """queue_size(q) → number of elements"""
-            self_inner._expect_args('queue_size', args, 1)
-            q = args[0]
-            if not isinstance(q, _SrvQueue):
-                raise RuntimeError("queue_size expects a queue as first argument")
-            return q.size()
-
-        def _queue_is_empty(self_inner, args):
-            """queue_is_empty(q) → true/false"""
-            self_inner._expect_args('queue_is_empty', args, 1)
-            q = args[0]
-            if not isinstance(q, _SrvQueue):
-                raise RuntimeError("queue_is_empty expects a queue as first argument")
-            return q.is_empty()
-
-        def _queue_to_list(self_inner, args):
-            """queue_to_list(q) → list of elements (front to back)"""
-            self_inner._expect_args('queue_to_list', args, 1)
-            q = args[0]
-            if not isinstance(q, _SrvQueue):
-                raise RuntimeError("queue_to_list expects a queue as first argument")
-            return q.to_list()
-
-        def _queue_clear(self_inner, args):
-            """queue_clear(q) → clears all elements, returns queue"""
-            self_inner._expect_args('queue_clear', args, 1)
-            q = args[0]
-            if not isinstance(q, _SrvQueue):
-                raise RuntimeError("queue_clear expects a queue as first argument")
-            q.clear()
-            return q
-
-        self.builtins['queue_create'] = lambda args: _queue_create(self, args)
-        self.builtins['queue_enqueue'] = lambda args: _queue_enqueue(self, args)
-        self.builtins['queue_dequeue'] = lambda args: _queue_dequeue(self, args)
-        self.builtins['queue_peek'] = lambda args: _queue_peek(self, args)
-        self.builtins['queue_size'] = lambda args: _queue_size(self, args)
-        self.builtins['queue_is_empty'] = lambda args: _queue_is_empty(self, args)
-        self.builtins['queue_to_list'] = lambda args: _queue_to_list(self, args)
-        self.builtins['queue_clear'] = lambda args: _queue_clear(self, args)
+        # Queue builtins — same shape but 'push' becomes 'enqueue' and 'pop' becomes 'dequeue'
+        _QUEUE_METHOD_MAP = {
+            'push': 'enqueue',
+            'pop':  'dequeue',
+        }
+        self.builtins['queue_create'] = _make_container_create('queue', _SrvQueue)
+        for _method, _nargs, _ret_self in _CONTAINER_METHODS:
+            _q_method = _QUEUE_METHOD_MAP.get(_method, _method)
+            _q_builtin = f'queue_{_q_method}'
+            self.builtins[_q_builtin] = _make_container_method(
+                'queue', _SrvQueue, _q_method, _nargs, _ret_self)
 
         # ── Data-driven path builtins ─────────────────────────
         # Pure path builtins (no filesystem access, just string transforms)
