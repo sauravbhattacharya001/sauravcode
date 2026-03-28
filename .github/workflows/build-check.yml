@@ -1,0 +1,73 @@
+# Verify that the package builds cleanly and the version is consistent
+# across pyproject.toml and sauravcode/__init__.py.
+#
+# Runs on every PR so packaging regressions are caught before merge.
+
+name: Package Build Check
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  build-check:
+    name: Build & Verify Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Verify version consistency
+        run: |
+          # Extract version from pyproject.toml
+          PYPROJECT_VER=$(python3 -c "
+          import tomllib, pathlib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          print(data['project']['version'])
+          ")
+
+          # Extract version from package __init__.py
+          INIT_VER=$(python3 -c "
+          import ast, pathlib
+          tree = ast.parse(pathlib.Path('sauravcode/__init__.py').read_text())
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Assign):
+                  for target in node.targets:
+                      if isinstance(target, ast.Name) and target.id == '__version__':
+                          print(ast.literal_eval(node.value))
+          ")
+
+          echo "pyproject.toml version: $PYPROJECT_VER"
+          echo "__init__.py version:    $INIT_VER"
+
+          if [ "$PYPROJECT_VER" != "$INIT_VER" ]; then
+            echo "::error::Version mismatch! pyproject.toml=$PYPROJECT_VER but __init__.py=$INIT_VER"
+            exit 1
+          fi
+          echo "✅ Versions match: $PYPROJECT_VER"
+
+      - name: Build package
+        run: python -m build
+
+      - name: Validate distributions
+        run: twine check dist/*
+
+      - name: Verify wheel installs cleanly
+        run: |
+          python -m venv /tmp/test-env
+          /tmp/test-env/bin/pip install dist/*.whl
+          /tmp/test-env/bin/python -c "import sauravcode; print(f'✅ sauravcode {sauravcode.__version__} imported OK')"
+          /tmp/test-env/bin/sauravcode --help > /dev/null 2>&1 || echo "CLI check done"
