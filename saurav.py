@@ -1023,6 +1023,9 @@ class Parser:
         'log_info', 'log_warn', 'log_error', 'log_debug',
         'log_to_file', 'log_clear', 'log_history',
         'perf_start', 'perf_stop', 'perf_elapsed',
+        'table_create', 'table_add_row', 'table_headers', 'table_print',
+        'table_sort', 'table_filter', 'table_to_csv', 'table_to_json',
+        'table_column', 'table_size', 'table_row', 'table_reverse',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1031,7 +1034,7 @@ class Parser:
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
         'll_create', 'bloom_create', 'deque_create',
-        'log_clear'})
+        'log_clear', 'table_create'})
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -5500,6 +5503,178 @@ class Interpreter:
         self.builtins['perf_start'] = _perf_start
         self.builtins['perf_stop'] = _perf_stop
         self.builtins['perf_elapsed'] = _perf_elapsed
+
+        # ── Table builtins ──────────────────────────────────────────
+        def _table_create(args):
+            """table_create() or table_create(headers_list) — create a new table."""
+            if len(args) == 0:
+                return {'__table__': True, 'headers': [], 'rows': []}
+            if len(args) == 1:
+                hdrs = args[0]
+                if not isinstance(hdrs, list):
+                    raise RuntimeError("table_create: argument must be a list of header strings")
+                return {'__table__': True, 'headers': [str(h) for h in hdrs], 'rows': []}
+            raise RuntimeError("table_create: expected 0 or 1 argument")
+
+        def _ensure_table(name, val):
+            if not isinstance(val, dict) or not val.get('__table__'):
+                raise RuntimeError(f"{name}: first argument must be a table")
+            return val
+
+        def _table_add_row(args):
+            """table_add_row(table, row_list) — add a row to the table; returns the table."""
+            if len(args) != 2:
+                raise RuntimeError("table_add_row: expected 2 arguments (table, row)")
+            tbl = _ensure_table('table_add_row', args[0])
+            row = args[1]
+            if not isinstance(row, list):
+                raise RuntimeError("table_add_row: second argument must be a list")
+            # Auto-set headers from first row if empty
+            if not tbl['headers']:
+                tbl['headers'] = [f"col{i}" for i in range(len(row))]
+            tbl['rows'].append(row)
+            return tbl
+
+        def _table_headers(args):
+            """table_headers(table) — return list of header names."""
+            if len(args) != 1:
+                raise RuntimeError("table_headers: expected 1 argument")
+            tbl = _ensure_table('table_headers', args[0])
+            return list(tbl['headers'])
+
+        def _table_size(args):
+            """table_size(table) — return number of rows."""
+            if len(args) != 1:
+                raise RuntimeError("table_size: expected 1 argument")
+            tbl = _ensure_table('table_size', args[0])
+            return float(len(tbl['rows']))
+
+        def _table_row(args):
+            """table_row(table, index) — return a specific row as a list."""
+            if len(args) != 2:
+                raise RuntimeError("table_row: expected 2 arguments (table, index)")
+            tbl = _ensure_table('table_row', args[0])
+            idx = int(args[1])
+            if idx < 0 or idx >= len(tbl['rows']):
+                raise RuntimeError(f"table_row: index {idx} out of range (0..{len(tbl['rows'])-1})")
+            return list(tbl['rows'][idx])
+
+        def _table_column(args):
+            """table_column(table, header_or_index) — return all values in a column."""
+            if len(args) != 2:
+                raise RuntimeError("table_column: expected 2 arguments (table, column)")
+            tbl = _ensure_table('table_column', args[0])
+            col = args[1]
+            if isinstance(col, str):
+                if col not in tbl['headers']:
+                    raise RuntimeError(f"table_column: no column named '{col}'")
+                idx = tbl['headers'].index(col)
+            else:
+                idx = int(col)
+            return [r[idx] if idx < len(r) else None for r in tbl['rows']]
+
+        def _table_print(args):
+            """table_print(table) — pretty-print the table and return it."""
+            if len(args) != 1:
+                raise RuntimeError("table_print: expected 1 argument")
+            tbl = _ensure_table('table_print', args[0])
+            hdrs = tbl['headers']
+            rows = tbl['rows']
+            if not hdrs and not rows:
+                print("(empty table)")
+                return tbl
+            # Calculate column widths
+            all_rows = [hdrs] + [[str(c) for c in r] for r in rows]
+            ncols = max(len(r) for r in all_rows)
+            widths = [0] * ncols
+            for r in all_rows:
+                for i, c in enumerate(r):
+                    widths[i] = max(widths[i], len(str(c)))
+            # Print header
+            hdr_line = " | ".join(str(hdrs[i] if i < len(hdrs) else "").ljust(widths[i]) for i in range(ncols))
+            sep_line = "-+-".join("-" * widths[i] for i in range(ncols))
+            print(hdr_line)
+            print(sep_line)
+            for r in rows:
+                cells = [str(r[i] if i < len(r) else "").ljust(widths[i]) for i in range(ncols)]
+                print(" | ".join(cells))
+            return tbl
+
+        def _table_sort(args):
+            """table_sort(table, column) — sort rows by column; returns a new table."""
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("table_sort: expected 2-3 arguments (table, column, [reverse])")
+            tbl = _ensure_table('table_sort', args[0])
+            col = args[1]
+            rev = bool(args[2]) if len(args) == 3 else False
+            if isinstance(col, str):
+                if col not in tbl['headers']:
+                    raise RuntimeError(f"table_sort: no column named '{col}'")
+                idx = tbl['headers'].index(col)
+            else:
+                idx = int(col)
+            sorted_rows = sorted(tbl['rows'], key=lambda r: r[idx] if idx < len(r) else "", reverse=rev)
+            return {'__table__': True, 'headers': list(tbl['headers']), 'rows': sorted_rows}
+
+        def _table_filter(args):
+            """table_filter(table, column, value) — keep only rows where column == value."""
+            if len(args) != 3:
+                raise RuntimeError("table_filter: expected 3 arguments (table, column, value)")
+            tbl = _ensure_table('table_filter', args[0])
+            col = args[1]
+            val = args[2]
+            if isinstance(col, str):
+                if col not in tbl['headers']:
+                    raise RuntimeError(f"table_filter: no column named '{col}'")
+                idx = tbl['headers'].index(col)
+            else:
+                idx = int(col)
+            filtered = [r for r in tbl['rows'] if (r[idx] if idx < len(r) else None) == val]
+            return {'__table__': True, 'headers': list(tbl['headers']), 'rows': filtered}
+
+        def _table_reverse(args):
+            """table_reverse(table) — reverse row order; returns a new table."""
+            if len(args) != 1:
+                raise RuntimeError("table_reverse: expected 1 argument")
+            tbl = _ensure_table('table_reverse', args[0])
+            return {'__table__': True, 'headers': list(tbl['headers']), 'rows': list(reversed(tbl['rows']))}
+
+        def _table_to_csv(args):
+            """table_to_csv(table) — return CSV string of the table."""
+            if len(args) != 1:
+                raise RuntimeError("table_to_csv: expected 1 argument")
+            tbl = _ensure_table('table_to_csv', args[0])
+            lines = [",".join(str(h) for h in tbl['headers'])]
+            for r in tbl['rows']:
+                lines.append(",".join(str(c) for c in r))
+            return "\n".join(lines)
+
+        def _table_to_json(args):
+            """table_to_json(table) — return JSON array of row objects."""
+            import json as _json_mod
+            if len(args) != 1:
+                raise RuntimeError("table_to_json: expected 1 argument")
+            tbl = _ensure_table('table_to_json', args[0])
+            result = []
+            for r in tbl['rows']:
+                obj = {}
+                for i, h in enumerate(tbl['headers']):
+                    obj[h] = r[i] if i < len(r) else None
+                result.append(obj)
+            return _json_mod.dumps(result, indent=2)
+
+        self.builtins['table_create'] = _table_create
+        self.builtins['table_add_row'] = _table_add_row
+        self.builtins['table_headers'] = _table_headers
+        self.builtins['table_size'] = _table_size
+        self.builtins['table_row'] = _table_row
+        self.builtins['table_column'] = _table_column
+        self.builtins['table_print'] = _table_print
+        self.builtins['table_sort'] = _table_sort
+        self.builtins['table_filter'] = _table_filter
+        self.builtins['table_reverse'] = _table_reverse
+        self.builtins['table_to_csv'] = _table_to_csv
+        self.builtins['table_to_json'] = _table_to_json
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

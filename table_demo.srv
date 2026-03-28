@@ -1,0 +1,73 @@
+# table_demo.srv - Table formatting builtins demo
+
+# Create a table with headers
+headers = ["Name", "Age", "City"]
+t = table_create (headers)
+
+# Add rows
+table_add_row (t) ["Alice", 30, "Seattle"]
+table_add_row (t) ["Bob", 25, "Portland"]
+table_add_row (t) ["Charlie", 35, "Denver"]
+table_add_row (t) ["Diana", 28, "Seattle"]
+
+# Pretty-print the table
+print "=== Full Table ==="
+table_print (t)
+
+# Table metadata
+rows = table_size (t)
+print ""
+print "Row count:"
+print rows
+
+hdrs = table_headers (t)
+print "Headers:"
+print hdrs
+
+# Access a specific row
+print ""
+print "Row 0:"
+r = table_row (t) 0
+print r
+
+# Get a column
+print ""
+print "Ages column:"
+ages = table_column (t) "Age"
+print ages
+
+# Sort by age
+print ""
+print "=== Sorted by Age ==="
+sorted_t = table_sort (t) "Age"
+table_print (sorted_t)
+
+# Sort descending
+print ""
+print "=== Sorted by Age (descending) ==="
+sorted_desc = table_sort (t) "Age" 1
+table_print (sorted_desc)
+
+# Filter by city
+print ""
+print "=== Seattle residents ==="
+seattle = table_filter (t) "City" "Seattle"
+table_print (seattle)
+
+# Reverse rows
+print ""
+print "=== Reversed ==="
+rev = table_reverse (t)
+table_print (rev)
+
+# Export to CSV
+print ""
+print "=== CSV Export ==="
+csv_out = table_to_csv (t)
+print csv_out
+
+# Export to JSON
+print ""
+print "=== JSON Export ==="
+j = table_to_json (t)
+print j
