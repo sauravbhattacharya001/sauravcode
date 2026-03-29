@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Set, Optional
 from enum import Enum
 
+from sauravtext import strip_comment, extract_identifiers as _text_extract_identifiers
+
 
 class Severity(Enum):
     ERROR = "error"
@@ -163,30 +165,13 @@ def _get_indent(line: str) -> int:
     return count
 
 
-def _strip_comment(line: str) -> str:
-    """Remove trailing comment from a line, respecting strings."""
-    in_string = False
-    escape = False
-    for i, ch in enumerate(line):
-        if escape:
-            escape = False
-            continue
-        if ch == '\\' and in_string:
-            escape = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-        elif ch == '#' and not in_string:
-            return line[:i]
-    return line
+# _strip_comment is now provided by sauravtext.strip_comment (imported above)
+_strip_comment = strip_comment
 
 
 def _extract_identifiers(line: str) -> Set[str]:
     """Extract all identifier tokens from a line (excluding strings and comments)."""
-    cleaned = _strip_comment(line)
-    # Remove string literals
-    cleaned = re.sub(r'f?"(?:[^"\\]|\\.)*"', '', cleaned)
-    return set(_IDENT_RE.findall(cleaned)) - _KEYWORDS
+    return _text_extract_identifiers(line, exclude=_KEYWORDS)
 
 
 def _line_keyword(line: str) -> Optional[str]:
