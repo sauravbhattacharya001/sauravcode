@@ -260,6 +260,8 @@ class APIHandler(BaseHTTPRequestHandler):
             exc_info = [None]
             timed_out = [False]
 
+            _semaphore_released = threading.Event()
+
             def _execute():
                 nonlocal result
                 old_stdout = sys.stdout
@@ -273,15 +275,23 @@ class APIHandler(BaseHTTPRequestHandler):
                     exc_info[0] = e
                 finally:
                     sys.stdout = old_stdout
-                    _exec_semaphore.release()
+                    if not _semaphore_released.is_set():
+                        _semaphore_released.set()
+                        _exec_semaphore.release()
 
             thread = threading.Thread(target=_execute, daemon=True)
             thread.start()
             thread.join(timeout=MAX_EXEC_TIME)
             if thread.is_alive():
                 timed_out[0] = True
-                # Note: semaphore is released by _execute when it
-                # eventually finishes (or on process exit for daemon threads).
+                # Release the semaphore immediately on timeout so that
+                # stuck daemon threads (e.g. infinite loops) don't
+                # permanently consume a concurrency slot, which would
+                # lead to a full DoS after MAX_CONCURRENT_EXECUTIONS
+                # timed-out requests.
+                if not _semaphore_released.is_set():
+                    _semaphore_released.set()
+                    _exec_semaphore.release()
 
             if timed_out[0]:
                 self._json_response(504, {
