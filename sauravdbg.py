@@ -136,8 +136,16 @@ def _eval_node(node, variables):
         idx = _eval_node(sl, variables)
         return value[idx]
     if isinstance(node, ast.Attribute):
+        attr = node.attr
+        # Block dunder attributes to prevent introspection-based escapes
+        # (e.g. __class__.__bases__[0].__subclasses__()) that could leak
+        # internals or reach dangerous types even without call support.
+        if attr.startswith('_'):
+            raise ValueError(
+                f"Access to private/dunder attribute '{attr}' is not allowed"
+            )
         value = _eval_node(node.value, variables)
-        return getattr(value, node.attr)
+        return getattr(value, attr)
     raise ValueError(f"Unsupported expression: {ast.dump(node)}")
 
 
