@@ -2128,6 +2128,27 @@ class Interpreter:
         '/': operator.truediv,
         '%': operator.mod,
     }
+    # Numeric-only dispatch with inline zero-checks for / and %.
+    # +, -, * go straight to the C-level operator with no branch overhead.
+    @staticmethod
+    def _safe_div(a, b):
+        if b == 0:
+            raise RuntimeError("Division by zero")
+        return a / b
+
+    @staticmethod
+    def _safe_mod(a, b):
+        if b == 0:
+            raise RuntimeError("Modulo by zero")
+        return a % b
+
+    _NUMERIC_OP_DISPATCH = {
+        '+': operator.add,
+        '-': operator.sub,
+        '*': operator.mul,
+        '/': _safe_div.__func__,
+        '%': _safe_mod.__func__,
+    }
     _COMPARE_OP_DISPATCH = {
         '==': operator.eq,
         '!=': operator.ne,
@@ -8329,12 +8350,10 @@ class Interpreter:
         try:
             # Fast path: both operands are numbers — pure dispatch, no guards needed.
             # This avoids isinstance checks on the hot path for arithmetic-heavy code.
+            # Division/modulo zero-checks are embedded in the dispatch lambdas
+            # (_NUMERIC_OP_DISPATCH) so +, -, * avoid the branch entirely.
             if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-                if op == '/' and right == 0:
-                    raise RuntimeError("Division by zero")
-                if op == '%' and right == 0:
-                    raise RuntimeError("Modulo by zero")
-                return self._BINARY_OP_DISPATCH[op](left, right)
+                return self._NUMERIC_OP_DISPATCH[op](left, right)
 
             # Repetition guard for string/list * int
             if op == '*':
