@@ -1061,6 +1061,9 @@ class Parser:
         'ring_create', 'ring_push', 'ring_peek', 'ring_pop',
         'ring_size', 'ring_capacity', 'ring_is_empty', 'ring_is_full',
         'ring_to_list', 'ring_clear', 'ring_get',
+        'caesar_encrypt', 'caesar_decrypt', 'rot13',
+        'vigenere_encrypt', 'vigenere_decrypt',
+        'xor_cipher', 'atbash', 'morse_encode', 'morse_decode',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2407,6 +2410,7 @@ class Interpreter:
         self._register_logging_builtins()
         self._register_omap_builtins()
         self._register_fsm_builtins()
+        self._register_cipher_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -6117,6 +6121,185 @@ class Interpreter:
         self.builtins['ring_to_list'] = _ring_to_list
         self.builtins['ring_clear'] = _ring_clear
         self.builtins['ring_get'] = _ring_get
+
+    # ── Data-driven cipher builtins ──────────────────────
+
+    def _register_cipher_builtins(self):
+        """Register classical cipher builtins: Caesar, ROT13, Vigenère, XOR, Atbash, Morse."""
+
+        def _require_str(fn, val):
+            if not isinstance(val, str):
+                raise RuntimeError(f"{fn}: expected string argument, got {type(val).__name__}")
+            return val
+
+        def _require_int_shift(fn, val):
+            if isinstance(val, float) and val == int(val):
+                return int(val)
+            if isinstance(val, (int, float)):
+                return int(val)
+            raise RuntimeError(f"{fn}: shift must be an integer")
+
+        # ── Caesar cipher ──
+        def _caesar(text, shift):
+            result = []
+            for ch in text:
+                if ch.isalpha():
+                    base = ord('A') if ch.isupper() else ord('a')
+                    result.append(chr((ord(ch) - base + shift) % 26 + base))
+                else:
+                    result.append(ch)
+            return ''.join(result)
+
+        def _caesar_encrypt(args):
+            if len(args) != 2:
+                raise RuntimeError("caesar_encrypt: expected 2 arguments (text, shift)")
+            text = _require_str('caesar_encrypt', args[0])
+            shift = _require_int_shift('caesar_encrypt', args[1])
+            return _caesar(text, shift)
+
+        def _caesar_decrypt(args):
+            if len(args) != 2:
+                raise RuntimeError("caesar_decrypt: expected 2 arguments (text, shift)")
+            text = _require_str('caesar_decrypt', args[0])
+            shift = _require_int_shift('caesar_decrypt', args[1])
+            return _caesar(text, -shift)
+
+        # ── ROT13 ──
+        def _rot13(args):
+            if len(args) != 1:
+                raise RuntimeError("rot13: expected 1 argument (text)")
+            text = _require_str('rot13', args[0])
+            return _caesar(text, 13)
+
+        # ── Vigenère cipher ──
+        def _vigenere_encrypt(args):
+            if len(args) != 2:
+                raise RuntimeError("vigenere_encrypt: expected 2 arguments (text, key)")
+            text = _require_str('vigenere_encrypt', args[0])
+            key = _require_str('vigenere_encrypt', args[1])
+            if len(key) == 0:
+                raise RuntimeError("vigenere_encrypt: key must not be empty")
+            key_upper = key.upper()
+            result = []
+            ki = 0
+            for ch in text:
+                if ch.isalpha():
+                    base = ord('A') if ch.isupper() else ord('a')
+                    shift = ord(key_upper[ki % len(key_upper)]) - ord('A')
+                    result.append(chr((ord(ch) - base + shift) % 26 + base))
+                    ki += 1
+                else:
+                    result.append(ch)
+            return ''.join(result)
+
+        def _vigenere_decrypt(args):
+            if len(args) != 2:
+                raise RuntimeError("vigenere_decrypt: expected 2 arguments (text, key)")
+            text = _require_str('vigenere_decrypt', args[0])
+            key = _require_str('vigenere_decrypt', args[1])
+            if len(key) == 0:
+                raise RuntimeError("vigenere_decrypt: key must not be empty")
+            key_upper = key.upper()
+            result = []
+            ki = 0
+            for ch in text:
+                if ch.isalpha():
+                    base = ord('A') if ch.isupper() else ord('a')
+                    shift = ord(key_upper[ki % len(key_upper)]) - ord('A')
+                    result.append(chr((ord(ch) - base - shift) % 26 + base))
+                    ki += 1
+                else:
+                    result.append(ch)
+            return ''.join(result)
+
+        # ── XOR cipher ──
+        def _xor_cipher(args):
+            if len(args) != 2:
+                raise RuntimeError("xor_cipher: expected 2 arguments (text, key)")
+            text = _require_str('xor_cipher', args[0])
+            key = _require_str('xor_cipher', args[1])
+            if len(key) == 0:
+                raise RuntimeError("xor_cipher: key must not be empty")
+            result = []
+            for i, ch in enumerate(text):
+                result.append(chr(ord(ch) ^ ord(key[i % len(key)])))
+            # Return hex-encoded to avoid non-printable chars
+            return ''.join(result).encode('utf-8', errors='replace').hex()
+
+        # ── Atbash cipher ──
+        def _atbash(args):
+            if len(args) != 1:
+                raise RuntimeError("atbash: expected 1 argument (text)")
+            text = _require_str('atbash', args[0])
+            result = []
+            for ch in text:
+                if ch.isalpha():
+                    if ch.isupper():
+                        result.append(chr(ord('Z') - (ord(ch) - ord('A'))))
+                    else:
+                        result.append(chr(ord('z') - (ord(ch) - ord('a'))))
+                else:
+                    result.append(ch)
+            return ''.join(result)
+
+        # ── Morse code ──
+        _MORSE = {
+            'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
+            'F': '..-.', 'G': '--.', 'H': '....', 'I': '..', 'J': '.---',
+            'K': '-.-', 'L': '.-..', 'M': '--', 'N': '-.', 'O': '---',
+            'P': '.--.', 'Q': '--.-', 'R': '.-.', 'S': '...', 'T': '-',
+            'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-', 'Y': '-.--',
+            'Z': '--..', '0': '-----', '1': '.----', '2': '..---',
+            '3': '...--', '4': '....-', '5': '.....', '6': '-....',
+            '7': '--...', '8': '---..', '9': '----.', ' ': '/',
+            '.': '.-.-.-', ',': '--..--', '?': '..--..', '!': '-.-.--',
+            "'": '.----.', '"': '.-..-.', '(': '-.--.', ')': '-.--.-',
+            '&': '.-...', ':': '---...', ';': '-.-.-.', '/': '-..-.',
+            '=': '-...-', '+': '.-.-.', '-': '-....-', '_': '..--.-',
+            '@': '.--.-.', '$': '...-..-',
+        }
+        _MORSE_REV = {v: k for k, v in _MORSE.items()}
+
+        def _morse_encode(args):
+            if len(args) != 1:
+                raise RuntimeError("morse_encode: expected 1 argument (text)")
+            text = _require_str('morse_encode', args[0]).upper()
+            result = []
+            for ch in text:
+                if ch in _MORSE:
+                    result.append(_MORSE[ch])
+                else:
+                    result.append(ch)  # pass through unknown chars
+            return ' '.join(result)
+
+        def _morse_decode(args):
+            if len(args) != 1:
+                raise RuntimeError("morse_decode: expected 1 argument (morse_string)")
+            text = _require_str('morse_decode', args[0])
+            words = text.strip().split(' / ')
+            decoded = []
+            for word in words:
+                chars = word.strip().split(' ')
+                for c in chars:
+                    c = c.strip()
+                    if c in _MORSE_REV:
+                        decoded.append(_MORSE_REV[c])
+                    elif c == '':
+                        pass
+                    else:
+                        decoded.append(c)  # pass through unknown
+                decoded.append(' ')
+            return ''.join(decoded).strip()
+
+        self.builtins['caesar_encrypt'] = _caesar_encrypt
+        self.builtins['caesar_decrypt'] = _caesar_decrypt
+        self.builtins['rot13'] = _rot13
+        self.builtins['vigenere_encrypt'] = _vigenere_encrypt
+        self.builtins['vigenere_decrypt'] = _vigenere_decrypt
+        self.builtins['xor_cipher'] = _xor_cipher
+        self.builtins['atbash'] = _atbash
+        self.builtins['morse_encode'] = _morse_encode
+        self.builtins['morse_decode'] = _morse_decode
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

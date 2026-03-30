@@ -1,0 +1,54 @@
+# cipher_demo.srv - Classical Cipher builtins demo
+
+# ── Caesar Cipher ──
+string msg = "Hello World"
+print "Original:"
+print msg
+
+string encrypted = caesar_encrypt (msg) 3
+print "Caesar +3:"
+print encrypted
+
+string decrypted = caesar_decrypt (encrypted) 3
+print "Caesar decrypted:"
+print decrypted
+
+# ── ROT13 ──
+string r = rot13 "Attack at dawn"
+print "ROT13:"
+print r
+string r2 = rot13 (r)
+print "ROT13 again (back to original):"
+print r2
+
+# ── Vigenère Cipher ──
+string venc = vigenere_encrypt "HELLO WORLD" "KEY"
+print "Vigenère encrypted:"
+print venc
+
+string vdec = vigenere_decrypt (venc) "KEY"
+print "Vigenère decrypted:"
+print vdec
+
+# ── Atbash Cipher ──
+string ab = atbash "Hello"
+print "Atbash:"
+print ab
+
+string ab2 = atbash (ab)
+print "Atbash again (self-inverse):"
+print ab2
+
+# ── XOR Cipher (returns hex) ──
+string xored = xor_cipher "Secret" "key"
+print "XOR cipher (hex):"
+print xored
+
+# ── Morse Code ──
+string morse = morse_encode "SOS HELLO"
+print "Morse:"
+print morse
+
+string decoded = morse_decode (morse)
+print "Morse decoded:"
+print decoded
