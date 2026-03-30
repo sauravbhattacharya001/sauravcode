@@ -8242,13 +8242,19 @@ class Interpreter:
         else:
             full_path = module_path
         
-        # Normalize for circular import detection
-        full_path = os.path.abspath(full_path)
+        # Normalize for circular import detection — use realpath to
+        # resolve symlinks (abspath alone can be bypassed via symlink
+        # chains that point outside the sandbox).
+        full_path = os.path.realpath(full_path)
         
         # Prevent path traversal — imports must resolve within the source
-        # directory or current working directory (fixes issue #24)
-        allowed_root = os.path.abspath(self._source_dir or os.getcwd())
-        if not full_path.startswith(allowed_root + os.sep) and full_path != allowed_root:
+        # directory or current working directory (fixes issue #24).
+        # Use realpath + normcase for parity with _validate_file_path
+        # (symlink-safe and case-insensitive on Windows).
+        allowed_root = os.path.realpath(self._source_dir or os.getcwd())
+        norm_root = os.path.normcase(allowed_root)
+        norm_full = os.path.normcase(full_path)
+        if not norm_full.startswith(norm_root + os.sep) and norm_full != norm_root:
             raise RuntimeError(
                 f"Cannot import '{node.module_path}': "
                 f"path traversal outside project directory is not allowed"
