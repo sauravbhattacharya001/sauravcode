@@ -188,24 +188,43 @@ class RunStats:
 
 
 # ── Desktop notification ────────────────────────────────────────────────
+def _sanitize_notification_text(text):
+    """Sanitize text for safe embedding in shell/script commands.
+
+    Removes characters that could enable command injection in osascript
+    (AppleScript) or PowerShell notification commands.
+    """
+    import re
+    # Strip characters dangerous in AppleScript strings, PowerShell
+    # expressions, and shell metacharacters.  Allow basic punctuation
+    # that is safe inside double-quoted strings.
+    return re.sub(r'[\"\\`$(){};\n\r]', '', str(text))[:200]
+
+
 def send_notification(title, message):
     """Best-effort desktop notification (no external deps)."""
     try:
+        # Sanitize inputs to prevent command injection — these strings
+        # are interpolated into osascript / PowerShell commands.
+        safe_title = _sanitize_notification_text(title)
+        safe_message = _sanitize_notification_text(message)
+
         if sys.platform == "darwin":
             subprocess.run(
                 ["osascript", "-e",
-                 f'display notification "{message}" with title "{title}"'],
+                 f'display notification "{safe_message}" with title "{safe_title}"'],
                 capture_output=True, timeout=5,
             )
         elif sys.platform == "win32":
             # PowerShell toast (Windows 10+)
+            # Use sanitized strings to prevent PowerShell injection
             ps = (
                 f'[Windows.UI.Notifications.ToastNotificationManager, '
                 f'Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null; '
                 f'$xml = [Windows.UI.Notifications.ToastNotificationManager]'
                 f'::GetTemplateContent(0); '
                 f'$text = $xml.GetElementsByTagName("text"); '
-                f'$text.Item(0).AppendChild($xml.CreateTextNode("{title}: {message}")) | Out-Null; '
+                f'$text.Item(0).AppendChild($xml.CreateTextNode("{safe_title}: {safe_message}")) | Out-Null; '
                 f'[Windows.UI.Notifications.ToastNotificationManager]'
                 f'::CreateToastNotifier("sauravwatch").Show('
                 f'[Windows.UI.Notifications.ToastNotification]::new($xml))'
