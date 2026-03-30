@@ -8471,9 +8471,15 @@ class Interpreter:
     def _eval_bool(self, node):
         return node.value
 
+    _SENTINEL = object()  # unique sentinel for single-lookup variable access
+
     def _eval_identifier(self, node):
-        if node.name in self.variables:
-            value = self.variables[node.name]
+        # Single lookup via sentinel avoids the double ChainMap traversal
+        # of ``name in self.variables`` followed by ``self.variables[name]``.
+        # For programs with deeply nested scopes this cuts identifier
+        # resolution cost roughly in half on the hot path.
+        value = self.variables.get(node.name, self._SENTINEL)
+        if value is not self._SENTINEL:
             if DEBUG:
                 debug(f"Identifier '{node.name}' is a variable with value {value}")
             return value
