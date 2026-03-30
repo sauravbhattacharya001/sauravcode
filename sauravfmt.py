@@ -18,6 +18,8 @@ import argparse
 import os
 import sys
 
+from sauravtext import split_trailing_comment as _split_trailing_comment
+
 __version__ = "1.0.0"
 
 # ---------------------------------------------------------------------------
@@ -259,31 +261,7 @@ def _align_inline_comments(lines):
     return result
 
 
-def _split_trailing_comment(line):
-    """Split a line into (code, comment) respecting strings.
-
-    Returns (line, None) if there is no trailing comment.
-    """
-    in_string = False
-    i = 0
-    while i < len(line):
-        ch = line[i]
-        if ch == '"' and not in_string:
-            in_string = True
-            i += 1
-            continue
-        if in_string:
-            if ch == '\\' and i + 1 < len(line):
-                i += 2  # properly skip escaped character
-                continue
-            if ch == '"':
-                in_string = False
-            i += 1
-            continue
-        if ch == '#':
-            return line[:i], line[i:]
-        i += 1
-    return line, None
+# _split_trailing_comment is now provided by sauravtext (imported above)
 
 
 # ---------------------------------------------------------------------------
