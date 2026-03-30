@@ -22,7 +22,6 @@ Features:
 import sys
 import os
 import time
-import re
 
 # Add the script directory to path so we can import saurav
 _script_dir = os.path.dirname(os.path.abspath(__file__))

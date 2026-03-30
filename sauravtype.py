@@ -45,9 +45,9 @@ from saurav import (
     LambdaNode, ListNode, ListComprehensionNode, LogicalNode,
     MapNode, MatchNode, NumberNode, PipeNode, PrintNode,
     ReturnNode, SliceNode, StringNode, TernaryNode, UnaryOpNode,
-    WhileNode, AppendNode, PopNode, LenNode, IndexedAssignmentNode,
+    WhileNode, AppendNode, LenNode, IndexedAssignmentNode,
     TryCatchNode, ThrowNode, YieldNode, ImportNode, EnumNode,
-    EnumAccessNode, CaseNode, BreakNode, ContinueNode, ASTNode,
+    EnumAccessNode, CaseNode, BreakNode, ContinueNode,
 )
 
 

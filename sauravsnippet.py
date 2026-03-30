@@ -33,7 +33,6 @@ import json
 import sys
 import os
 import argparse
-import time
 import re
 from pathlib import Path
 from datetime import datetime

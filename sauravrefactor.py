@@ -797,7 +797,6 @@ def main():
 
 def run_tests():
     """Self-contained test suite."""
-    import io
     passed = 0
     failed = 0
     

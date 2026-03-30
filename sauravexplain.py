@@ -21,7 +21,7 @@ import json as _json
 import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from saurav import tokenize, Parser, ASTNode
+from saurav import tokenize, Parser
 
 __version__ = "1.0.0"
 

@@ -53,7 +53,7 @@ from saurav import (
     ListNode, IndexNode, AppendNode, PopNode, LenNode,
     MapNode, FStringNode, IndexedAssignmentNode, ForEachNode,
     TryCatchNode, ThrowNode, LambdaNode, PipeNode, ImportNode,
-    ListComprehensionNode, MatchNode, CaseNode, EnumNode,
+    ListComprehensionNode, MatchNode, EnumNode,
     EnumAccessNode, SliceNode, AssertNode, BreakNode,
     ContinueNode, TernaryNode,
 )

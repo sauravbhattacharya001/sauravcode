@@ -36,7 +36,7 @@ from saurav import (
     ReturnNode, IfNode, WhileNode, ForNode, ForEachNode,
     TryCatchNode, ThrowNode, MatchNode, ImportNode, BreakNode,
     ContinueNode, YieldNode, IndexedAssignmentNode, AppendNode,
-    PopNode, EnumNode, AssertNode, ReturnSignal, ThrowSignal,
+    PopNode, EnumNode, AssertNode, ThrowSignal,
 )
 
 

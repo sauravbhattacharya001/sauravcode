@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import os
-import re
 import sys
 
 __version__ = "1.0.0"

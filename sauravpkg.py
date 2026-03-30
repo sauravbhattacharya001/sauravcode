@@ -26,7 +26,6 @@ Usage:
 import argparse
 import hashlib
 import json
-import os
 import shlex
 import shutil
 import subprocess
