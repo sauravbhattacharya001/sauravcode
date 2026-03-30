@@ -66,3 +66,8 @@ def main_snap():
 def main_api():
     """Entry point for the ``sauravcode-api`` console script (REST API server)."""
     _run_module("sauravapi.py", "API server")
+
+
+def main_cheat():
+    """Entry point for the ``sauravcode-cheat`` console script (cheat sheet)."""
+    _run_module("sauravcheat.py", "cheat sheet")
