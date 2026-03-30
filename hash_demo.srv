@@ -1,0 +1,36 @@
+# hash_demo.srv - Hashing & Digest builtins demo
+
+# MD5 hash
+string h1 = md5 "Hello, World!"
+print "MD5:"
+print h1
+
+# SHA-1 hash
+string h2 = sha1 "Hello, World!"
+print "SHA-1:"
+print h2
+
+# SHA-256 hash
+string h3 = sha256 "Hello, World!"
+print "SHA-256:"
+print h3
+
+# SHA-512 hash
+string h4 = sha512 "Hello, World!"
+print "SHA-512:"
+print h4
+
+# CRC32 checksum
+string h5 = crc32 "Hello, World!"
+print "CRC32:"
+print h5
+
+# HMAC-SHA256 (key, message)
+string h6 = hmac_sha256 "secret-key" "Hello, World!"
+print "HMAC-SHA256:"
+print h6
+
+# Verify consistency - same input should produce same hash
+string h7 = sha256 "Hello, World!"
+print "SHA-256 again (should match):"
+print h7

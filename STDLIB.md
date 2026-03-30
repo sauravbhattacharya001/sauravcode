@@ -512,3 +512,16 @@ Fixed-size circular buffer. When full, new pushes overwrite the oldest element. 
 | `ring_is_full ring` | `ring_is_full (rb)` → `true` | Is buffer at capacity? |
 | `ring_to_list ring` | `ring_to_list (rb)` → `[1,2,3]` | Convert to list (oldest first) |
 | `ring_clear ring` | `ring_clear (rb)` | Remove all elements |
+
+## Hashing & Digest
+
+Cryptographic hash functions and checksums for data integrity, verification, and HMAC authentication.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `md5 text` | `md5 "hello"`  `"5d41402abc4b..."` | MD5 hex digest |
+| `sha1 text` | `sha1 "hello"`  `"aaf4c61ddc..."` | SHA-1 hex digest |
+| `sha256 text` | `sha256 "hello"`  `"2cf24dba5..."` | SHA-256 hex digest |
+| `sha512 text` | `sha512 "hello"`  `"9b71d224b..."` | SHA-512 hex digest |
+| `crc32 text` | `crc32 "hello"`  `"3610a686"` | CRC32 hex checksum |
+| `hmac_sha256 key message` | `hmac_sha256 "key" "msg"`  `"2d382..."` | HMAC-SHA256 hex digest |

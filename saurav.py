@@ -1064,6 +1064,7 @@ class Parser:
         'caesar_encrypt', 'caesar_decrypt', 'rot13',
         'vigenere_encrypt', 'vigenere_decrypt',
         'xor_cipher', 'atbash', 'morse_encode', 'morse_decode',
+        'md5', 'sha1', 'sha256', 'sha512', 'crc32', 'hmac_sha256',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -2411,6 +2412,7 @@ class Interpreter:
         self._register_omap_builtins()
         self._register_fsm_builtins()
         self._register_cipher_builtins()
+        self._register_hash_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -6300,6 +6302,51 @@ class Interpreter:
         self.builtins['atbash'] = _atbash
         self.builtins['morse_encode'] = _morse_encode
         self.builtins['morse_decode'] = _morse_decode
+
+    # ── Data-driven hash/digest builtins ──────────────────
+
+    def _register_hash_builtins(self):
+        """Register hashing builtins: md5, sha1, sha256, sha512, crc32, hmac_sha256."""
+        import hashlib as _hashlib
+        import hmac as _hmac
+        import binascii as _binascii
+
+        def _require_str(fn, val):
+            if not isinstance(val, str):
+                raise RuntimeError(f"{fn}: expected string argument, got {type(val).__name__}")
+            return val
+
+        def _hash_fn(name, algo):
+            def _impl(args):
+                if len(args) != 1:
+                    raise RuntimeError(f"{name}: expected 1 argument (text)")
+                text = _require_str(name, args[0])
+                h = _hashlib.new(algo)
+                h.update(text.encode('utf-8'))
+                return h.hexdigest()
+            return _impl
+
+        def _crc32(args):
+            if len(args) != 1:
+                raise RuntimeError("crc32: expected 1 argument (text)")
+            text = _require_str('crc32', args[0])
+            val = _binascii.crc32(text.encode('utf-8')) & 0xFFFFFFFF
+            return format(val, '08x')
+
+        def _hmac_sha256(args):
+            if len(args) != 2:
+                raise RuntimeError("hmac_sha256: expected 2 arguments (key, message)")
+            key = _require_str('hmac_sha256', args[0])
+            msg = _require_str('hmac_sha256', args[1])
+            h = _hmac.new(key.encode('utf-8'), msg.encode('utf-8'), _hashlib.sha256)
+            return h.hexdigest()
+
+        self.builtins['md5'] = _hash_fn('md5', 'md5')
+        self.builtins['sha1'] = _hash_fn('sha1', 'sha1')
+        self.builtins['sha256'] = _hash_fn('sha256', 'sha256')
+        self.builtins['sha512'] = _hash_fn('sha512', 'sha512')
+        self.builtins['crc32'] = _crc32
+        self.builtins['hmac_sha256'] = _hmac_sha256
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
