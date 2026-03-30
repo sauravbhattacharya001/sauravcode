@@ -8810,9 +8810,7 @@ class Interpreter:
 
     def _eval_len(self, node):
         obj = self.evaluate(node.expression)
-        if isinstance(obj, (list, str)):
-            return float(len(obj))
-        if isinstance(obj, dict):
+        if isinstance(obj, (list, str, dict)):
             return float(len(obj))
         if isinstance(obj, GeneratorValue):
             return float(len(obj.to_list()))
@@ -8938,25 +8936,26 @@ class Interpreter:
         )
 
 
+def _format_value(v):
+    """Format a single sauravcode value for display."""
+    if isinstance(v, str):
+        return f'"{v}"'
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float) and v == int(v):
+        return str(int(v))
+    if isinstance(v, dict):
+        return _format_map(v)
+    if isinstance(v, list):
+        return _format_list(v)
+    if isinstance(v, set):
+        return _format_set(v)
+    return str(v)
+
+
 def _format_list(lst):
     """Format a list for display."""
-    items = []
-    for v in lst:
-        if isinstance(v, str):
-            items.append(f'"{v}"')
-        elif isinstance(v, float) and v == int(v):
-            items.append(str(int(v)))
-        elif isinstance(v, bool):
-            items.append("true" if v else "false")
-        elif isinstance(v, dict):
-            items.append(_format_map(v))
-        elif isinstance(v, list):
-            items.append(_format_list(v))
-        elif isinstance(v, set):
-            items.append(_format_set(v))
-        else:
-            items.append(str(v))
-    return "[" + ", ".join(items) + "]"
+    return "[" + ", ".join(_format_value(v) for v in lst) + "]"
 
 
 def _format_map(m):
@@ -8969,21 +8968,8 @@ def _format_map(m):
             key_str = str(int(k))
         else:
             key_str = str(k)
-        if isinstance(v, str):
-            val_str = f'"{v}"'
-        elif isinstance(v, float) and v == int(v):
-            val_str = str(int(v))
-        elif isinstance(v, bool):
-            val_str = "true" if v else "false"
-        elif isinstance(v, dict):
-            val_str = _format_map(v)
-        elif isinstance(v, list):
-            val_str = _format_list(v)
-        else:
-            val_str = str(v)
-        pairs.append(f"{key_str}: {val_str}")
+        pairs.append(f"{key_str}: {_format_value(v)}")
     return "{" + ", ".join(pairs) + "}"
-
 
 def _format_set(s):
     """Format a set for display."""
@@ -8991,17 +8977,7 @@ def _format_set(s):
         items = sorted(s)
     except TypeError:
         items = list(s)
-    formatted = []
-    for v in items:
-        if isinstance(v, str):
-            formatted.append(f'"{v}"')
-        elif isinstance(v, float) and v == int(v):
-            formatted.append(str(int(v)))
-        elif isinstance(v, bool):
-            formatted.append("true" if v else "false")
-        else:
-            formatted.append(str(v))
-    return "set(" + ", ".join(formatted) + ")"
+    return "set(" + ", ".join(_format_value(v) for v in items) + ")"
 
 
 # REPL (Read-Eval-Print Loop)
