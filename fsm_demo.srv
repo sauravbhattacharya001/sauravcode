@@ -1,0 +1,77 @@
+# fsm_demo.srv - Finite State Machine builtins demo
+
+# Build a simple traffic light FSM
+string light = fsm_create
+
+# Add states (last arg = accepting/final state)
+fsm_add_state (light) "red" false
+fsm_add_state (light) "green" false
+fsm_add_state (light) "yellow" false
+
+# Add transitions
+fsm_add_transition (light) "red" "go" "green"
+fsm_add_transition (light) "green" "slow" "yellow"
+fsm_add_transition (light) "yellow" "stop" "red"
+
+# Set start state
+fsm_set_start (light) "red"
+
+print "=== Traffic Light FSM ==="
+print "States:"
+print fsm_states (light)
+
+print "Current state:"
+print fsm_current (light)
+
+# Step through transitions
+fsm_transition (light) "go"
+print "After 'go':"
+print fsm_current (light)
+
+fsm_transition (light) "slow"
+print "After 'slow':"
+print fsm_current (light)
+
+fsm_transition (light) "stop"
+print "After 'stop':"
+print fsm_current (light)
+
+# ── Binary string validator (accepts strings ending in "1") ──
+print ""
+print "=== Binary String FSM (accepts strings ending in 1) ==="
+
+string bin_fsm = fsm_create
+fsm_add_state (bin_fsm) "s0" false
+fsm_add_state (bin_fsm) "s1" true
+
+fsm_add_transition (bin_fsm) "s0" "0" "s0"
+fsm_add_transition (bin_fsm) "s0" "1" "s1"
+fsm_add_transition (bin_fsm) "s1" "0" "s0"
+fsm_add_transition (bin_fsm) "s1" "1" "s1"
+
+fsm_set_start (bin_fsm) "s0"
+
+# Run on input sequences
+string result1 = fsm_run (bin_fsm) ["1", "0", "1"]
+print "Input [1,0,1]:"
+print result1
+
+string result2 = fsm_run (bin_fsm) ["1", "0", "0"]
+print "Input [1,0,0]:"
+print result2
+
+# Quick accept check
+print "Accepts [1,1,1]?"
+print fsm_accepts (bin_fsm) ["1", "1", "1"]
+
+print "Accepts [0,0,0]?"
+print fsm_accepts (bin_fsm) ["0", "0", "0"]
+
+# Reset and check
+fsm_reset (bin_fsm)
+print "After reset, current:"
+print fsm_current (bin_fsm)
+
+# Show all transitions
+print "Transitions:"
+print fsm_transitions (bin_fsm)

@@ -1,6 +1,6 @@
 # Standard Library Reference
 
-Complete reference for all 112 built-in functions in sauravcode. No imports needed — all functions are available immediately.
+Complete reference for all 124 built-in functions in sauravcode. No imports needed — all functions are available immediately.
 
 Sauravcode uses space-separated arguments with no parentheses or commas:
 
@@ -475,3 +475,22 @@ A key-value store that keeps keys in sorted order. Supports range queries, floor
 | `omap_ceil om key` | `omap_ceil (m) "cat"` | Smallest key ≥ given key, or None |
 | `omap_to_map om` | `omap_to_map (m)` | Convert to regular map |
 | `omap_clear om` | `omap_clear (m)` | Remove all entries |
+
+## Finite State Machine
+
+Build and run deterministic finite automata (DFA). Create states, define transitions on symbols, and validate input sequences.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `fsm_create` | `m = fsm_create` | Create empty FSM |
+| `fsm_add_state fsm name accepting?` | `fsm_add_state (m) "s0" false` | Add a state (accepting = true/false) |
+| `fsm_add_transition fsm from sym to` | `fsm_add_transition (m) "s0" "a" "s1"` | Add transition on symbol |
+| `fsm_set_start fsm state` | `fsm_set_start (m) "s0"` | Set the start state |
+| `fsm_transition fsm symbol` | `fsm_transition (m) "a"` → `"s1"` | Take one step, return new state |
+| `fsm_current fsm` | `fsm_current (m)` → `"s0"` | Get current state |
+| `fsm_is_accepting fsm` | `fsm_is_accepting (m)` → `true` | Is current state accepting? |
+| `fsm_reset fsm` | `fsm_reset (m)` | Reset to start state |
+| `fsm_states fsm` | `fsm_states (m)` → `["s0","s1"]` | List all state names |
+| `fsm_transitions fsm` | `fsm_transitions (m)` | List all transitions as maps |
+| `fsm_run fsm symbols` | `fsm_run (m) ["a","b"]` | Run input, return result map |
+| `fsm_accepts fsm symbols` | `fsm_accepts (m) ["a","b"]` → `true` | Does FSM accept the input? |

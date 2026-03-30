@@ -1055,6 +1055,9 @@ class Parser:
         'omap_has', 'omap_size', 'omap_keys', 'omap_values',
         'omap_entries', 'omap_min', 'omap_max', 'omap_range',
         'omap_floor', 'omap_ceil', 'omap_to_map', 'omap_clear',
+        'fsm_create', 'fsm_add_state', 'fsm_add_transition', 'fsm_set_start',
+        'fsm_transition', 'fsm_current', 'fsm_is_accepting', 'fsm_reset',
+        'fsm_states', 'fsm_transitions', 'fsm_run', 'fsm_accepts',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1063,7 +1066,7 @@ class Parser:
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
         'll_create', 'bloom_create', 'deque_create',
-        'log_clear', 'table_create', 'omap_create'})
+        'log_clear', 'table_create', 'omap_create', 'fsm_create'})
 
     # ── Keyword dispatch table for _parse_statement_inner ──────────
     # Maps keyword values to method names. Methods that need special
@@ -2400,6 +2403,7 @@ class Interpreter:
         self._register_compression_builtins()
         self._register_logging_builtins()
         self._register_omap_builtins()
+        self._register_fsm_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -5830,6 +5834,162 @@ class Interpreter:
         self.builtins['omap_ceil'] = _omap_ceil
         self.builtins['omap_to_map'] = _omap_to_map
         self.builtins['omap_clear'] = _omap_clear
+
+    def _register_fsm_builtins(self):
+        """Register Finite State Machine builtins."""
+
+        class _SrvFSM:
+            """Finite State Machine for sauravcode."""
+            __slots__ = ('_states', '_accepting', '_transitions', '_start', '_current')
+            def __init__(self):
+                self._states = set()
+                self._accepting = set()
+                self._transitions = {}  # {(state, symbol): next_state}
+                self._start = None
+                self._current = None
+            def __repr__(self):
+                cur = self._current if self._current else '(none)'
+                return f"FSM(current={cur}, states={len(self._states)})"
+
+        def _check_fsm(fn, obj):
+            if not isinstance(obj, _SrvFSM):
+                raise RuntimeError(f"{fn}: first argument must be an FSM")
+
+        def _fsm_create(args):
+            if len(args) != 0:
+                raise RuntimeError("fsm_create: expected 0 arguments")
+            return _SrvFSM()
+
+        def _fsm_add_state(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("fsm_add_state: expected 2-3 arguments (fsm, name, accepting?)")
+            _check_fsm('fsm_add_state', args[0])
+            name = args[1]
+            if not isinstance(name, str):
+                raise RuntimeError("fsm_add_state: state name must be a string")
+            args[0]._states.add(name)
+            if len(args) == 3 and args[2]:
+                args[0]._accepting.add(name)
+            return None
+
+        def _fsm_add_transition(args):
+            if len(args) != 4:
+                raise RuntimeError("fsm_add_transition: expected 4 arguments (fsm, from_state, symbol, to_state)")
+            _check_fsm('fsm_add_transition', args[0])
+            from_s, symbol, to_s = args[1], args[2], args[3]
+            for v in (from_s, symbol, to_s):
+                if not isinstance(v, str):
+                    raise RuntimeError("fsm_add_transition: from_state, symbol, and to_state must be strings")
+            if from_s not in args[0]._states:
+                raise RuntimeError(f"fsm_add_transition: state '{from_s}' not found")
+            if to_s not in args[0]._states:
+                raise RuntimeError(f"fsm_add_transition: state '{to_s}' not found")
+            args[0]._transitions[(from_s, symbol)] = to_s
+            return None
+
+        def _fsm_set_start(args):
+            if len(args) != 2:
+                raise RuntimeError("fsm_set_start: expected 2 arguments (fsm, state)")
+            _check_fsm('fsm_set_start', args[0])
+            state = args[1]
+            if not isinstance(state, str):
+                raise RuntimeError("fsm_set_start: state must be a string")
+            if state not in args[0]._states:
+                raise RuntimeError(f"fsm_set_start: state '{state}' not found")
+            args[0]._start = state
+            args[0]._current = state
+            return None
+
+        def _fsm_transition(args):
+            if len(args) != 2:
+                raise RuntimeError("fsm_transition: expected 2 arguments (fsm, symbol)")
+            _check_fsm('fsm_transition', args[0])
+            fsm = args[0]
+            symbol = args[1]
+            if not isinstance(symbol, str):
+                raise RuntimeError("fsm_transition: symbol must be a string")
+            if fsm._current is None:
+                raise RuntimeError("fsm_transition: no current state (set start state first)")
+            key = (fsm._current, symbol)
+            if key not in fsm._transitions:
+                raise RuntimeError(f"fsm_transition: no transition from '{fsm._current}' on '{symbol}'")
+            fsm._current = fsm._transitions[key]
+            return fsm._current
+
+        def _fsm_current(args):
+            if len(args) != 1:
+                raise RuntimeError("fsm_current: expected 1 argument (fsm)")
+            _check_fsm('fsm_current', args[0])
+            return args[0]._current if args[0]._current else ""
+
+        def _fsm_is_accepting(args):
+            if len(args) != 1:
+                raise RuntimeError("fsm_is_accepting: expected 1 argument (fsm)")
+            _check_fsm('fsm_is_accepting', args[0])
+            return args[0]._current in args[0]._accepting if args[0]._current else False
+
+        def _fsm_reset(args):
+            if len(args) != 1:
+                raise RuntimeError("fsm_reset: expected 1 argument (fsm)")
+            _check_fsm('fsm_reset', args[0])
+            args[0]._current = args[0]._start
+            return None
+
+        def _fsm_states(args):
+            if len(args) != 1:
+                raise RuntimeError("fsm_states: expected 1 argument (fsm)")
+            _check_fsm('fsm_states', args[0])
+            return sorted(list(args[0]._states))
+
+        def _fsm_transitions(args):
+            if len(args) != 1:
+                raise RuntimeError("fsm_transitions: expected 1 argument (fsm)")
+            _check_fsm('fsm_transitions', args[0])
+            result = []
+            for (from_s, symbol), to_s in sorted(args[0]._transitions.items()):
+                result = result + [{"from": from_s, "symbol": symbol, "to": to_s}]
+            return result
+
+        def _fsm_run(args):
+            if len(args) != 2:
+                raise RuntimeError("fsm_run: expected 2 arguments (fsm, symbols_list)")
+            _check_fsm('fsm_run', args[0])
+            fsm = args[0]
+            symbols = args[1]
+            if not isinstance(symbols, list):
+                raise RuntimeError("fsm_run: second argument must be a list of symbols")
+            if fsm._start is None:
+                raise RuntimeError("fsm_run: no start state set")
+            fsm._current = fsm._start
+            path = [fsm._current]
+            for sym in symbols:
+                if not isinstance(sym, str):
+                    raise RuntimeError("fsm_run: each symbol must be a string")
+                key = (fsm._current, sym)
+                if key not in fsm._transitions:
+                    return {"accepted": False, "path": path, "stuck_on": sym}
+                fsm._current = fsm._transitions[key]
+                path = path + [fsm._current]
+            return {"accepted": fsm._current in fsm._accepting, "path": path, "final": fsm._current}
+
+        def _fsm_accepts(args):
+            if len(args) != 2:
+                raise RuntimeError("fsm_accepts: expected 2 arguments (fsm, symbols_list)")
+            result = _fsm_run(args)
+            return result.get("accepted", False)
+
+        self.builtins['fsm_create'] = _fsm_create
+        self.builtins['fsm_add_state'] = _fsm_add_state
+        self.builtins['fsm_add_transition'] = _fsm_add_transition
+        self.builtins['fsm_set_start'] = _fsm_set_start
+        self.builtins['fsm_transition'] = _fsm_transition
+        self.builtins['fsm_current'] = _fsm_current
+        self.builtins['fsm_is_accepting'] = _fsm_is_accepting
+        self.builtins['fsm_reset'] = _fsm_reset
+        self.builtins['fsm_states'] = _fsm_states
+        self.builtins['fsm_transitions'] = _fsm_transitions
+        self.builtins['fsm_run'] = _fsm_run
+        self.builtins['fsm_accepts'] = _fsm_accepts
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""
