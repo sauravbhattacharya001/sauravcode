@@ -1058,6 +1058,9 @@ class Parser:
         'fsm_create', 'fsm_add_state', 'fsm_add_transition', 'fsm_set_start',
         'fsm_transition', 'fsm_current', 'fsm_is_accepting', 'fsm_reset',
         'fsm_states', 'fsm_transitions', 'fsm_run', 'fsm_accepts',
+        'ring_create', 'ring_push', 'ring_peek', 'ring_pop',
+        'ring_size', 'ring_capacity', 'ring_is_empty', 'ring_is_full',
+        'ring_to_list', 'ring_clear', 'ring_get',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -5987,6 +5990,133 @@ class Interpreter:
         self.builtins['fsm_transitions'] = _fsm_transitions
         self.builtins['fsm_run'] = _fsm_run
         self.builtins['fsm_accepts'] = _fsm_accepts
+
+        # ── Ring Buffer builtins ──────────────────────────────────────
+        class _SrvRingBuffer:
+            """Fixed-size circular buffer for sauravcode."""
+            __slots__ = ('_buf', '_capacity', '_head', '_count')
+            def __init__(self, capacity):
+                self._capacity = capacity
+                self._buf = [None] * capacity
+                self._head = 0   # index of oldest element
+                self._count = 0
+            def __repr__(self):
+                return f"RingBuffer(size={self._count}, capacity={self._capacity})"
+
+        def _check_ring(fn, obj):
+            if not isinstance(obj, _SrvRingBuffer):
+                raise RuntimeError(f"{fn}: first argument must be a RingBuffer")
+
+        def _ring_create(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_create: expected 1 argument (capacity)")
+            cap = args[0]
+            if not isinstance(cap, (int, float)) or int(cap) < 1:
+                raise RuntimeError("ring_create: capacity must be a positive integer")
+            return _SrvRingBuffer(int(cap))
+
+        def _ring_push(args):
+            if len(args) != 2:
+                raise RuntimeError("ring_push: expected 2 arguments (ring, value)")
+            _check_ring('ring_push', args[0])
+            rb = args[0]
+            idx = (rb._head + rb._count) % rb._capacity
+            overwritten = None
+            if rb._count == rb._capacity:
+                overwritten = rb._buf[rb._head]
+                rb._head = (rb._head + 1) % rb._capacity
+            else:
+                rb._count += 1
+            rb._buf[idx] = args[1]
+            return overwritten
+
+        def _ring_peek(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_peek: expected 1 argument (ring)")
+            _check_ring('ring_peek', args[0])
+            rb = args[0]
+            if rb._count == 0:
+                raise RuntimeError("ring_peek: buffer is empty")
+            return rb._buf[rb._head]
+
+        def _ring_pop(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_pop: expected 1 argument (ring)")
+            _check_ring('ring_pop', args[0])
+            rb = args[0]
+            if rb._count == 0:
+                raise RuntimeError("ring_pop: buffer is empty")
+            val = rb._buf[rb._head]
+            rb._buf[rb._head] = None
+            rb._head = (rb._head + 1) % rb._capacity
+            rb._count -= 1
+            return val
+
+        def _ring_size(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_size: expected 1 argument (ring)")
+            _check_ring('ring_size', args[0])
+            return float(args[0]._count)
+
+        def _ring_capacity(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_capacity: expected 1 argument (ring)")
+            _check_ring('ring_capacity', args[0])
+            return float(args[0]._capacity)
+
+        def _ring_is_empty(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_is_empty: expected 1 argument (ring)")
+            _check_ring('ring_is_empty', args[0])
+            return args[0]._count == 0
+
+        def _ring_is_full(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_is_full: expected 1 argument (ring)")
+            _check_ring('ring_is_full', args[0])
+            return args[0]._count == args[0]._capacity
+
+        def _ring_to_list(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_to_list: expected 1 argument (ring)")
+            _check_ring('ring_to_list', args[0])
+            rb = args[0]
+            result = []
+            for i in range(rb._count):
+                result.append(rb._buf[(rb._head + i) % rb._capacity])
+            return result
+
+        def _ring_clear(args):
+            if len(args) != 1:
+                raise RuntimeError("ring_clear: expected 1 argument (ring)")
+            _check_ring('ring_clear', args[0])
+            rb = args[0]
+            rb._buf = [None] * rb._capacity
+            rb._head = 0
+            rb._count = 0
+            return None
+
+        def _ring_get(args):
+            if len(args) != 2:
+                raise RuntimeError("ring_get: expected 2 arguments (ring, index)")
+            _check_ring('ring_get', args[0])
+            rb = args[0]
+            idx = int(args[1])
+            if idx < 0 or idx >= rb._count:
+                raise RuntimeError(f"ring_get: index {idx} out of range (size={rb._count})")
+            return rb._buf[(rb._head + idx) % rb._capacity]
+
+        self.builtins['ring_create'] = _ring_create
+        self.builtins['ring_push'] = _ring_push
+        self.builtins['ring_peek'] = _ring_peek
+        self.builtins['ring_pop'] = _ring_pop
+        self.builtins['ring_size'] = _ring_size
+        self.builtins['ring_capacity'] = _ring_capacity
+        self.builtins['ring_is_empty'] = _ring_is_empty
+        self.builtins['ring_is_full'] = _ring_is_full
+        self.builtins['ring_to_list'] = _ring_to_list
+        self.builtins['ring_clear'] = _ring_clear
+        self.builtins['ring_get'] = _ring_get
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

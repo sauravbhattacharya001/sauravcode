@@ -1,0 +1,71 @@
+# ring_demo.srv - Ring Buffer (circular buffer) builtins demo
+
+# Create a ring buffer with capacity 5
+print "=== Ring Buffer Demo ==="
+string rb = ring_create 5
+
+# Push values
+ring_push (rb) 10
+ring_push (rb) 20
+ring_push (rb) 30
+print "After pushing 10, 20, 30:"
+print ring_to_list (rb)
+
+# Check size and capacity
+print "Size:"
+print ring_size (rb)
+print "Capacity:"
+print ring_capacity (rb)
+
+# Peek at the oldest element
+print "Peek (oldest):"
+print ring_peek (rb)
+
+# Get by index
+print "Element at index 1:"
+print ring_get (rb) 1
+
+# Fill the buffer
+ring_push (rb) 40
+ring_push (rb) 50
+print "Buffer full:"
+print ring_is_full (rb)
+print ring_to_list (rb)
+
+# Push when full - overwrites oldest, returns overwritten value
+string lost = ring_push (rb) 60
+print "Pushed 60, overwritten value:"
+print lost
+print "Buffer now:"
+print ring_to_list (rb)
+
+# Pop oldest
+string popped = ring_pop (rb)
+print "Popped:"
+print popped
+print "After pop:"
+print ring_to_list (rb)
+
+# Clear
+ring_clear (rb)
+print "After clear, is empty:"
+print ring_is_empty (rb)
+
+# Use case: sliding window of last 3 values
+print ""
+print "=== Sliding Window (last 3) ==="
+string window = ring_create 3
+ring_push (window) 1
+print ring_to_list (window)
+ring_push (window) 2
+print ring_to_list (window)
+ring_push (window) 3
+print ring_to_list (window)
+ring_push (window) 4
+print ring_to_list (window)
+ring_push (window) 5
+print ring_to_list (window)
+ring_push (window) 6
+print ring_to_list (window)
+ring_push (window) 7
+print ring_to_list (window)

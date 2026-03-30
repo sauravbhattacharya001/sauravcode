@@ -494,3 +494,21 @@ Build and run deterministic finite automata (DFA). Create states, define transit
 | `fsm_transitions fsm` | `fsm_transitions (m)` | List all transitions as maps |
 | `fsm_run fsm symbols` | `fsm_run (m) ["a","b"]` | Run input, return result map |
 | `fsm_accepts fsm symbols` | `fsm_accepts (m) ["a","b"]` → `true` | Does FSM accept the input? |
+
+## Ring Buffer
+
+Fixed-size circular buffer. When full, new pushes overwrite the oldest element. Useful for sliding windows, recent-history buffers, and bounded logs.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `ring_create capacity` | `rb = ring_create 5` | Create ring buffer with given capacity |
+| `ring_push ring value` | `ring_push (rb) 42` | Push value; returns overwritten value if full, else null |
+| `ring_peek ring` | `ring_peek (rb)` → `10` | Peek at oldest element |
+| `ring_pop ring` | `ring_pop (rb)` → `10` | Remove and return oldest element |
+| `ring_get ring index` | `ring_get (rb) 2` → `30` | Get element by index (0 = oldest) |
+| `ring_size ring` | `ring_size (rb)` → `3` | Current number of elements |
+| `ring_capacity ring` | `ring_capacity (rb)` → `5` | Maximum capacity |
+| `ring_is_empty ring` | `ring_is_empty (rb)` → `false` | Is buffer empty? |
+| `ring_is_full ring` | `ring_is_full (rb)` → `true` | Is buffer at capacity? |
+| `ring_to_list ring` | `ring_to_list (rb)` → `[1,2,3]` | Convert to list (oldest first) |
+| `ring_clear ring` | `ring_clear (rb)` | Remove all elements |
