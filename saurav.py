@@ -1065,6 +1065,8 @@ class Parser:
         'vigenere_encrypt', 'vigenere_decrypt',
         'xor_cipher', 'atbash', 'morse_encode', 'morse_decode',
         'md5', 'sha1', 'sha256', 'sha512', 'crc32', 'hmac_sha256',
+        # Binary pack/unpack
+        'pack', 'unpack', 'pack_size', 'pack_formats',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1073,7 +1075,8 @@ class Parser:
         'env_list', 'uuid_v4', 'random_float',
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
         'll_create', 'bloom_create', 'deque_create',
-        'log_clear', 'table_create', 'omap_create', 'fsm_create'})
+        'log_clear', 'table_create', 'omap_create', 'fsm_create',
+        'pack_formats'})
 
     # ── Keyword dispatch table for _parse_statement_inner ──────────
     # Maps keyword values to method names. Methods that need special
@@ -2413,6 +2416,7 @@ class Interpreter:
         self._register_fsm_builtins()
         self._register_cipher_builtins()
         self._register_hash_builtins()
+        self._register_pack_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -6347,6 +6351,117 @@ class Interpreter:
         self.builtins['sha512'] = _hash_fn('sha512', 'sha512')
         self.builtins['crc32'] = _crc32
         self.builtins['hmac_sha256'] = _hmac_sha256
+
+    # ── Binary pack/unpack builtins ──────────────────────
+
+    def _register_pack_builtins(self):
+        """Register binary pack/unpack builtins (struct-like)."""
+        import struct as _struct
+
+        _FORMAT_MAP = {
+            'byte': 'b', 'ubyte': 'B',
+            'short': 'h', 'ushort': 'H',
+            'int': 'i', 'uint': 'I',
+            'long': 'q', 'ulong': 'Q',
+            'float': 'f', 'double': 'd',
+            'bool': '?', 'char': 'c',
+        }
+
+        _ENDIAN_MAP = {
+            'little': '<', 'big': '>', 'native': '=', 'network': '!',
+        }
+
+        def _build_fmt(type_names, endian='little'):
+            prefix = _ENDIAN_MAP.get(endian)
+            if prefix is None:
+                raise RuntimeError(f"pack: unknown endian '{endian}', use little/big/native/network")
+            if isinstance(type_names, str):
+                type_names = [type_names]
+            if not isinstance(type_names, list):
+                raise RuntimeError("pack: types must be a string or list of strings")
+            codes = []
+            for tn in type_names:
+                if not isinstance(tn, str):
+                    raise RuntimeError(f"pack: type name must be a string, got {type(tn).__name__}")
+                code = _FORMAT_MAP.get(tn)
+                if code is None:
+                    raise RuntimeError(f"pack: unknown type '{tn}', use: {', '.join(sorted(_FORMAT_MAP))}")
+                codes.append(code)
+            return prefix + ''.join(codes)
+
+        _INT_CODES = frozenset('bBhHiIqQ')
+
+        def _coerce_values(type_names, values):
+            """Coerce sauravcode values (floats) to proper Python types for struct."""
+            if isinstance(type_names, str):
+                type_names = [type_names]
+            coerced = []
+            for i, v in enumerate(values):
+                tn = type_names[i] if i < len(type_names) else type_names[-1]
+                code = _FORMAT_MAP.get(tn, '')
+                if code in _INT_CODES and isinstance(v, float):
+                    coerced.append(int(v))
+                elif code == '?' and isinstance(v, (int, float)):
+                    coerced.append(bool(v))
+                elif code == 'c' and isinstance(v, str):
+                    coerced.append(v.encode('utf-8')[0:1])
+                else:
+                    coerced.append(v)
+            return coerced
+
+        def _pack(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("pack: expected 2-3 arguments (types, values [, endian])")
+            type_names = args[0]
+            values = args[1]
+            endian = args[2] if len(args) == 3 else 'little'
+            if not isinstance(values, list):
+                values = [values]
+            fmt = _build_fmt(type_names, endian)
+            coerced = _coerce_values(type_names if isinstance(type_names, list) else [type_names], values)
+            try:
+                packed = _struct.pack(fmt, *coerced)
+            except _struct.error as e:
+                raise RuntimeError(f"pack: {e}")
+            # Return as list of integers (bytes)
+            return list(packed)
+
+        def _unpack(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("unpack: expected 2-3 arguments (types, bytes_list [, endian])")
+            type_names = args[0]
+            byte_list = args[1]
+            endian = args[2] if len(args) == 3 else 'little'
+            if not isinstance(byte_list, list):
+                raise RuntimeError("unpack: second argument must be a list of byte values")
+            fmt = _build_fmt(type_names, endian)
+            raw = bytes(int(b) if isinstance(b, float) else b for b in byte_list)
+            try:
+                result = list(_struct.unpack(fmt, raw))
+            except _struct.error as e:
+                raise RuntimeError(f"unpack: {e}")
+            # Convert to sauravcode types: ints->floats, bytes->strings
+            return [v.decode('utf-8') if isinstance(v, bytes) else
+                    float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                    for v in result]
+
+        def _pack_size(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("pack_size: expected 1-2 arguments (types [, endian])")
+            type_names = args[0]
+            endian = args[1] if len(args) == 2 else 'little'
+            fmt = _build_fmt(type_names, endian)
+            return float(_struct.calcsize(fmt))
+
+        def _pack_formats(args):
+            if len(args) != 0:
+                raise RuntimeError("pack_formats: expected 0 arguments")
+            return sorted(_FORMAT_MAP.keys())
+
+        self.builtins['pack'] = _pack
+        self.builtins['unpack'] = _unpack
+        self.builtins['pack_size'] = _pack_size
+        self.builtins['pack_formats'] = _pack_formats
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

@@ -1,0 +1,59 @@
+# pack_demo.srv - Binary Pack/Unpack builtins demo
+
+print "=== Binary Pack/Unpack Demo ==="
+print ""
+
+# Pack a single integer (little-endian)
+packed = pack "int" [42]
+print "pack int 42:"
+print packed
+
+# Unpack it back
+unpacked = unpack "int" packed
+print "unpack:"
+print unpacked
+print ""
+
+# Pack multiple values with list of types
+multi = pack ["short", "float", "bool"] [1024, 3.14, true]
+print "pack short+float+bool:"
+print multi
+
+restored = unpack ["short", "float", "bool"] multi
+print "unpack:"
+print restored
+print ""
+
+# Big-endian packing
+be_bytes = pack "int" [256] "big"
+print "pack int 256 big-endian:"
+print be_bytes
+
+le_bytes = pack "int" [256] "little"
+print "pack int 256 little-endian:"
+print le_bytes
+print ""
+
+# Pack size query
+sz = pack_size ["int", "double", "byte"]
+print "pack_size int+double+byte:"
+print sz
+print ""
+
+# Byte-level values (RGB color)
+bytes_packed = pack ["ubyte", "ubyte", "ubyte"] [255, 128, 0]
+print "pack RGB(255,128,0):"
+print bytes_packed
+
+rgb = unpack ["ubyte", "ubyte", "ubyte"] bytes_packed
+print "unpack RGB:"
+print rgb
+print ""
+
+# Available formats
+fmts = pack_formats
+print "Available formats:"
+print fmts
+
+print ""
+print "=== Done ==="

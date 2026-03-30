@@ -525,3 +525,18 @@ Cryptographic hash functions and checksums for data integrity, verification, and
 | `sha512 text` | `sha512 "hello"`  `"9b71d224b..."` | SHA-512 hex digest |
 | `crc32 text` | `crc32 "hello"`  `"3610a686"` | CRC32 hex checksum |
 | `hmac_sha256 key message` | `hmac_sha256 "key" "msg"`  `"2d382..."` | HMAC-SHA256 hex digest |
+
+## Binary Pack/Unpack
+
+Pack and unpack binary data using struct-like format types.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `pack types values [endian]` | `pack "int" [42]` → `[42, 0, 0, 0]` | Pack values into byte list |
+| `unpack types byte_list [endian]` | `unpack "int" [42, 0, 0, 0]` → `[42]` | Unpack byte list into values |
+| `pack_size types [endian]` | `pack_size ["int", "double"]` → `12` | Size in bytes for given types |
+| `pack_formats` | `pack_formats` → `["bool", "byte", ...]` | List all available type names |
+
+**Types:** `byte`, `ubyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `float`, `double`, `bool`, `char`
+
+**Endian:** `"little"` (default), `"big"`, `"native"`, `"network"`
