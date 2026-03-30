@@ -1,0 +1,56 @@
+# emitter_demo.srv - Event Emitter (pub/sub) builtins demo
+
+# Create an emitter
+string bus = emitter_create
+
+# ── Subscribe to events ──────────────────────────
+function on_login username
+    print f"User logged in: {username}"
+
+function on_logout username
+    print f"User logged out: {username}"
+
+emitter_on (bus) "login" on_login
+emitter_on (bus) "logout" on_logout
+
+# ── Emit events ──────────────────────────────────
+print "--- Emitting login event ---"
+emitter_emit (bus) "login" "alice"
+
+print "--- Emitting logout event ---"
+emitter_emit (bus) "logout" "alice"
+
+# ── One-time listener (fires once then auto-removes) ──
+function on_first_error msg
+    print f"FIRST ERROR CAUGHT: {msg}"
+
+emitter_once (bus) "error" on_first_error
+
+print "--- Emitting error twice ---"
+emitter_emit (bus) "error" "disk full"
+emitter_emit (bus) "error" "timeout"
+print "(second error had no listener - once was consumed)"
+
+# ── Check listener counts ────────────────────────
+float total = emitter_count (bus)
+print f"Total listeners: {total}"
+
+float login_count = emitter_count (bus) "login"
+print f"Login listeners: {login_count}"
+
+# ── List event names ─────────────────────────────
+string events = emitter_listeners (bus)
+print f"Registered events: {events}"
+
+# ── Remove all listeners for an event ────────────
+emitter_off (bus) "login"
+print "--- After removing all login listeners ---"
+float fired = emitter_emit (bus) "login" "bob"
+print f"Listeners fired for login: {fired}"
+
+# ── Clear all listeners ──────────────────────────
+emitter_clear (bus)
+float remaining = emitter_count (bus)
+print f"Listeners after clear: {remaining}"
+
+print "Done!"

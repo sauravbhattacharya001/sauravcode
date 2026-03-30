@@ -1067,6 +1067,9 @@ class Parser:
         'md5', 'sha1', 'sha256', 'sha512', 'crc32', 'hmac_sha256',
         # Binary pack/unpack
         'pack', 'unpack', 'pack_size', 'pack_formats',
+        # Event emitter (pub/sub)
+        'emitter_create', 'emitter_on', 'emitter_once', 'emitter_emit',
+        'emitter_off', 'emitter_listeners', 'emitter_clear', 'emitter_count',
     })
 
     # Builtins that take zero arguments — auto-called when used standalone
@@ -1076,7 +1079,7 @@ class Parser:
         'stack_create', 'queue_create', 'cache_create', 'graph_create', 'heap_create', 'trie_create',
         'll_create', 'bloom_create', 'deque_create',
         'log_clear', 'table_create', 'omap_create', 'fsm_create',
-        'pack_formats'})
+        'pack_formats', 'emitter_create'})
 
     # ── Keyword dispatch table for _parse_statement_inner ──────────
     # Maps keyword values to method names. Methods that need special
@@ -2417,6 +2420,7 @@ class Interpreter:
         self._register_cipher_builtins()
         self._register_hash_builtins()
         self._register_pack_builtins()
+        self._register_emitter_builtins()
 
     # ── Data-driven math builtins ────────────────────────
 
@@ -6462,6 +6466,141 @@ class Interpreter:
         self.builtins['unpack'] = _unpack
         self.builtins['pack_size'] = _pack_size
         self.builtins['pack_formats'] = _pack_formats
+
+    def _register_emitter_builtins(self):
+        """Event emitter (pub/sub) builtins for inter-component communication."""
+        interpreter = self
+
+        class EventEmitter:
+            def __init__(self):
+                self._listeners = {}   # event_name -> [(callback, once)]
+            def on(self, event, callback, once=False):
+                if event not in self._listeners:
+                    self._listeners[event] = []
+                self._listeners[event].append((callback, once))
+            def off(self, event, callback=None):
+                if event not in self._listeners:
+                    return
+                if callback is None:
+                    del self._listeners[event]
+                else:
+                    self._listeners[event] = [
+                        (cb, o) for cb, o in self._listeners[event] if cb != callback
+                    ]
+            def emit(self, event, args):
+                if event not in self._listeners:
+                    return 0.0
+                to_remove = []
+                count = 0
+                for cb, once in self._listeners[event]:
+                    kind, obj = interpreter._resolve_callable(cb)
+                    interpreter._call_resolved(kind, obj, args)
+                    count += 1
+                    if once:
+                        to_remove.append(cb)
+                for cb in to_remove:
+                    self._listeners[event] = [
+                        (c, o) for c, o in self._listeners[event] if c is not cb
+                    ]
+                return float(count)
+            def listeners(self, event=None):
+                if event is not None:
+                    return [cb for cb, _ in self._listeners.get(event, [])]
+                return list(self._listeners.keys())
+            def clear(self):
+                self._listeners.clear()
+            def count(self, event=None):
+                if event is not None:
+                    return float(len(self._listeners.get(event, [])))
+                return float(sum(len(v) for v in self._listeners.values()))
+
+        def _emitter_create(args):
+            if len(args) != 0:
+                raise RuntimeError("emitter_create: expected 0 arguments")
+            return EventEmitter()
+
+        def _emitter_on(args):
+            if len(args) != 3:
+                raise RuntimeError("emitter_on: expected 3 arguments (emitter, event, callback)")
+            em, event, cb = args
+            if not isinstance(em, EventEmitter):
+                raise RuntimeError("emitter_on: first argument must be an emitter")
+            if not isinstance(event, str):
+                raise RuntimeError("emitter_on: event name must be a string")
+            em.on(event, cb)
+            return em
+
+        def _emitter_once(args):
+            if len(args) != 3:
+                raise RuntimeError("emitter_once: expected 3 arguments (emitter, event, callback)")
+            em, event, cb = args
+            if not isinstance(em, EventEmitter):
+                raise RuntimeError("emitter_once: first argument must be an emitter")
+            if not isinstance(event, str):
+                raise RuntimeError("emitter_once: event name must be a string")
+            em.on(event, cb, once=True)
+            return em
+
+        def _emitter_emit(args):
+            if len(args) < 2:
+                raise RuntimeError("emitter_emit: expected at least 2 arguments (emitter, event, ...data)")
+            em = args[0]
+            event = args[1]
+            data = args[2:]
+            if not isinstance(em, EventEmitter):
+                raise RuntimeError("emitter_emit: first argument must be an emitter")
+            if not isinstance(event, str):
+                raise RuntimeError("emitter_emit: event name must be a string")
+            return em.emit(event, data)
+
+        def _emitter_off(args):
+            if len(args) < 2 or len(args) > 3:
+                raise RuntimeError("emitter_off: expected 2-3 arguments (emitter, event [, callback])")
+            em = args[0]
+            event = args[1]
+            cb = args[2] if len(args) == 3 else None
+            if not isinstance(em, EventEmitter):
+                raise RuntimeError("emitter_off: first argument must be an emitter")
+            if not isinstance(event, str):
+                raise RuntimeError("emitter_off: event name must be a string")
+            em.off(event, cb)
+            return em
+
+        def _emitter_listeners(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("emitter_listeners: expected 1-2 arguments (emitter [, event])")
+            em = args[0]
+            event = args[1] if len(args) == 2 else None
+            if not isinstance(em, EventEmitter):
+                raise RuntimeError("emitter_listeners: first argument must be an emitter")
+            return em.listeners(event)
+
+        def _emitter_clear(args):
+            if len(args) != 1:
+                raise RuntimeError("emitter_clear: expected 1 argument (emitter)")
+            em = args[0]
+            if not isinstance(em, EventEmitter):
+                raise RuntimeError("emitter_clear: first argument must be an emitter")
+            em.clear()
+            return em
+
+        def _emitter_count(args):
+            if len(args) < 1 or len(args) > 2:
+                raise RuntimeError("emitter_count: expected 1-2 arguments (emitter [, event])")
+            em = args[0]
+            event = args[1] if len(args) == 2 else None
+            if not isinstance(em, EventEmitter):
+                raise RuntimeError("emitter_count: first argument must be an emitter")
+            return em.count(event)
+
+        self.builtins['emitter_create'] = _emitter_create
+        self.builtins['emitter_on'] = _emitter_on
+        self.builtins['emitter_once'] = _emitter_once
+        self.builtins['emitter_emit'] = _emitter_emit
+        self.builtins['emitter_off'] = _emitter_off
+        self.builtins['emitter_listeners'] = _emitter_listeners
+        self.builtins['emitter_clear'] = _emitter_clear
+        self.builtins['emitter_count'] = _emitter_count
 
     def _builtin_sort_by(self, args):
         """sort_by(func, list) - sort list by key function result"""

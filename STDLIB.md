@@ -540,3 +540,18 @@ Pack and unpack binary data using struct-like format types.
 **Types:** `byte`, `ubyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `float`, `double`, `bool`, `char`
 
 **Endian:** `"little"` (default), `"big"`, `"native"`, `"network"`
+
+## Event Emitter (Pub/Sub)
+
+In-process publish/subscribe event system for decoupled component communication.
+
+| Function | Example | Description |
+|----------|---------|-------------|
+| `emitter_create` | `string bus = emitter_create` | Create a new event emitter |
+| `emitter_on emitter event callback` | `emitter_on (bus) "click" handler` | Subscribe to an event |
+| `emitter_once emitter event callback` | `emitter_once (bus) "init" setup` | Subscribe once (auto-removes after first fire) |
+| `emitter_emit emitter event ...data` | `emitter_emit (bus) "click" 42` | Emit event, returns number of listeners called |
+| `emitter_off emitter event [callback]` | `emitter_off (bus) "click"` | Remove listener(s) for event |
+| `emitter_listeners emitter [event]` | `emitter_listeners (bus)` → `["click"]` | List event names or callbacks |
+| `emitter_count emitter [event]` | `emitter_count (bus) "click"` → `1` | Count total or per-event listeners |
+| `emitter_clear emitter` | `emitter_clear (bus)` | Remove all listeners |
