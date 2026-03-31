@@ -211,7 +211,11 @@ class Profiler:
 
     def format_report(self, sort_by='total_time', top_n=30, threshold_ms=0,
                       show_callgraph=False):
-        """Generate a human-readable profiling report."""
+        """Generate a human-readable profiling report.
+
+        Delegates each report section to a dedicated helper method for
+        clarity and testability.
+        """
         lines = []
         sep = '=' * 78
         lines.append(sep)
@@ -228,7 +232,18 @@ class Profiler:
             lines.append('  No functions matched the filter criteria.')
             return '\n'.join(lines)
 
-        # Table header
+        self._format_function_table(entries, lines)
+        self._format_time_distribution(entries, lines)
+        if show_callgraph:
+            self._format_call_graph(entries, lines)
+        self._format_hot_spots(entries, lines)
+        self._format_recommendations(entries, lines)
+
+        lines.append(sep)
+        return '\n'.join(lines)
+
+    def _format_function_table(self, entries, lines):
+        """Append the per-function timing table to *lines*."""
         hdr = '  {:<30} {:>7} {:>10} {:>10} {:>10} {:>10}'.format(
             'Function', 'Calls', 'Total(ms)', 'Self(ms)', 'Avg(ms)', 'Max(ms)')
         lines.append(hdr)
@@ -245,60 +260,64 @@ class Profiler:
                 stats.avg_time * 1000,
                 stats.max_time * 1000)
             lines.append(row)
-
         lines.append('')
 
-        # Percentage breakdown
-        if self.wall_time > 0:
-            lines.append('  Time Distribution:')
-            for stats in entries[:10]:
-                pct = (stats.total_time / self.wall_time) * 100
-                bar_len = int(pct / 2)
-                bar = '#' * bar_len
-                name = stats.name[:25]
-                lines.append('    {:<25} {:5.1f}% |{}'.format(name, pct, bar))
-            lines.append('')
+    def _format_time_distribution(self, entries, lines):
+        """Append the percentage-bar time distribution to *lines*."""
+        if self.wall_time <= 0:
+            return
+        lines.append('  Time Distribution:')
+        for stats in entries[:10]:
+            pct = (stats.total_time / self.wall_time) * 100
+            bar_len = int(pct / 2)
+            bar = '#' * bar_len
+            name = stats.name[:25]
+            lines.append('    {:<25} {:5.1f}% |{}'.format(name, pct, bar))
+        lines.append('')
 
-        # Call graph
-        if show_callgraph and entries:
-            lines.append('  Call Graph:')
-            lines.append('  ' + '-' * 40)
-            shown = set()
-            for stats in entries[:15]:
-                if stats.name in shown:
-                    continue
-                shown.add(stats.name)
-                if stats.callees:
-                    pairs = sorted(stats.callees.items(),
-                                   key=lambda x: x[1], reverse=True)[:5]
-                    callees_str = ', '.join(
-                        '{}({})'.format(c, n) for c, n in pairs)
-                    lines.append('    {} -> {}'.format(stats.name, callees_str))
-            lines.append('')
+    def _format_call_graph(self, entries, lines):
+        """Append the caller→callee graph section to *lines*."""
+        if not entries:
+            return
+        lines.append('  Call Graph:')
+        lines.append('  ' + '-' * 40)
+        shown = set()
+        for stats in entries[:15]:
+            if stats.name in shown:
+                continue
+            shown.add(stats.name)
+            if stats.callees:
+                pairs = sorted(stats.callees.items(),
+                               key=lambda x: x[1], reverse=True)[:5]
+                callees_str = ', '.join(
+                    '{}({})'.format(c, n) for c, n in pairs)
+                lines.append('    {} -> {}'.format(stats.name, callees_str))
+        lines.append('')
 
-        # Hot spots
+    def _format_hot_spots(self, entries, lines):
+        """Append the top-5 hot-spot list (by self time) to *lines*."""
         self_sorted = sorted(
             [e for e in entries if e.self_time > 0],
             key=lambda s: s.self_time, reverse=True
         )
-        if self_sorted:
-            lines.append('  Hot Spots (by self time):')
-            for i, stats in enumerate(self_sorted[:5], 1):
-                pct = (stats.self_time / self.wall_time * 100) if self.wall_time > 0 else 0
-                lines.append('    {}. {} -- {:.3f} ms ({:.1f}%)'.format(
-                    i, stats.name, stats.self_time * 1000, pct))
-            lines.append('')
+        if not self_sorted:
+            return
+        lines.append('  Hot Spots (by self time):')
+        for i, stats in enumerate(self_sorted[:5], 1):
+            pct = (stats.self_time / self.wall_time * 100) if self.wall_time > 0 else 0
+            lines.append('    {}. {} -- {:.3f} ms ({:.1f}%)'.format(
+                i, stats.name, stats.self_time * 1000, pct))
+        lines.append('')
 
-        # Recommendations
+    def _format_recommendations(self, entries, lines):
+        """Append auto-generated optimisation recommendations to *lines*."""
         recommendations = self._generate_recommendations(entries)
-        if recommendations:
-            lines.append('  Recommendations:')
-            for rec in recommendations:
-                lines.append('    * ' + rec)
-            lines.append('')
-
-        lines.append(sep)
-        return '\n'.join(lines)
+        if not recommendations:
+            return
+        lines.append('  Recommendations:')
+        for rec in recommendations:
+            lines.append('    * ' + rec)
+        lines.append('')
 
     def _generate_recommendations(self, entries):
         recs = []
