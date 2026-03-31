@@ -8735,24 +8735,41 @@ class Interpreter:
             self.execute_body(node.else_body)
 
     def execute_while(self, node):
-        """Execute while loop with iteration limit for DoS protection."""
+        """Execute while loop with iteration limit for DoS protection.
+
+        Hoists method references (evaluate, _is_truthy, execute_body) to
+        locals so the per-iteration attribute lookups go through LOAD_FAST
+        instead of LOAD_ATTR.  On CPython this saves ~30-50 ns per
+        iteration — meaningful for tight loops with millions of cycles.
+        """
         iterations = 0
-        while self._is_truthy(self.evaluate(node.condition)):
+        _evaluate = self.evaluate
+        _is_truthy = self._is_truthy
+        _execute_body = self.execute_body
+        _condition = node.condition
+        _body = node.body
+        _max = MAX_LOOP_ITERATIONS
+        while _is_truthy(_evaluate(_condition)):
             iterations += 1
-            if iterations > MAX_LOOP_ITERATIONS:
+            if iterations > _max:
                 raise RuntimeError(
-                    f"Maximum loop iterations ({MAX_LOOP_ITERATIONS:,}) exceeded "
+                    f"Maximum loop iterations ({_max:,}) exceeded "
                     f"in while loop"
                 )
             try:
-                self.execute_body(node.body)
+                _execute_body(_body)
             except BreakSignal:
                 break
             except ContinueSignal:
                 continue
 
     def execute_for(self, node):
-        """Execute for loop (range-based) with iteration limit for DoS protection."""
+        """Execute for loop (range-based) with iteration limit for DoS protection.
+
+        Hoists ``self.variables`` dict and ``node.var`` to locals so the
+        loop variable assignment uses LOAD_FAST + STORE_SUBSCR instead of
+        LOAD_ATTR + LOAD_ATTR + STORE_SUBSCR on each iteration.
+        """
         start = int(self.evaluate(node.start))
         end = int(self.evaluate(node.end))
         if abs(end - start) > MAX_LOOP_ITERATIONS:
@@ -8760,10 +8777,14 @@ class Interpreter:
                 f"For loop range ({abs(end - start):,}) exceeds maximum "
                 f"iterations ({MAX_LOOP_ITERATIONS:,})"
             )
+        _variables = self.variables
+        _var = node.var
+        _execute_body = self.execute_body
+        _body = node.body
         for i in range(start, end):
-            self.variables[node.var] = i
+            _variables[_var] = i
             try:
-                self.execute_body(node.body)
+                _execute_body(_body)
             except BreakSignal:
                 break
             except ContinueSignal:
@@ -8800,10 +8821,14 @@ class Interpreter:
                 f"For-each collection size ({size:,}) exceeds maximum "
                 f"iterations ({MAX_LOOP_ITERATIONS:,})"
             )
+        _variables = self.variables
+        _var = node.var
+        _execute_body = self.execute_body
+        _body = node.body
         for item in items:
-            self.variables[node.var] = item
+            _variables[_var] = item
             try:
-                self.execute_body(node.body)
+                _execute_body(_body)
             except BreakSignal:
                 break
             except ContinueSignal:
@@ -8987,9 +9012,17 @@ class Interpreter:
             debug(f"Imported module: {node.module_path}")
 
     def execute_body(self, body):
-        """Execute a list of statements. Propagates ReturnSignal."""
+        """Execute a list of statements. Propagates ReturnSignal.
+
+        Fast-paths single-statement bodies (common for simple loops and
+        if-branches) to skip the for-loop iteration overhead.
+        """
+        if len(body) == 1:
+            self.interpret(body[0])
+            return
+        _interpret = self.interpret
         for stmt in body:
-            self.interpret(stmt)
+            _interpret(stmt)
 
     def _is_truthy(self, value):
         """Determine truthiness of a value.
