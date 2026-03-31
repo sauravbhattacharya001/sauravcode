@@ -4031,6 +4031,21 @@ class Interpreter:
         self.builtins['re_split'] = _re_split
         self.builtins['re_escape'] = _re_escape
 
+        # Graph and JSON builtins extracted to their own registration methods
+        self._register_graph_builtins()
+        self._register_json_builtins()
+
+    def _register_graph_builtins(self):
+        """Register graph data-structure builtins.
+
+        Provides ``graph_create``, ``graph_add_node``, ``graph_add_edge``,
+        ``graph_neighbors``, ``graph_nodes``, ``graph_edges``,
+        ``graph_has_node``, ``graph_has_edge``, ``graph_remove_node``,
+        ``graph_remove_edge``, ``graph_degree``, ``graph_bfs``,
+        ``graph_dfs``, ``graph_shortest_path``, ``graph_connected``.
+        """
+        interpreter = self
+
         # ── Graph builtins ──
         def _graph_create(args):
             if len(args) == 0:
@@ -4163,6 +4178,16 @@ class Interpreter:
         self.builtins['graph_dfs'] = _graph_dfs
         self.builtins['graph_shortest_path'] = _graph_shortest_path
         self.builtins['graph_connected'] = _graph_connected
+
+    def _register_json_builtins(self):
+        """Register JSON manipulation builtins.
+
+        Provides ``json_encode``, ``json_decode``, ``json_pretty``,
+        ``json_get``, ``json_set``, ``json_delete``, ``json_keys``,
+        ``json_values``, ``json_has``, ``json_merge``, ``json_flatten``,
+        ``json_query``.
+        """
+        interpreter = self
 
         # ── JSON builtins ──────────────────────────────────────────
         import json as _json
