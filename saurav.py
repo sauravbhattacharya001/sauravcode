@@ -2938,7 +2938,7 @@ class Interpreter:
         import platform as _platform
         import socket as _socket
 
-        _start_time = _time.time()
+        _start_time = _time.perf_counter()
 
         def _env_get(args):
             if len(args) < 1 or len(args) > 2:
@@ -3012,7 +3012,7 @@ class Interpreter:
         def _sys_uptime(args):
             if len(args) != 0:
                 raise RuntimeError("sys_uptime takes no arguments")
-            return round(_time.time() - _start_time, 3)
+            return round(_time.perf_counter() - _start_time, 3)
 
         def _sys_hostname(args):
             if len(args) != 0:
@@ -5492,7 +5492,7 @@ class Interpreter:
             if len(args) != 1:
                 raise RuntimeError("perf_start: expected 1 argument (label)")
             label = str(args[0])
-            _perf_timers[label] = _time.time()
+            _perf_timers[label] = _time.perf_counter()
             return label
 
         def _perf_stop(args):
@@ -5502,7 +5502,7 @@ class Interpreter:
             label = str(args[0])
             if label not in _perf_timers:
                 raise RuntimeError(f"perf_stop: no timer named '{label}'")
-            elapsed = _time.time() - _perf_timers[label]
+            elapsed = _time.perf_counter() - _perf_timers[label]
             del _perf_timers[label]
             return round(elapsed, 6)
 
@@ -5513,7 +5513,7 @@ class Interpreter:
             label = str(args[0])
             if label not in _perf_timers:
                 raise RuntimeError(f"perf_elapsed: no timer named '{label}'")
-            elapsed = _time.time() - _perf_timers[label]
+            elapsed = _time.perf_counter() - _perf_timers[label]
             return round(elapsed, 6)
 
         self.builtins['log_info'] = _log_info
