@@ -7121,9 +7121,12 @@ class Interpreter:
             raise RuntimeError("map expects a function name or lambda as first argument")
         if not isinstance(lst, list):
             raise RuntimeError("map expects a list as second argument")
-        # Resolve callable once outside the loop to avoid N isinstance
-        # checks and dict lookups for an N-element list.
+        # Fast path: lambda callbacks get a reusable scope to avoid
+        # per-element ChainMap + dict allocation overhead.
         kind, obj = self._resolve_callable(func_ref)
+        if kind == 'lambda':
+            call = self._make_lambda_caller(obj)
+            return [call([item]) for item in lst]
         call = self._call_resolved
         return [call(kind, obj, [item]) for item in lst]
 
@@ -7141,8 +7144,11 @@ class Interpreter:
         if not isinstance(lst, list):
             raise RuntimeError("filter expects a list as second argument")
         kind, obj = self._resolve_callable(func_ref)
-        call = self._call_resolved
         truthy = self._is_truthy
+        if kind == 'lambda':
+            call = self._make_lambda_caller(obj)
+            return [item for item in lst if truthy(call([item]))]
+        call = self._call_resolved
         return [item for item in lst
                 if truthy(call(kind, obj, [item]))]
 
@@ -7160,6 +7166,12 @@ class Interpreter:
         if not isinstance(lst, list):
             raise RuntimeError("reduce expects a list as second argument")
         kind, obj = self._resolve_callable(func_ref)
+        if kind == 'lambda':
+            call = self._make_lambda_caller(obj)
+            acc = init
+            for item in lst:
+                acc = call([acc, item])
+            return acc
         call = self._call_resolved
         acc = init
         for item in lst:
@@ -7181,6 +7193,11 @@ class Interpreter:
         if not isinstance(lst, list):
             raise RuntimeError("each expects a list as second argument")
         kind, obj = self._resolve_callable(func_ref)
+        if kind == 'lambda':
+            call = self._make_lambda_caller(obj)
+            for item in lst:
+                call([item])
+            return lst
         call = self._call_resolved
         for item in lst:
             call(kind, obj, [item])
@@ -9423,6 +9440,56 @@ class Interpreter:
             return self.evaluate(lam.body_expr)
         finally:
             self.variables = saved
+
+    def _make_lambda_caller(self, lam):
+        """Create a reusable fast-path caller for a lambda in HOF loops.
+
+        Returns a function ``call(args) -> result`` that reuses a single
+        pre-allocated locals dict and ChainMap across all invocations.
+        This eliminates per-call ``ChainMap({}, closure)`` construction
+        and ``zip(params, args)`` overhead — significant when map/filter/
+        reduce/each invoke the same lambda thousands of times.
+
+        The caller is **not** reentrant: it must only be used in a
+        single-threaded, non-recursive HOF loop (which is the case for
+        all sauravcode HOFs).
+        """
+        params = lam.params
+        body_expr = lam.body_expr
+        nparams = len(params)
+        # Pre-allocate the locals dict and ChainMap once.
+        local = {}
+        scope = ChainMap(local, lam.closure)
+        _evaluate = self.evaluate
+
+        def call(args):
+            if len(args) != nparams:
+                raise RuntimeError(
+                    f"Lambda expects {nparams} argument(s), "
+                    f"got {len(args)}"
+                )
+            saved = self.variables
+            # Reuse the pre-allocated local dict: clear and refill.
+            # For 1-2 params (the common case), direct assignment is
+            # faster than local.clear() + zip().
+            if nparams == 1:
+                local.clear()
+                local[params[0]] = args[0]
+            elif nparams == 2:
+                local.clear()
+                local[params[0]] = args[0]
+                local[params[1]] = args[1]
+            else:
+                local.clear()
+                for p, v in zip(params, args):
+                    local[p] = v
+            self.variables = scope
+            try:
+                return _evaluate(body_expr)
+            finally:
+                self.variables = saved
+
+        return call
 
     def _eval_ternary(self, node):
         condition = self.evaluate(node.condition)
