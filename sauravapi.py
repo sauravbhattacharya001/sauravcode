@@ -199,7 +199,14 @@ class APIHandler(BaseHTTPRequestHandler):
         params = list(func.params) if func.params else []
 
         # Read body — enforce size limit to prevent DoS
-        content_len = int(self.headers.get("Content-Length", 0))
+        try:
+            content_len = int(self.headers.get("Content-Length", 0))
+        except (ValueError, TypeError):
+            self._json_response(400, {"error": "Invalid Content-Length header"})
+            return
+        if content_len < 0:
+            self._json_response(400, {"error": "Negative Content-Length is not allowed"})
+            return
         if content_len > self.max_body_size:
             self._json_response(413, {
                 "error": f"Request body too large ({content_len} bytes). "
@@ -259,7 +266,14 @@ class APIHandler(BaseHTTPRequestHandler):
             exc_info = [None]
             timed_out = [False]
 
-            _semaphore_released = threading.Event()
+            _release_lock = threading.Lock()
+            _released = [False]
+
+            def _release_semaphore():
+                with _release_lock:
+                    if not _released[0]:
+                        _released[0] = True
+                        _exec_semaphore.release()
 
             def _execute():
                 nonlocal result
@@ -274,9 +288,7 @@ class APIHandler(BaseHTTPRequestHandler):
                     exc_info[0] = e
                 finally:
                     sys.stdout = old_stdout
-                    if not _semaphore_released.is_set():
-                        _semaphore_released.set()
-                        _exec_semaphore.release()
+                    _release_semaphore()
 
             thread = threading.Thread(target=_execute, daemon=True)
             thread.start()
@@ -288,9 +300,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 # permanently consume a concurrency slot, which would
                 # lead to a full DoS after MAX_CONCURRENT_EXECUTIONS
                 # timed-out requests.
-                if not _semaphore_released.is_set():
-                    _semaphore_released.set()
-                    _exec_semaphore.release()
+                _release_semaphore()
 
             if timed_out[0]:
                 self._json_response(504, {
