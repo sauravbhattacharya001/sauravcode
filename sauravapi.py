@@ -128,12 +128,14 @@ class APIHandler(BaseHTTPRequestHandler):
     max_body_size = MAX_BODY_SIZE  # set by serve()
 
     def _set_cors(self):
+        """Append CORS headers to the current response if CORS is enabled."""
         if self.enable_cors:
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _json_response(self, code, obj):
+        """Send *obj* as a JSON HTTP response with the given status *code*."""
         body = json.dumps(obj, indent=2).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -143,6 +145,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _endpoints_list(self):
+        """Return a list of public endpoint descriptors for the index route."""
         endpoints = []
         for name, func in sorted(self.interp.functions.items()):
             if name.startswith("_"):
@@ -152,11 +155,13 @@ class APIHandler(BaseHTTPRequestHandler):
         return endpoints
 
     def do_OPTIONS(self):
+        """Handle CORS preflight OPTIONS requests."""
         self.send_response(204)
         self._set_cors()
         self.end_headers()
 
     def do_GET(self):
+        """Serve the endpoint index (``/``) or per-endpoint usage info."""
         path = self.path.rstrip("/")
         if path == "" or path == "/":
             self._json_response(200, {
@@ -181,6 +186,12 @@ class APIHandler(BaseHTTPRequestHandler):
         self._json_response(404, {"error": f"Unknown endpoint: /{fn_name}"})
 
     def do_POST(self):
+        """Execute a sauravcode function and return its result as JSON.
+
+        Reads the JSON request body, validates parameters, runs the
+        function in an isolated interpreter copy with a timeout guard,
+        and returns the result (or an appropriate error).
+        """
         fn_name = self.path.lstrip("/").rstrip("/")
 
         if not fn_name:
@@ -331,6 +342,7 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json_response(500, {"error": str(e)})
 
     def log_message(self, fmt, *args):
+        """Write a compact log line to stderr (overrides default verbose format)."""
         # Cleaner log format
         sys.stderr.write(f"[sauravapi] {args[0]} {args[1]} {args[2]}\n")
 
@@ -408,6 +420,7 @@ def list_endpoints(srv_path):
 # ---------------------------------------------------------------------------
 
 def main():
+    """Parse CLI arguments and launch the API server or list endpoints."""
     parser = argparse.ArgumentParser(
         prog="sauravapi",
         description="Serve sauravcode functions as REST API endpoints.",
