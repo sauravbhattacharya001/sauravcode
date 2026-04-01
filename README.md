@@ -561,6 +561,7 @@ Sauravcode ships with a comprehensive suite of developer tools:
 | **Watch Mode** | `python sauravwatch.py file.srv` | Auto-rerun on file changes (live reload) |
 | **Snapshot Test** | `python sauravsnap.py file.srv` | Snapshot testing for output verification |
 | **Enhanced REPL** | `python sauravrepl.py` | REPL with history, multi-line editing, and syntax hints |
+| **Canvas** | `python sauravcanvas.py file.srv` | Turtle graphics — generate SVG/HTML from drawing commands |
 
 ## 🏗️ Architecture
 
@@ -595,6 +596,7 @@ sauravcode/
 ├── sauravrepl.py       # Enhanced REPL with history
 ├── sauravsnap.py       # Snapshot testing
 ├── sauravwatch.py      # File watcher (live reload)
+├── sauravcanvas.py     # Turtle graphics (SVG/HTML output)
 ├── tests/              # 2,300+ pytest tests (40 test modules)
 ├── editors/
 │   └── vscode/         # VS Code extension (syntax, snippets)

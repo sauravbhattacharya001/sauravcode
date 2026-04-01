@@ -51,6 +51,7 @@ sauravcode-compile = "sauravcode.cli:main_compile"
 sauravcode-snap = "sauravcode.cli:main_snap"
 sauravcode-cheat = "sauravcode.cli:main_cheat"
 sauravcode-api = "sauravcode.cli:main_api"
+sauravcode-canvas = "sauravcode.cli:main_canvas"
 
 [tool.setuptools.packages.find]
 include = ["sauravcode*"]

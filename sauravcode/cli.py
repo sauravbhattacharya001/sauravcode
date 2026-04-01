@@ -71,3 +71,8 @@ def main_api():
 def main_cheat():
     """Entry point for the ``sauravcode-cheat`` console script (cheat sheet)."""
     _run_module("sauravcheat.py", "cheat sheet")
+
+
+def main_canvas():
+    """Entry point for the ``sauravcode-canvas`` console script (turtle graphics)."""
+    _run_module("sauravcanvas.py", "canvas")

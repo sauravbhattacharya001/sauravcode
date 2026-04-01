@@ -1,0 +1,36 @@
+# canvas_demo.srv — Turtle graphics demo for sauravcanvas
+# Run: python sauravcanvas.py canvas_demo.srv --html -o canvas_demo.html
+
+# --- Colorful spiral ---
+canvas_bg "#1a1a2e"
+set colors to ["#e76f51", "#f4a261", "#e9c46a", "#2a9d8f", "#264653", "#7fdbca"]
+
+pen_width 2
+for i in range 0 90
+    pen_color colors[i % 6]
+    forward i * 2.5
+    turn_right 59
+
+# --- Star in the corner ---
+pen_up
+goto_xy 650 100
+pen_down
+pen_color "#e9c46a"
+pen_width 3
+for i in range 0 5
+    forward 60
+    turn_right 144
+
+# --- Row of circles ---
+pen_up
+goto_xy 100 500
+pen_down
+set circle_colors to ["#e76f51", "#f4a261", "#e9c46a", "#2a9d8f", "#264653"]
+pen_width 2
+for i in range 0 5
+    pen_color circle_colors[i]
+    fill_color circle_colors[i]
+    circle 15
+    pen_up
+    forward 80
+    pen_down
