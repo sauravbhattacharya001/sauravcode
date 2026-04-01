@@ -31,18 +31,20 @@ def find_comment_offset(line: str) -> Optional[int]:
     used by both :func:`strip_comment` and :func:`split_trailing_comment`.
     """
     in_string = False
+    quote_char = None
     i = 0
     while i < len(line):
         ch = line[i]
-        if ch == '"' and not in_string:
+        if ch in ('"', "'") and not in_string:
             in_string = True
+            quote_char = ch
             i += 1
             continue
         if in_string:
             if ch == '\\' and i + 1 < len(line):
                 i += 2          # skip escaped character
                 continue
-            if ch == '"':
+            if ch == quote_char:
                 in_string = False
             i += 1
             continue

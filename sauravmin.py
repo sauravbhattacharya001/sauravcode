@@ -33,6 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import tokenize
+from sauravtext import strip_comment
 
 __version__ = "1.0.0"
 
@@ -103,13 +104,15 @@ def _build_rename_map(identifiers):
     return {name: next(gen) for name in identifiers}
 
 
+_SCAN_IDENT_RE = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
+
+
 def _scan_tokens(source):
     """Yield (kind, text, start, end) for each segment of source.
 
     Kinds: 'string', 'comment', 'ident', 'other'.
     Correctly handles escape sequences inside strings and #-comments.
     """
-    _IDENT_RE = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
     i = 0
     n = len(source)
     while i < n:
@@ -136,7 +139,7 @@ def _scan_tokens(source):
             yield ('string', source[start:i], start, i)
             continue
         if ch.isalpha() or ch == '_':
-            m = _IDENT_RE.match(source, i)
+            m = _SCAN_IDENT_RE.match(source, i)
             if m:
                 yield ('ident', m.group(0), i, m.end())
                 i = m.end()
@@ -159,11 +162,11 @@ def _apply_renames(source, rename_map):
 
 
 def _strip_comments(line):
-    """Remove comments from a line, preserving strings."""
-    for kind, _text, start, _end in _scan_tokens(line):
-        if kind == 'comment':
-            return line[:start].rstrip()
-    return line
+    """Remove comments from a line, preserving strings.
+
+    Delegates to sauravtext.strip_comment for consistent behaviour.
+    """
+    return strip_comment(line).rstrip()
 
 
 def minify(source, level=2):
