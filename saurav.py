@@ -378,8 +378,7 @@ token_specification = [
     ('COLON',    r':'),   # Colon (for map key-value pairs)
     ('COMMA',    r','),   # Comma separator
     ('DOT',      r'\.'),  # Dot accessor (for enum variants)
-    ('KEYWORD',  r'\b(?:function|return|class|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|stack|queue|append|len|pop|lambda|import|match|case|enum|break|continue|assert|yield|next)\b'),  # All keywords
-    ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers
+    ('IDENT',    r'[a-zA-Z_]\w*'),  # Identifiers (keywords resolved via _KEYWORDS post-match)
     ('NEWLINE',  r'\n'),  # Newlines
     ('SKIP',     r'[ \t]+'),  # Whitespace
     ('MISMATCH', r'.'),  # Any other character
@@ -387,6 +386,18 @@ token_specification = [
 
 tok_regex = re.compile('|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_specification))
 _indent_re = re.compile(r'[ \t]*')
+
+# Keyword set for O(1) post-match reclassification.
+# Replacing the 30+ alternation KEYWORD regex pattern with a frozenset lookup
+# eliminates the regex engine trying every keyword branch before falling through
+# to IDENT on each word token — a significant tokenizer speedup.
+_KEYWORDS = frozenset({
+    'function', 'return', 'class', 'int', 'float', 'bool', 'string',
+    'if', 'else', 'for', 'in', 'while', 'try', 'catch', 'throw',
+    'print', 'true', 'false', 'and', 'or', 'not', 'list', 'set',
+    'stack', 'queue', 'append', 'len', 'pop', 'lambda', 'import',
+    'match', 'case', 'enum', 'break', 'continue', 'assert', 'yield', 'next',
+})
 
 # Escape sequence mapping for string literals
 _ESCAPE_MAP = {
@@ -480,6 +491,10 @@ def tokenize(code):
         elif typ == 'MISMATCH':
             raise RuntimeError(f'Unexpected character {value!r} on line {line_num}')
         else:
+            # Reclassify identifiers that are keywords via O(1) set lookup.
+            # This replaces the expensive 30+ alternation KEYWORD regex.
+            if value in _KEYWORDS:
+                typ = 'KEYWORD'
             column = match.start() - line_start
             tokens.append((typ, value, line_num, column))
             if DEBUG:
@@ -491,6 +506,22 @@ def tokenize(code):
         tokens.append(('DEDENT', popped_indent, line_num, line_start))
         if DEBUG:
             debug(f"Added final DEDENT token: {popped_indent}")
+
+    # Merge adjacent KEYWORD('else') + KEYWORD('if') into KEYWORD('else if')
+    # to preserve parser compatibility.  This is a single linear pass.
+    merged = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if (tok[0] == 'KEYWORD' and tok[1] == 'else' and
+                i + 1 < n and tokens[i + 1][0] == 'KEYWORD' and tokens[i + 1][1] == 'if'):
+            merged.append(('KEYWORD', 'else if', tok[2], tok[3]))
+            i += 2
+        else:
+            merged.append(tok)
+            i += 1
+    tokens = merged
     
     if DEBUG:
         debug("Finished tokenizing.\n")
