@@ -1,34 +1,139 @@
 # Auto-labeler configuration for PR labeling based on changed files
 # Used by actions/labeler@v5
 
-compiler:
-  - changed-files:
-      - any-glob-to-any-file: 'sauravcc.py'
-
+# ── Core language ────────────────────────────────────────────────
 interpreter:
   - changed-files:
       - any-glob-to-any-file: 'saurav.py'
 
+compiler:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravcc.py'
+          - 'sauravtranspile.py'
+
+# ── Toolchain ────────────────────────────────────────────────────
+tooling:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravlint.py'
+          - 'sauravfmt.py'
+          - 'sauravtype.py'
+          - 'sauravci.py'
+          - 'sauravcov.py'
+          - 'sauravprof.py'
+          - 'sauravmetrics.py'
+          - 'sauravdeps.py'
+
+debugger:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravdbg.py'
+          - 'sauravtrace.py'
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravsec.py'
+          - 'test_ssrf.py'
+
+# ── Developer experience ────────────────────────────────────────
+devex:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravrepl.py'
+          - 'sauravplay.py'
+          - 'sauravwatch.py'
+          - 'sauravnb.py'
+          - 'sauravcanvas.py'
+          - 'sauravsnippet.py'
+
+api:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravapi.py'
+          - 'sauravembed.py'
+
+# ── Analysis & refactoring ──────────────────────────────────────
+analysis:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravast.py'
+          - 'sauravflow.py'
+          - 'sauravexplain.py'
+          - 'sauravquery.py'
+          - 'sauravstats.py'
+          - 'sauravrefactor.py'
+          - 'sauravdiff.py'
+
+# ── Packaging & distribution ────────────────────────────────────
+packaging:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravpkg.py'
+          - 'sauravbundle.py'
+          - 'sauravmin.py'
+          - 'sauravobf.py'
+          - 'sauravshare.py'
+          - 'setup.py'
+          - 'pyproject.toml'
+          - 'Dockerfile'
+
+# ── Learning & challenges ───────────────────────────────────────
+learning:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravchallenge.py'
+          - 'sauravgolf.py'
+          - 'sauravkata.py'
+          - 'sauravlearn.py'
+          - 'sauravtutorial.py'
+
+# ── Code generation ─────────────────────────────────────────────
+codegen:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravgen.py'
+          - 'sauravscaffold.py'
+          - 'sauravdoc.py'
+
+# ── Testing & fuzzing ───────────────────────────────────────────
 tests:
   - changed-files:
       - any-glob-to-any-file:
+          - 'test_*.py'
           - 'test*.srv'
           - 'tests/**'
+          - 'sauravtest.py'
+          - 'sauravbench.py'
+          - 'sauravfuzz.py'
 
+# ── Examples & demos ────────────────────────────────────────────
 examples:
   - changed-files:
       - any-glob-to-any-file:
           - '*.srv'
           - '!test*.srv'
 
+# ── Documentation ───────────────────────────────────────────────
 documentation:
   - changed-files:
       - any-glob-to-any-file:
           - 'README.md'
+          - 'CONTRIBUTING.md'
+          - 'CHANGELOG.md'
           - 'docs/**'
           - '*.md'
 
+# ── CI/CD & infrastructure ──────────────────────────────────────
 ci/cd:
   - changed-files:
       - any-glob-to-any-file:
           - '.github/**'
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Dockerfile'
+          - 'docker-compose*.yml'
+          - '.dockerignore'
