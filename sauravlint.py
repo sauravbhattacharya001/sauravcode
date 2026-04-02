@@ -301,6 +301,12 @@ class SauravLinter:
         max_nesting = 5
         block_indents = []  # stack of indent levels where blocks started
 
+        # Precompute next-non-blank index for O(1) empty-block checks
+        n_parsed = len(parsed)
+        _next_non_blank: List[int] = [n_parsed] * n_parsed
+        for _i in range(n_parsed - 2, -1, -1):
+            _next_non_blank[_i] = (_i + 1) if not parsed[_i + 1].is_blank else _next_non_blank[_i + 1]
+
         for pl in parsed:
             if pl.is_blank:
                 continue
@@ -392,15 +398,11 @@ class SauravLinter:
 
             # Check for empty blocks (W006)
             if kw in _BLOCK_STARTERS and kw != "enum":
-                # Look ahead for body
+                # O(1) look-ahead using precomputed next-non-blank index
                 block_indent = indent
-                has_body = False
-                for next_pl in parsed[pl.lineno:]:  # lineno is 1-based, so parsed[lineno:] skips current
-                    if next_pl.is_blank:
-                        continue
-                    if next_pl.indent > block_indent:
-                        has_body = True
-                    break
+                idx = pl.lineno - 1  # 0-based index of current line
+                nxt = _next_non_blank[idx] if idx < n_parsed - 1 else n_parsed
+                has_body = nxt < n_parsed and parsed[nxt].indent > block_indent
                 if not has_body:
                     self._emit(report, "W006", Severity.WARNING, lineno, 1,
                                f"Empty '{kw}' block", raw)
