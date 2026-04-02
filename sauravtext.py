@@ -13,6 +13,7 @@ __all__ = [
     "split_trailing_comment",
     "strip_string_literals",
     "extract_identifiers",
+    "scan_segments",
 ]
 
 # Matches identifiers (excludes leading digits)
@@ -111,3 +112,62 @@ def extract_identifiers(line: str, *, exclude: Optional[Set[str]] = None) -> Set
     if exclude:
         ids -= exclude
     return ids
+
+
+def scan_segments(source: str):
+    """Yield ``(kind, text, start, end)`` for each segment of *source*.
+
+    Kinds: ``'string'``, ``'comment'``, ``'ident'``, ``'other'``.
+
+    Correctly handles escape sequences inside strings and ``#``-comments.
+    This is the canonical string/comment-aware scanner shared across
+    sauravcode tooling (sauravmin, sauravfmt, sauravlint, etc.).
+
+    >>> list(scan_segments('x = 1 # hi'))  # doctest: +NORMALIZE_WHITESPACE
+    [('ident', 'x', 0, 1), ('other', ' ', 1, 2), ('other', '=', 2, 3),
+     ('other', ' ', 3, 4), ('other', '1', 4, 5), ('other', ' ', 5, 6),
+     ('comment', '# hi', 6, 10)]
+    """
+    i = 0
+    n = len(source)
+    while i < n:
+        ch = source[i]
+
+        # Comment — consumes until end of line
+        if ch == '#':
+            start = i
+            while i < n and source[i] != '\n':
+                i += 1
+            yield ('comment', source[start:i], start, i)
+            continue
+
+        # String literal (single or double quote, with optional f-prefix)
+        if ch in ('"', "'") or (ch == 'f' and i + 1 < n and source[i + 1] in ('"', "'")):
+            start = i
+            if ch == 'f':
+                i += 1  # skip the 'f' prefix
+            quote = source[i]
+            i += 1
+            while i < n:
+                c = source[i]
+                if c == '\\' and i + 1 < n:
+                    i += 2
+                    continue
+                if c == quote:
+                    i += 1
+                    break
+                i += 1
+            yield ('string', source[start:i], start, i)
+            continue
+
+        # Identifier
+        if ch.isalpha() or ch == '_':
+            m = _IDENT_RE.match(source, i)
+            if m:
+                yield ('ident', m.group(0), i, m.end())
+                i = m.end()
+                continue
+
+        # Everything else (one character at a time)
+        yield ('other', ch, i, i + 1)
+        i += 1

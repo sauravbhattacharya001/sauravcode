@@ -19,6 +19,7 @@ import os
 import sys
 
 from sauravtext import split_trailing_comment as _split_trailing_comment
+from sauravtext import scan_segments
 
 __version__ = "1.0.0"
 
@@ -85,114 +86,95 @@ def _normalise_indent(line, old_indent, new_indent):
 
 
 def _fix_operator_spacing(line):
-    """Ensure single spaces around binary operators, preserving strings/comments."""
-    # Don't touch comment lines
+    """Ensure single spaces around binary operators, preserving strings/comments.
+
+    Uses :func:`sauravtext.scan_segments` for correct string/comment handling
+    instead of hand-rolled character-by-character parsing.
+    """
     stripped = line.lstrip()
     if stripped.startswith("#"):
         return line
 
     leading = line[:len(line) - len(stripped)]
+
+    # Two-character operators that need spacing
+    TWO_CHAR_OPS = {"==", "!=", "<=", ">=", "|>", "->"}
+    # Single-character assignment
+    ASSIGN_OP = "="
+    # Single-character arithmetic operators (spaced only when binary)
+    ARITH_OPS = set("+-*/%")
+    # Characters that indicate a preceding operand (binary context)
+    OPERAND_ENDS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_)]\"\\'")
+
+    segments = list(scan_segments(stripped))
     result = []
-    i = 0
-    in_string = False
-    string_char = None
 
-    while i < len(stripped):
-        ch = stripped[i]
-
-        # Handle string boundaries
-        if ch == '"' and not in_string:
-            in_string = True
-            string_char = ch
-            result.append(ch)
-            i += 1
+    for seg_idx, (kind, text, _start, _end) in enumerate(segments):
+        if kind in ('string', 'comment'):
+            result.append(text)
             continue
-        if in_string:
-            result.append(ch)
-            if ch == '\\' and i + 1 < len(stripped):
-                result.append(stripped[i + 1])
-                i += 2
+
+        if kind == 'ident':
+            result.append(text)
+            continue
+
+        # kind == 'other': check for operators
+        # Look for two-char operators by peeking ahead
+        if (seg_idx + 1 < len(segments)
+                and segments[seg_idx + 1][0] == 'other'):
+            two = text + segments[seg_idx + 1][1]
+            if two in TWO_CHAR_OPS:
+                if result and result[-1] != " ":
+                    result.append(" ")
+                result.append(text)
+                continue  # second char handled in next iteration where it adds space after
+
+        # Check if this char is the second part of a two-char op
+        if seg_idx > 0 and segments[seg_idx - 1][0] == 'other':
+            prev_two = segments[seg_idx - 1][1] + text
+            if prev_two in TWO_CHAR_OPS:
+                result.append(text)
+                # Add space after the operator
+                if (seg_idx + 1 < len(segments)
+                        and segments[seg_idx + 1][1] != " "):
+                    result.append(" ")
                 continue
-            if ch == string_char:
-                in_string = False
-            i += 1
-            continue
 
-        # Handle f-strings
-        if ch == 'f' and i + 1 < len(stripped) and stripped[i + 1] == '"':
-            in_string = True
-            string_char = '"'
-            result.append(ch)
-            result.append(stripped[i + 1])
-            i += 2
-            continue
-
-        # Handle comment — stop processing
-        if ch == '#':
-            result.append(stripped[i:])
-            break
-
-        # Check for two-char operators first
-        two = stripped[i:i+2]
-        if two in ("==", "!=", "<=", ">=", "|>", "->"):
-            # Ensure space before
-            if result and result[-1] != " ":
-                result.append(" ")
-            result.append(two)
-            i += 2
-            # Ensure space after
-            if i < len(stripped) and stripped[i] != " ":
-                result.append(" ")
-            continue
-
-        # Single-char = (assignment, not == which is handled above)
-        if ch == "=" and (i == 0 or stripped[i-1:i+1] not in ("==", "!=", "<=", ">=")):
-            if i + 1 < len(stripped) and stripped[i + 1] == "=":
-                # Part of ==, skip (shouldn't reach here but safety)
-                result.append(ch)
-                i += 1
+        # Single '=' (but not part of ==, !=, <=, >=)
+        if text == ASSIGN_OP:
+            # Check it's not part of a two-char operator
+            next_text = segments[seg_idx + 1][1] if seg_idx + 1 < len(segments) else ""
+            prev_text = segments[seg_idx - 1][1] if seg_idx > 0 else ""
+            if next_text != "=" and prev_text not in ("!", "<", ">", "="):
+                if result and result[-1] != " ":
+                    result.append(" ")
+                result.append(text)
+                if (seg_idx + 1 < len(segments)
+                        and segments[seg_idx + 1][1] != " "):
+                    result.append(" ")
                 continue
-            if result and result[-1] != " ":
-                result.append(" ")
-            result.append(ch)
-            i += 1
-            if i < len(stripped) and stripped[i] != " ":
-                result.append(" ")
-            continue
 
-        # Single-char arithmetic operators: + - * / %
-        # Only space them when they look like binary operators (preceded by
-        # a non-space, non-operator character — i.e. an operand just ended).
-        if ch in "+-*/%" and not in_string:
-            # Heuristic: binary if preceded by alnum, ), ], or "
-            prev_non_space = None
-            for k in range(len(result) - 1, -1, -1):
-                if result[k] != " ":
-                    prev_non_space = result[k]
+        # Arithmetic operators: space only when binary
+        if text in ARITH_OPS:
+            # Determine if binary by checking last non-space character
+            prev_char = None
+            for r in reversed(result):
+                if r != " " and r:
+                    prev_char = r[-1]
                     break
-            is_binary = prev_non_space is not None and (
-                prev_non_space.isalnum() or prev_non_space in (')', ']', '"', '_')
-            )
+            is_binary = prev_char is not None and prev_char in OPERAND_ENDS
             if is_binary:
                 if result and result[-1] != " ":
                     result.append(" ")
-                result.append(ch)
-                i += 1
-                if i < len(stripped) and stripped[i] != " ":
+                result.append(text)
+                if (seg_idx + 1 < len(segments)
+                        and segments[seg_idx + 1][1] != " "):
                     result.append(" ")
-            else:
-                # Unary operator — no space before, keep as-is
-                result.append(ch)
-                i += 1
-            continue
+                continue
 
-        result.append(ch)
-        i += 1
+        result.append(text)
 
-    formatted = leading + "".join(result)
-    # Collapse multiple spaces (outside strings) into single spaces
-    # This is tricky with strings, so only collapse in the non-string parts
-    return formatted
+    return leading + "".join(result)
 
 
 def _collapse_blanks(lines, max_blanks):

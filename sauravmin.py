@@ -26,14 +26,13 @@ Usage:
 import argparse
 import json
 import os
-import re
 import sys
 import string
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import tokenize
-from sauravtext import strip_comment
+from sauravtext import strip_comment, scan_segments
 
 __version__ = "1.0.0"
 
@@ -104,56 +103,12 @@ def _build_rename_map(identifiers):
     return {name: next(gen) for name in identifiers}
 
 
-_SCAN_IDENT_RE = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
-
-
-def _scan_tokens(source):
-    """Yield (kind, text, start, end) for each segment of source.
-
-    Kinds: 'string', 'comment', 'ident', 'other'.
-    Correctly handles escape sequences inside strings and #-comments.
-    """
-    i = 0
-    n = len(source)
-    while i < n:
-        ch = source[i]
-        if ch == '#':
-            start = i
-            while i < n and source[i] != '\n':
-                i += 1
-            yield ('comment', source[start:i], start, i)
-            continue
-        if ch in ('"', "'"):
-            quote = ch
-            start = i
-            i += 1
-            while i < n:
-                c = source[i]
-                if c == '\\' and i + 1 < n:
-                    i += 2
-                    continue
-                if c == quote:
-                    i += 1
-                    break
-                i += 1
-            yield ('string', source[start:i], start, i)
-            continue
-        if ch.isalpha() or ch == '_':
-            m = _SCAN_IDENT_RE.match(source, i)
-            if m:
-                yield ('ident', m.group(0), i, m.end())
-                i = m.end()
-                continue
-        yield ('other', ch, i, i + 1)
-        i += 1
-
-
 def _apply_renames(source, rename_map):
     """Replace identifiers in source, preserving strings and comments."""
     if not rename_map:
         return source
     result = []
-    for kind, text, _start, _end in _scan_tokens(source):
+    for kind, text, _start, _end in scan_segments(source):
         if kind == 'ident':
             result.append(rename_map.get(text, text))
         else:
