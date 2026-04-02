@@ -2418,7 +2418,7 @@ class Interpreter:
         self._register_omap_builtins()
         self._register_fsm_builtins()
         self._register_cipher_builtins()
-        self._register_hash_builtins()
+        # NOTE: _register_hash_builtins already called above; removed duplicate call
         self._register_pack_builtins()
         self._register_emitter_builtins()
 
@@ -9152,7 +9152,32 @@ class Interpreter:
             line=getattr(call_node, 'line_num', None)
         )
 
+    # ── Leaf-node types that return a value directly (no recursion possible).
+    # Evaluating these via the full evaluate() path wastes ~200ns per call
+    # on depth tracking, try/finally, and dispatch overhead.  By checking
+    # the type *before* touching _eval_depth we skip all of that for the
+    # most common nodes in any program (literals and identifiers).
+    _LEAF_TYPES = (NumberNode, StringNode, BoolNode)
+
     def evaluate(self, node):
+        # Fast path for leaf nodes — no depth tracking needed since they
+        # cannot recurse.  NumberNode/StringNode/BoolNode just return a
+        # stored value; IdentifierNode does a single dict lookup.
+        # This is the single highest-frequency code path in the interpreter.
+        node_type = type(node)
+        if node_type is NumberNode:
+            return node.value
+        if node_type is StringNode:
+            return node.value
+        if node_type is BoolNode:
+            return node.value
+        if node_type is IdentifierNode:
+            value = self.variables.get(node.name, self._SENTINEL)
+            if value is not self._SENTINEL:
+                return value
+            # Fall through to full path for function/builtin lookups
+            return self._eval_identifier(node)
+
         self._eval_depth += 1
         if self._eval_depth > MAX_EVAL_DEPTH:
             self._eval_depth -= 1
@@ -9164,7 +9189,7 @@ class Interpreter:
         try:
             if DEBUG:
                 debug(f"Evaluating node: {node}")
-            handler = self._evaluate_dispatch.get(type(node))
+            handler = self._evaluate_dispatch.get(node_type)
             if handler is not None:
                 try:
                     return handler(node)
