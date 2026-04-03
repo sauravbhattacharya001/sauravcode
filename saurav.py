@@ -2452,6 +2452,15 @@ class Interpreter:
         # NOTE: _register_hash_builtins already called above; removed duplicate call
         self._register_pack_builtins()
         self._register_emitter_builtins()
+        self._register_plot_builtins()
+
+    def _register_plot_builtins(self):
+        """Register ASCII plotting builtins (plot_bar, plot_line, etc.)."""
+        try:
+            from sauravplot import register_plot_builtins
+            register_plot_builtins(self.builtins)
+        except ImportError:
+            pass  # sauravplot not available
 
     # ── Data-driven math builtins ────────────────────────
 

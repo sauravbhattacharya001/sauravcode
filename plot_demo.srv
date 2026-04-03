@@ -1,0 +1,29 @@
+# plot_demo.srv - Demonstrate sauravcode plotting builtins
+
+# Bar chart
+fruits = ["Apples", "Bananas", "Cherries", "Dates", "Elderberries"]
+sales = [23, 45, 12, 34, 8]
+plot_bar (fruits) (sales) "Fruit Sales"
+
+# Line chart
+x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+y = [2, 4, 3, 7, 5, 9, 6, 8, 10, 7]
+plot_line (x) (y) "Weekly Trend"
+
+# Scatter plot
+temps = [15, 18, 21, 24, 27, 30, 33, 36]
+ice_cream = [10, 15, 22, 35, 40, 55, 60, 72]
+plot_scatter (temps) (ice_cream) "Temp vs Ice Cream Sales"
+
+# Sparkline
+cpu = [30, 45, 55, 40, 65, 80, 70, 50, 35, 40, 55, 60]
+plot_spark (cpu) "CPU Load"
+
+# Pie chart
+browsers = ["Chrome", "Firefox", "Safari", "Edge", "Other"]
+share = [65, 10, 12, 8, 5]
+plot_pie (browsers) (share) "Browser Market Share"
+
+# Histogram
+scores = [72, 85, 90, 68, 74, 88, 92, 78, 81, 95, 70, 83, 87, 76, 91, 69, 84, 79, 93, 77]
+plot_hist (scores) 5 "Exam Score Distribution"
