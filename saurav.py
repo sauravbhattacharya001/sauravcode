@@ -9052,6 +9052,12 @@ class Interpreter:
         parameter binding, body execution, and ReturnSignal handling that was
         previously duplicated between the named-function and variable-callable
         code paths in execute_function().
+
+        Inlines the scope push/pop rather than using ``_scoped_env()`` to
+        avoid the ``@contextlib.contextmanager`` generator protocol overhead
+        (~500 ns/call on CPython). Since function invocation is the hottest
+        path after evaluate(), this matters for recursive and loop-heavy
+        programs.
         """
         self._call_depth += 1
         if self._call_depth > MAX_RECURSION_DEPTH:
@@ -9062,7 +9068,10 @@ class Interpreter:
             )
 
         result = None
-        with self._scoped_env():
+        # Inline scope push (replaces ``with self._scoped_env():``)
+        parent_vars = self.variables
+        self.variables = ChainMap({}, parent_vars)
+        try:
             # Inject closure scope by splicing its maps into the ChainMap
             # chain — O(1) instead of iterating all closure variables.
             # The local scope (maps[0]) stays on top so params and local
@@ -9094,6 +9103,9 @@ class Interpreter:
                 result = ret.value
             finally:
                 self._call_depth -= 1
+        finally:
+            # Inline scope pop (replaces _scoped_env finally block)
+            self.variables = parent_vars
         if DEBUG:
             debug(f"Function {name} returned {result}\n")
         return result
