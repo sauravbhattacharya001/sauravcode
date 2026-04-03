@@ -1,0 +1,18 @@
+# sauravmatrix demo — Interactive Matrix Calculator
+# Run: python sauravmatrix.py --demo
+
+# Or try the REPL: python sauravmatrix.py
+# Then type:
+#   A = [[1,2,3],[4,5,6],[7,8,10]]
+#   det(A)
+#   inv(A)
+#   B = eye(3)
+#   A * B
+#   eig(A)
+#   solve(A, [1,2,3])
+#   A ^ 3
+#   lu(A)
+#   qr(A)
+#   rref(A)
+#   H = hilbert(4)
+#   cond(H)
