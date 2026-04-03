@@ -9067,14 +9067,21 @@ class Interpreter:
             # chain — O(1) instead of iterating all closure variables.
             # The local scope (maps[0]) stays on top so params and local
             # writes shadow closure variables correctly.
-            if hasattr(func_node, 'closure_scope') and func_node.closure_scope:
-                cs = func_node.closure_scope
+            cs = getattr(func_node, 'closure_scope', None)
+            if cs:
                 # Extract the underlying maps from the closure ChainMap and
                 # insert them between the local scope and the parent scope.
-                closure_maps = cs.maps if isinstance(cs, ChainMap) else [cs] if isinstance(cs, dict) else []
+                # Using getattr+None avoids the hasattr double-lookup, and
+                # pre-building the maps list avoids repeated tuple unpacking.
+                if isinstance(cs, ChainMap):
+                    closure_maps = cs.maps
+                elif isinstance(cs, dict):
+                    closure_maps = [cs]
+                else:
+                    closure_maps = []
                 if closure_maps:
-                    local = self.variables.maps[0]
-                    self.variables = ChainMap(local, *closure_maps, *self.variables.maps[1:])
+                    maps = self.variables.maps
+                    self.variables = ChainMap(maps[0], *closure_maps, *maps[1:])
 
             for param, arg_val in zip(func_node.params, evaluated_args):
                 self.variables[param] = arg_val
@@ -9105,9 +9112,14 @@ class Interpreter:
                 debug(f"Executing function: {name} with arguments {call_node.arguments}")
 
             # Check if this is a generator function.
-            if not hasattr(func, '_is_generator'):
-                func._is_generator = self._has_yield(func.body)
-            if func._is_generator:
+            # Use getattr with default to avoid the slower hasattr
+            # double-lookup (hasattr calls getattr internally then
+            # catches AttributeError).
+            is_gen = getattr(func, '_is_generator', None)
+            if is_gen is None:
+                is_gen = self._has_yield(func.body)
+                func._is_generator = is_gen
+            if is_gen:
                 debug(f"Function {name} is a generator — returning GeneratorValue")
                 return GeneratorValue(self, func, evaluated_args)
 
@@ -9288,13 +9300,21 @@ class Interpreter:
             )
 
     def _eval_logical(self, node):
+        """Evaluate logical and/or with short-circuit semantics.
+
+        Hoists _is_truthy to a local to avoid repeated LOAD_ATTR on the
+        hot path.  For deeply nested boolean expressions this saves one
+        attribute lookup per node.
+        """
+        _truthy = self._is_truthy
         left = self.evaluate(node.left)
-        if node.operator == 'and':
-            return self._is_truthy(left) and self._is_truthy(self.evaluate(node.right))
-        elif node.operator == 'or':
-            return self._is_truthy(left) or self._is_truthy(self.evaluate(node.right))
+        op = node.operator
+        if op == 'and':
+            return _truthy(left) and _truthy(self.evaluate(node.right))
+        elif op == 'or':
+            return _truthy(left) or _truthy(self.evaluate(node.right))
         else:
-            raise ValueError(f'Unknown logical operator: {node.operator}')
+            raise ValueError(f'Unknown logical operator: {op}')
 
     def _eval_unary(self, node):
         operand = self.evaluate(node.operand)
