@@ -5146,64 +5146,10 @@ class Interpreter:
         # ── HTTP / Network builtins ──────────────────────────────
         import urllib.request, urllib.parse, urllib.error, base64 as _b64, json as _json_mod, ssl as _ssl_mod
 
-        def _http_get(args):
-            if len(args) < 1 or len(args) > 2:
-                raise RuntimeError("http_get: expected 1-2 arguments (url, headers?)")
-            url = args[0]
-            if not isinstance(url, str):
-                raise RuntimeError("http_get: url must be a string")
-            headers = {}
-            if len(args) == 2:
-                if not isinstance(args[1], dict):
-                    raise RuntimeError("http_get: headers must be a map")
-                headers = {str(k): str(v) for k, v in args[1].items()}
-            req = urllib.request.Request(url, headers=headers)
-            ctx = _ssl_mod.create_default_context()
-            try:
-                with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-                    body = resp.read().decode('utf-8', errors='replace')
-                    status = resp.status
-                    resp_headers = {k: v for k, v in resp.getheaders()}
-            except urllib.error.HTTPError as e:
-                body = e.read().decode('utf-8', errors='replace') if e.fp else ""
-                status = e.code
-                resp_headers = {}
-            except Exception as e:
-                raise RuntimeError(f"http_get: {e}")
-            return {"status": status, "body": body, "headers": resp_headers}
-
-        def _http_post(args):
-            if len(args) < 2 or len(args) > 3:
-                raise RuntimeError("http_post: expected 2-3 arguments (url, body, headers?)")
-            url = args[0]
-            body_data = args[1]
-            if not isinstance(url, str):
-                raise RuntimeError("http_post: url must be a string")
-            headers = {"Content-Type": "application/json"}
-            if len(args) == 3:
-                if not isinstance(args[2], dict):
-                    raise RuntimeError("http_post: headers must be a map")
-                headers = {str(k): str(v) for k, v in args[2].items()}
-            if isinstance(body_data, (dict, list)):
-                body_bytes = _json_mod.dumps(body_data).encode('utf-8')
-            elif isinstance(body_data, str):
-                body_bytes = body_data.encode('utf-8')
-            else:
-                body_bytes = str(body_data).encode('utf-8')
-            req = urllib.request.Request(url, data=body_bytes, headers=headers, method='POST')
-            ctx = _ssl_mod.create_default_context()
-            try:
-                with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-                    rbody = resp.read().decode('utf-8', errors='replace')
-                    status = resp.status
-                    resp_headers = {k: v for k, v in resp.getheaders()}
-            except urllib.error.HTTPError as e:
-                rbody = e.read().decode('utf-8', errors='replace') if e.fp else ""
-                status = e.code
-                resp_headers = {}
-            except Exception as e:
-                raise RuntimeError(f"http_post: {e}")
-            return {"status": status, "body": rbody, "headers": resp_headers}
+        # NOTE: http_get / http_post are registered via _builtin_http_get /
+        # _builtin_http_post (see _init_dispatch_tables) which route through
+        # the SSRF-safe _http_request path.  No closure-based fallbacks are
+        # defined here to avoid accidentally bypassing SSRF protection.
 
         def _url_parse(args):
             if len(args) != 1:
@@ -5256,10 +5202,6 @@ class Interpreter:
             except Exception as e:
                 raise RuntimeError(f"base64_decode: {e}")
 
-        # NOTE: http_get and http_post are registered by _builtin_http_get /
-        # _builtin_http_post which use the SSRF-safe _http_request path.
-        # The old closures (_http_get / _http_post) above bypass SSRF
-        # protection, so we intentionally do NOT overwrite them here.
         self.builtins['url_parse'] = _url_parse
         self.builtins['url_encode'] = _url_encode
         self.builtins['url_decode'] = _url_decode
