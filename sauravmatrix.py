@@ -11,6 +11,7 @@ Usage:
     python sauravmatrix.py --eval "det(A)"  # One-shot evaluation
 """
 
+import ast
 import sys
 import math
 import copy
@@ -480,7 +481,7 @@ def _parse_matrix_literal(s):
     """Parse [[1,2],[3,4]] into Matrix."""
     s = s.strip()
     try:
-        data = eval(s, {"__builtins__": {}})
+        data = ast.literal_eval(s)
         if isinstance(data, list) and data and isinstance(data[0], list):
             return Matrix([[float(x) for x in row] for row in data])
     except Exception:
@@ -761,7 +762,7 @@ class REPL:
                 b_str = args_str[bracket:]
                 mat = self._resolve(mat_name)
                 try:
-                    b = eval(b_str, {"__builtins__": {}})
+                    b = ast.literal_eval(b_str)
                     b = [float(x) for x in b]
                 except Exception:
                     print("  ✗ Cannot parse b vector")
