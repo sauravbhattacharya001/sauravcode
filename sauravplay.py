@@ -52,7 +52,20 @@ from saurav import tokenize, Parser, Interpreter, ThrowSignal, format_value  # n
 
 # Builtins that are unsafe or nonsensical in a web playground.
 _DISABLED_BUILTINS = frozenset([
+    # File I/O
     'read_file', 'write_file', 'append_file', 'read_lines', 'file_exists',
+    'delete_file',
+    # CSV I/O (bypasses file builtin restrictions)
+    'csv_read', 'csv_write',
+    # Directory operations (filesystem enumeration/modification)
+    'list_dir', 'make_dir', 'is_dir', 'is_file', 'path_abs', 'path_exists',
+    # Environment variables (can leak secrets like API keys)
+    'env_get', 'env_set', 'env_unset', 'env_list', 'env_has',
+    # System information disclosure
+    'sys_info',
+    # HTTP (SSRF risk — attacker can probe internal networks)
+    'http_get', 'http_post', 'http_put', 'http_delete',
+    # Interactive / timing
     'sleep', 'input',
 ])
 
