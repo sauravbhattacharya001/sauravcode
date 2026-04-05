@@ -26,6 +26,7 @@ Rules:
     SEC010  Catch-all silencer: empty catch block swallows errors
     SEC011  Tainted format string: f-string includes unvalidated input
     SEC012  Dangerous default: mutable default in repeated calls
+    SEC013  Command injection: shell command built from user input
 """
 
 import sys
@@ -42,7 +43,7 @@ from saurav import (
     StringNode, NumberNode, BoolNode, PrintNode, ReturnNode,
     IndexNode, IndexedAssignmentNode, ListNode, AppendNode,
     FStringNode, UnaryOpNode, LogicalNode, ImportNode,
-    ThrowNode, BreakNode, LambdaNode, PipeNode,
+    ThrowNode, BreakNode, LambdaNode, PipeNode, MapNode,
 )
 
 # ── Severity levels ──────────────────────────────────────────────
@@ -85,6 +86,9 @@ _CRED_NAMES = {
 _FILE_BUILTINS = {"read_file", "write_file", "append_file", "read_lines", "file_exists"}
 
 _INPUT_BUILTINS = {"input"}
+
+_SHELL_BUILTINS = {"shell", "exec", "system", "run_command", "run", "execute",
+                   "shell_exec", "popen", "subprocess"}
 
 
 # ── AST helpers ──────────────────────────────────────────────────
@@ -363,6 +367,102 @@ class SecurityScanner:
                           f"'{part.name}' — sanitize before interpolation",
                           _line(node))
 
+    def _check_dangerous_default(self, node):
+        """SEC012: Mutable default argument in function definition.
+
+        Functions with mutable defaults (list, map) as parameter defaults
+        share the same object across all calls, leading to subtle bugs
+        where mutations in one call persist to the next.
+        """
+        if not isinstance(node, FunctionNode):
+            return
+        params = getattr(node, "params", None)
+        if not params:
+            return
+        # params may be list of (name, default) tuples or param objects
+        for param in params:
+            default = None
+            if isinstance(param, (list, tuple)) and len(param) >= 2:
+                default = param[1]
+            elif hasattr(param, "default"):
+                default = param.default
+            if default is None:
+                continue
+            if isinstance(default, ListNode):
+                self._add("SEC012", MEDIUM,
+                          f"Mutable default argument in function '{node.name}': "
+                          f"list default is shared across calls — use None and "
+                          f"initialize inside the function body",
+                          _line(node))
+            elif isinstance(default, MapNode):
+                self._add("SEC012", MEDIUM,
+                          f"Mutable default argument in function '{node.name}': "
+                          f"map default is shared across calls — use None and "
+                          f"initialize inside the function body",
+                          _line(node))
+
+    def _check_command_injection(self, node):
+        """SEC013: Shell command built from user input or dynamic strings.
+
+        Detects shell/exec/system calls where the command argument is
+        built from variables (especially input-tainted ones), string
+        concatenation, or f-strings, which could allow command injection.
+        """
+        if not isinstance(node, FunctionCallNode):
+            return
+        if node.name not in _SHELL_BUILTINS:
+            return
+        args = getattr(node, "arguments", [])
+        if not args:
+            return
+        cmd_arg = args[0]
+        # Direct use of input-tainted variable
+        if isinstance(cmd_arg, IdentifierNode) and cmd_arg.name in self._input_vars:
+            self._add("SEC013", HIGH,
+                      f"Command injection: '{node.name}' called with "
+                      f"unvalidated input variable '{cmd_arg.name}' — "
+                      f"attacker can execute arbitrary commands",
+                      _line(node))
+        elif isinstance(cmd_arg, BinaryOpNode) and cmd_arg.operator == "+":
+            # String concatenation in command — check if any part is tainted
+            idents = _collects_identifiers(cmd_arg)
+            tainted = idents & self._input_vars
+            if tainted:
+                self._add("SEC013", HIGH,
+                          f"Command injection: '{node.name}' command built "
+                          f"with user input variable(s) {tainted} — "
+                          f"validate and sanitize before use",
+                          _line(node))
+            else:
+                self._add("SEC013", MEDIUM,
+                          f"Command injection risk: '{node.name}' command "
+                          f"built via string concatenation — ensure inputs "
+                          f"are validated",
+                          _line(node))
+        elif isinstance(cmd_arg, FStringNode):
+            parts = getattr(cmd_arg, "parts", [])
+            tainted_parts = [p.name for p in parts
+                            if isinstance(p, IdentifierNode)
+                            and p.name in self._input_vars]
+            if tainted_parts:
+                self._add("SEC013", HIGH,
+                          f"Command injection: '{node.name}' uses f-string "
+                          f"with user input variable(s) {tainted_parts} — "
+                          f"attacker can execute arbitrary commands",
+                          _line(node))
+            else:
+                self._add("SEC013", MEDIUM,
+                          f"Command injection risk: '{node.name}' uses "
+                          f"f-string command — ensure interpolated values "
+                          f"are validated",
+                          _line(node))
+        elif isinstance(cmd_arg, IdentifierNode):
+            # Dynamic but not directly from input — lower severity
+            self._add("SEC013", LOW,
+                      f"Command execution: '{node.name}' uses variable "
+                      f"'{cmd_arg.name}' as command — verify it is trusted",
+                      _line(node))
+
     # All rule checks in dispatch order
     _RULE_CHECKS = (
         _check_path_traversal,
@@ -376,6 +476,8 @@ class SecurityScanner:
         _check_nested_loops,
         _check_catch_silencer,
         _check_tainted_fstring,
+        _check_dangerous_default,
+        _check_command_injection,
     )
 
     def _scan_node(self, node):
