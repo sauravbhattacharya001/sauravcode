@@ -32,7 +32,6 @@ import json
 import argparse
 import io
 import tempfile
-from pathlib import Path
 from datetime import datetime
 from contextlib import redirect_stdout, redirect_stderr
 

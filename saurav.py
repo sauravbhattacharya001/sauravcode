@@ -5153,7 +5153,7 @@ class Interpreter:
         self.builtins['deque_clear'] = _deque_clear
 
         # ── HTTP / Network builtins ──────────────────────────────
-        import urllib.request, urllib.parse, urllib.error, base64 as _b64, json as _json_mod, ssl as _ssl_mod
+        import urllib.request, urllib.parse, urllib.error, base64 as _b64, json as _json_mod
 
         # NOTE: http_get / http_post are registered via _builtin_http_get /
         # _builtin_http_post (see _init_dispatch_tables) which route through

@@ -19,10 +19,8 @@ Supported ciphers: caesar, rot13, vigenere, atbash, xor, morse,
                    railfence, substitution
 """
 
-import sys
 import os
 import argparse
-import json
 import string
 from collections import Counter
 from pathlib import Path
