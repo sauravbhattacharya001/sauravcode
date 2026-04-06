@@ -134,12 +134,7 @@ def run_stage(stage, targets, strict=False, use_color=True, tool_dir=None):
     # Build command with resolved tool path
     cmd = list(stage['command'])
     cmd[1] = tool_path
-
-    # For test stage, the json output goes to a file
-    if stage['name'] == 'test':
-        cmd_with_targets = cmd + targets
-    else:
-        cmd_with_targets = cmd + targets
+    cmd_with_targets = cmd + targets
 
     t0 = time.time()
     try:
@@ -154,16 +149,12 @@ def run_stage(stage, targets, strict=False, use_color=True, tool_dir=None):
         result['output'] = proc.stdout + proc.stderr
 
         # Parse stage-specific results
-        if stage['name'] == 'lint':
-            result = _parse_lint(result, proc)
-        elif stage['name'] == 'typecheck':
-            result = _parse_typecheck(result, proc)
-        elif stage['name'] == 'security':
-            result = _parse_security(result, proc)
-        elif stage['name'] == 'metrics':
-            result = _parse_metrics(result, proc)
-        elif stage['name'] == 'test':
-            result = _parse_test(result, proc, tool_dir)
+        parser = _STAGE_PARSERS.get(stage['name'])
+        if parser:
+            if stage['name'] == 'test':
+                result = parser(result, proc, tool_dir)
+            else:
+                result = parser(result, proc)
 
         # Determine pass/fail
         if result['status'] == 'skip':
@@ -206,17 +197,23 @@ def _try_parse_json(text):
     return None
 
 
+def _count_by_severity(items, error_values=('error',), severity_key='severity'):
+    """Count errors and warnings from a list of issue dicts."""
+    errors = sum(1 for d in items if d.get(severity_key, '').lower() in error_values)
+    warnings = len(items) - errors
+    return errors, warnings
+
+
 def _parse_lint(result, proc):
     data = _try_parse_json(proc.stdout)
     if isinstance(data, list):
-        errors = sum(1 for d in data if d.get('severity') == 'error')
-        warnings = sum(1 for d in data if d.get('severity') == 'warning')
-        result['errors'] = errors
-        result['warnings'] = warnings
-        result['details'] = {'issues': len(data), 'breakdown': {}}
+        result['errors'] = sum(1 for d in data if d.get('severity') == 'error')
+        result['warnings'] = sum(1 for d in data if d.get('severity') == 'warning')
+        breakdown = {}
         for d in data:
             sev = d.get('severity', 'unknown')
-            result['details']['breakdown'][sev] = result['details']['breakdown'].get(sev, 0) + 1
+            breakdown[sev] = breakdown.get(sev, 0) + 1
+        result['details'] = {'issues': len(data), 'breakdown': breakdown}
     elif proc.returncode != 0:
         result['errors'] = 1
     return result
@@ -227,8 +224,7 @@ def _parse_typecheck(result, proc):
     if isinstance(data, dict):
         issues = data.get('issues', data.get('errors', []))
         if isinstance(issues, list):
-            result['errors'] = len([i for i in issues if i.get('severity') == 'error'])
-            result['warnings'] = len([i for i in issues if i.get('severity') != 'error'])
+            result['errors'], result['warnings'] = _count_by_severity(issues)
             result['details'] = {'total_issues': len(issues)}
         elif isinstance(issues, int):
             result['errors'] = issues
@@ -242,19 +238,27 @@ def _parse_typecheck(result, proc):
 
 def _parse_security(result, proc):
     data = _try_parse_json(proc.stdout)
+    items = None
     if isinstance(data, list):
-        high = sum(1 for d in data if d.get('severity', '').lower() in ('high', 'critical'))
-        medium = sum(1 for d in data if d.get('severity', '').lower() == 'medium')
-        low = sum(1 for d in data if d.get('severity', '').lower() == 'low')
-        result['errors'] = high
-        result['warnings'] = medium + low
-        result['details'] = {'findings': len(data), 'high': high, 'medium': medium, 'low': low}
+        items = data
     elif isinstance(data, dict):
-        findings = data.get('findings', data.get('issues', []))
-        if isinstance(findings, list):
-            result['errors'] = len([f for f in findings if f.get('severity', '').lower() in ('high', 'critical')])
-            result['warnings'] = len(findings) - result['errors']
-            result['details'] = {'findings': len(findings)}
+        items = data.get('findings', data.get('issues', []))
+        if not isinstance(items, list):
+            items = None
+
+    if items is not None:
+        errors, warnings = _count_by_severity(
+            items, error_values=('high', 'critical'))
+        result['errors'] = errors
+        result['warnings'] = warnings
+        # Provide severity breakdown for top-level list data
+        if isinstance(data, list):
+            high = errors
+            medium = sum(1 for d in items if d.get('severity', '').lower() == 'medium')
+            low = sum(1 for d in items if d.get('severity', '').lower() == 'low')
+            result['details'] = {'findings': len(items), 'high': high, 'medium': medium, 'low': low}
+        else:
+            result['details'] = {'findings': len(items)}
     elif proc.returncode != 0:
         result['errors'] = 1
     return result
@@ -264,7 +268,6 @@ def _parse_metrics(result, proc):
     data = _try_parse_json(proc.stdout)
     if isinstance(data, dict):
         result['details'] = data
-        # Metrics doesn't really fail, just reports
         score = data.get('average_maintainability', data.get('score', 100))
         if isinstance(score, (int, float)) and score < 20:
             result['warnings'] = 1
@@ -298,6 +301,16 @@ def _parse_test(result, proc, tool_dir):
     elif proc.returncode != 0:
         result['errors'] = 1
     return result
+
+
+# Registry mapping stage names to their output parsers
+_STAGE_PARSERS = {
+    'lint': _parse_lint,
+    'typecheck': _parse_typecheck,
+    'security': _parse_security,
+    'metrics': _parse_metrics,
+    'test': _parse_test,
+}
 
 
 # ── Console output ────────────────────────────────────────────────────
