@@ -180,10 +180,7 @@ class SauravDebugger:
         try:
             result = None
             for node in self.ast_nodes:
-                if isinstance(node, FunctionCallNode):
-                    result = self.interpreter.execute_function(node)
-                else:
-                    self.interpreter.interpret(node)
+                result = self.interpreter._dispatch(node)
 
             print(f"\n{'='*50}")
             print(f"Program finished. {self.statements_executed} statements executed.")
@@ -426,17 +423,30 @@ class DebugInterpreter(Interpreter):
         super().__init__()
         self.debugger = debugger
 
+    # Node types that manage their own debug hooks in execute_* overrides.
+    # interpret() skips on_statement for these to avoid double-triggering.
+    _COMPOUND_NODES = (IfNode, WhileNode, ForNode, ForEachNode)
+
+    def _dispatch(self, stmt):
+        """Route a statement through interpret() or execute_function()."""
+        if isinstance(stmt, FunctionCallNode):
+            return self.execute_function(stmt)
+        return self.interpret(stmt)
+
     def _run_body(self, body):
-        """Execute a list of statements, dispatching via interpret/execute_function."""
+        """Execute a list of statements."""
         for stmt in body:
-            if isinstance(stmt, FunctionCallNode):
-                self.execute_function(stmt)
-            else:
-                self.interpret(stmt)
+            self._dispatch(stmt)
 
     def interpret(self, ast):
-        """Override to add debug hook before each statement."""
-        self.debugger.on_statement(ast)
+        """Override to add debug hook before each simple statement.
+
+        Compound nodes (if/while/for/foreach) handle their own hooks
+        in their execute_* overrides, so we skip them here to avoid
+        firing on_statement twice for the same node.
+        """
+        if not isinstance(ast, self._COMPOUND_NODES):
+            self.debugger.on_statement(ast)
         return super().interpret(ast)
 
     def execute_function(self, call_node):
@@ -452,13 +462,8 @@ class DebugInterpreter(Interpreter):
         return result
 
     def execute_if(self, node):
-        """Override to add debug hook."""
+        """Override to fire debug hook once, then evaluate branches."""
         self.debugger.on_statement(node)
-        # Execute the if logic without calling super().interpret() again
-        return self._execute_if_body(node)
-
-    def _execute_if_body(self, node):
-        """Execute if/elif/else without re-triggering debug hook."""
         condition = self.evaluate(node.condition)
         if condition:
             self._run_body(node.body)
@@ -473,7 +478,7 @@ class DebugInterpreter(Interpreter):
             self._run_body(node.else_body)
 
     def execute_while(self, node):
-        """Override to add debug hook on each iteration."""
+        """Override to fire debug hook on each iteration."""
         iteration = 0
         while self.evaluate(node.condition):
             iteration += 1
@@ -483,7 +488,7 @@ class DebugInterpreter(Interpreter):
             self._run_body(node.body)
 
     def execute_for(self, node):
-        """Override to add debug hook on each iteration."""
+        """Override to fire debug hook on each iteration."""
         start = int(self.evaluate(node.start))
         end = int(self.evaluate(node.end))
         for i in range(start, end):
@@ -492,7 +497,7 @@ class DebugInterpreter(Interpreter):
             self._run_body(node.body)
 
     def execute_for_each(self, node):
-        """Override to add debug hook on each iteration."""
+        """Override to fire debug hook on each iteration."""
         iterable = self.evaluate(node.iterable)
         if isinstance(iterable, dict):
             iterable = list(iterable.keys())
