@@ -1,0 +1,27 @@
+## Pipeline Demo
+
+# Step 1: Create some .srv scripts that pass data through a pipeline
+
+# greet.srv - first stage
+show "Hello from the pipeline!"
+
+# stats.srv - second stage  
+let numbers = [1, 2, 3, 4, 5]
+show "Sum: " + str(sum(numbers))
+show "Mean: " + str(sum(numbers) / len(numbers))
+
+# Then chain them:
+#   python sauravpipe.py --chain greet.srv stats.srv
+#
+# Or define a pipeline.json:
+#   {
+#     "name": "demo",
+#     "stages": [
+#       {"id": "greet", "script": "greet.srv"},
+#       {"id": "stats", "script": "stats.srv", "depends": ["greet"]}
+#     ]
+#   }
+#
+# Run with:  python sauravpipe.py pipeline.json
+# Dry run:   python sauravpipe.py --dry-run pipeline.json
+# Graph:     python sauravpipe.py --dot pipeline.json | dot -Tpng -o graph.png

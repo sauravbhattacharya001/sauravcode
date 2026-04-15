@@ -76,3 +76,8 @@ def main_cheat():
 def main_canvas():
     """Entry point for the ``sauravcode-canvas`` console script (turtle graphics)."""
     _run_module("sauravcanvas.py", "canvas")
+
+
+def main_pipe():
+    """Entry point for the ``sauravcode-pipe`` console script (pipeline runner)."""
+    _run_module("sauravpipe.py", "pipeline runner")
