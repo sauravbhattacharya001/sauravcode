@@ -162,7 +162,12 @@ def _find_interpreter():
 def _run_stage(stage, interp, work_dir, input_file=None):
     """Execute a single stage, returning True on success."""
     stage.status = "running"
-    stage.output_file = tempfile.mktemp(suffix=".json", prefix=f"pipe_{stage.id}_")
+    # tempfile.mktemp is deprecated due to race conditions; use NamedTemporaryFile
+    tmp = tempfile.NamedTemporaryFile(
+        suffix=".json", prefix=f"pipe_{stage.id}_", delete=False
+    )
+    stage.output_file = tmp.name
+    tmp.close()
 
     env = os.environ.copy()
     env.update(stage.env)
@@ -225,11 +230,17 @@ def _collect_input(stage, pipeline):
 
 
 def run_pipeline(pipeline, work_dir, max_parallel=4):
-    """Execute a pipeline with DAG-aware scheduling."""
+    """Execute a pipeline with DAG-aware scheduling.
+
+    Uses a threading.Event to avoid busy-wait polling.  All mutations of
+    stage status and the completed/failed sets are protected by a single
+    lock to eliminate race conditions.
+    """
     interp = _find_interpreter()
     completed = set()
     failed = set()
     lock = threading.Lock()
+    progress = threading.Event()  # signalled whenever a stage finishes
 
     print(_bold(f"+-- Pipeline: {pipeline.name} ({len(pipeline.stages)} stages)"))
     print(f"|  Interpreter: {interp}")
@@ -243,27 +254,29 @@ def run_pipeline(pipeline, work_dir, max_parallel=4):
         print(f"{prefix} {_cyan('>')} Starting {_bold(stage.script)}...")
         ok = _run_stage(stage, interp, work_dir, input_file)
         dur = f"{stage.duration:.1f}s"
-        if ok:
-            print(f"{prefix} {_green('OK')} Completed in {dur}")
-        else:
-            print(f"{prefix} {_red('FAIL')} Failed in {dur}: {stage.error}")
         with lock:
             if ok:
+                stage.status = "success"
                 completed.add(stage.id)
+                print(f"{prefix} {_green('OK')} Completed in {dur}")
             else:
+                # _run_stage already set status to "failed"
                 failed.add(stage.id)
+                print(f"{prefix} {_red('FAIL')} Failed in {dur}: {stage.error}")
+            progress.set()  # wake the scheduler
 
-    # Simple parallel scheduler
+    # DAG-aware parallel scheduler
     while True:
         with lock:
-            ready = pipeline.ready_stages(completed)
-            # Skip stages whose dependencies failed
-            for s in list(pipeline.stages.values()):
+            # Cascade skips for stages whose dependencies failed
+            for s in pipeline.stages.values():
                 if s.status == "pending" and any(d in failed for d in s.depends):
                     s.status = "skipped"
                     s.error = "Skipped (dependency failed)"
-                    print(f"  [{s.id}] {_yellow('SKIP')} Skipped (dependency failed)")
                     failed.add(s.id)
+                    print(f"  [{s.id}] {_yellow('SKIP')} Skipped (dependency failed)")
+
+            ready = pipeline.ready_stages(completed)
 
             all_done = all(
                 s.status in ("success", "failed", "skipped")
@@ -274,13 +287,16 @@ def run_pipeline(pipeline, work_dir, max_parallel=4):
             break
 
         if not ready:
-            time.sleep(0.1)
+            # Wait for a running stage to finish instead of busy-polling
+            progress.wait(timeout=5.0)
+            progress.clear()
             continue
 
         batch = ready[:max_parallel]
         threads = []
         for stage in batch:
-            stage.status = "running"  # Mark to prevent re-scheduling
+            with lock:
+                stage.status = "running"  # mark under lock to prevent re-scheduling
             t = threading.Thread(target=run_one, args=(stage,))
             t.start()
             threads.append(t)
