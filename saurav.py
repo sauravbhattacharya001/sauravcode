@@ -9367,19 +9367,35 @@ class Interpreter:
         # Save old variable value to restore after comprehension
         old_val = self.variables.get(node.var, None)
         had_var = node.var in self.variables
-        result = []
-        for item in items:
-            self.variables[node.var] = item
+        _variables = self.variables
+        _var = node.var
+        _evaluate = self.evaluate
+        try:
+            # Split into two loops to avoid checking node.condition on
+            # every iteration when there is no filter.  For unfiltered
+            # comprehensions over large collections this eliminates one
+            # branch + attribute load per element.
             if node.condition is not None:
-                cond = self.evaluate(node.condition)
-                if not self._is_truthy(cond):
-                    continue
-            result.append(self.evaluate(node.expr))
-        # Restore variable scope
-        if had_var:
-            self.variables[node.var] = old_val
-        else:
-            self.variables.pop(node.var, None)
+                _is_truthy = self._is_truthy
+                _cond = node.condition
+                result = []
+                for item in items:
+                    _variables[_var] = item
+                    if not _is_truthy(_evaluate(_cond)):
+                        continue
+                    result.append(_evaluate(node.expr))
+            else:
+                _expr = node.expr
+                result = []
+                for item in items:
+                    _variables[_var] = item
+                    result.append(_evaluate(_expr))
+        finally:
+            # Restore variable scope (in finally to be exception-safe)
+            if had_var:
+                _variables[_var] = old_val
+            else:
+                _variables.pop(_var, None)
         return result
 
     def _eval_index(self, node):
