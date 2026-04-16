@@ -230,17 +230,20 @@ def _collect_input(stage, pipeline):
 
 
 def run_pipeline(pipeline, work_dir, max_parallel=4):
-    """Execute a pipeline with DAG-aware scheduling.
+    """Execute a pipeline with DAG-aware streaming scheduling.
 
-    Uses a threading.Event to avoid busy-wait polling.  All mutations of
-    stage status and the completed/failed sets are protected by a single
-    lock to eliminate race conditions.
+    Uses a ThreadPoolExecutor so new stages are dispatched as soon as
+    their dependencies complete — not after an entire batch finishes.
+    A Condition variable replaces the old Event to properly synchronise
+    the ready-check loop without busy-polling or batch stalls.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     interp = _find_interpreter()
-    completed = set()
-    failed = set()
-    lock = threading.Lock()
-    progress = threading.Event()  # signalled whenever a stage finishes
+    completed = set()   # stage ids that succeeded
+    failed = set()      # stage ids that failed or were skipped
+    in_flight = set()   # stage ids currently executing
+    cond = threading.Condition()  # protects all mutable sets above
 
     print(_bold(f"+-- Pipeline: {pipeline.name} ({len(pipeline.stages)} stages)"))
     print(f"|  Interpreter: {interp}")
@@ -248,60 +251,64 @@ def run_pipeline(pipeline, work_dir, max_parallel=4):
     print("+" + "-" * 51)
     print()
 
-    def run_one(stage):
-        input_file = _collect_input(stage, pipeline)
-        prefix = f"  [{stage.id}]"
-        print(f"{prefix} {_cyan('>')} Starting {_bold(stage.script)}...")
-        ok = _run_stage(stage, interp, work_dir, input_file)
-        dur = f"{stage.duration:.1f}s"
-        with lock:
-            if ok:
-                stage.status = "success"
-                completed.add(stage.id)
-                print(f"{prefix} {_green('OK')} Completed in {dur}")
-            else:
-                # _run_stage already set status to "failed"
-                failed.add(stage.id)
-                print(f"{prefix} {_red('FAIL')} Failed in {dur}: {stage.error}")
-            progress.set()  # wake the scheduler
-
-    # DAG-aware parallel scheduler
-    while True:
-        with lock:
-            # Cascade skips for stages whose dependencies failed
+    def _cascade_skips():
+        """Mark pending stages whose dependencies have failed as skipped."""
+        changed = True
+        while changed:
+            changed = False
             for s in pipeline.stages.values():
                 if s.status == "pending" and any(d in failed for d in s.depends):
                     s.status = "skipped"
                     s.error = "Skipped (dependency failed)"
                     failed.add(s.id)
                     print(f"  [{s.id}] {_yellow('SKIP')} Skipped (dependency failed)")
+                    changed = True
 
-            ready = pipeline.ready_stages(completed)
+    def run_one(stage):
+        input_file = _collect_input(stage, pipeline)
+        prefix = f"  [{stage.id}]"
+        print(f"{prefix} {_cyan('>')} Starting {_bold(stage.script)}...")
+        ok = _run_stage(stage, interp, work_dir, input_file)
+        dur = f"{stage.duration:.1f}s"
+        with cond:
+            in_flight.discard(stage.id)
+            if ok:
+                stage.status = "success"
+                completed.add(stage.id)
+                print(f"{prefix} {_green('OK')} Completed in {dur}")
+            else:
+                failed.add(stage.id)
+                print(f"{prefix} {_red('FAIL')} Failed in {dur}: {stage.error}")
+            _cascade_skips()
+            cond.notify_all()  # wake scheduler to dispatch newly-ready stages
 
-            all_done = all(
-                s.status in ("success", "failed", "skipped")
-                for s in pipeline.stages.values()
-            )
+    with ThreadPoolExecutor(max_workers=max_parallel) as pool:
+        while True:
+            with cond:
+                _cascade_skips()
 
-        if all_done:
-            break
+                all_done = all(
+                    s.status in ("success", "failed", "skipped")
+                    for s in pipeline.stages.values()
+                )
+                if all_done:
+                    break
 
-        if not ready:
-            # Wait for a running stage to finish instead of busy-polling
-            progress.wait(timeout=5.0)
-            progress.clear()
-            continue
+                # Find stages that are ready and not already dispatched
+                ready = [
+                    s for s in pipeline.ready_stages(completed)
+                    if s.id not in in_flight
+                ]
 
-        batch = ready[:max_parallel]
-        threads = []
-        for stage in batch:
-            with lock:
-                stage.status = "running"  # mark under lock to prevent re-scheduling
-            t = threading.Thread(target=run_one, args=(stage,))
-            t.start()
-            threads.append(t)
-        for t in threads:
-            t.join()
+                if not ready:
+                    # Wait until a running stage finishes
+                    cond.wait(timeout=5.0)
+                    continue
+
+                for stage in ready:
+                    stage.status = "running"
+                    in_flight.add(stage.id)
+                    pool.submit(run_one, stage)
 
     return failed
 
