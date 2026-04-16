@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """sauravlint — Static analysis linter for the sauravcode language (.srv files).
 
 Detects potential bugs, style issues, and code smells in sauravcode programs.
@@ -226,6 +227,20 @@ class _ParsedLine:
     is_blank: bool = False  # blank or comment-only
 
 
+@dataclass
+class _StructState:
+    """Mutable state threaded through the structural check pass."""
+    func_defs: Dict[str, List[int]] = field(default_factory=dict)
+    imports: Dict[str, int] = field(default_factory=dict)
+    all_idents: Set[str] = field(default_factory=set)
+    in_terminated: bool = False
+    terminated_indent: int = -1
+    loop_depth: int = 0
+    loop_indents: List[int] = field(default_factory=list)
+    nesting_depth: int = 0
+    block_indents: List[int] = field(default_factory=list)
+
+
 class SauravLinter:
     """Static analysis linter for sauravcode .srv files."""
 
@@ -285,21 +300,14 @@ class SauravLinter:
         if rule not in self.disabled:
             report.add(LintIssue(rule, severity, line, col, msg, src))
 
+    _MAX_NESTING = 5
+
     # -- Structural checks --
 
     def _check_structure(self, lines: List[str], report: LintReport,
                          parsed: List[_ParsedLine]):
         """Check for structural issues: unreachable code, empty blocks, etc."""
-        func_defs: Dict[str, List[int]] = {}  # name -> [line numbers]
-        imports: Dict[str, int] = {}  # module -> line
-        all_idents: Set[str] = set()
-        in_terminated = False
-        terminated_indent = -1
-        loop_depth = 0
-        loop_indents = []  # stack of indent levels where loops started
-        nesting_depth = 0
-        max_nesting = 5
-        block_indents = []  # stack of indent levels where blocks started
+        st = self._StructState()
 
         # Precompute next-non-blank index for O(1) empty-block checks
         n_parsed = len(parsed)
@@ -311,119 +319,147 @@ class SauravLinter:
             if pl.is_blank:
                 continue
 
-            lineno = pl.lineno
-            raw = pl.raw
-            indent = pl.indent
-            kw = pl.keyword
+            st.all_idents |= pl.identifiers
 
-            # Collect all identifiers for import usage check
-            all_idents |= pl.identifiers
+            # Pop closed loops/blocks when we dedent
+            self._pop_closed_scopes(st, pl.indent)
 
-            # Reset terminated state when we dedent below the terminator
-            if in_terminated and indent < terminated_indent:
-                in_terminated = False
+            self._check_unreachable_code(report, st, pl)
+            self._check_func_definition(report, st, pl)
+            self._check_import(st, pl)
+            self._check_division_by_zero(report, pl)
+            self._check_break_continue(report, st, pl)
+            self._check_self_comparison(report, pl)
+            self._check_constant_condition(report, pl)
+            self._check_loop_entry(st, pl)
+            self._check_nesting(report, st, pl)
+            self._check_empty_block(report, pl, parsed, _next_non_blank, n_parsed)
+            self._check_terminator(st, pl)
 
-            # Unreachable code check (E002)
-            if in_terminated and indent >= terminated_indent:
-                self._emit(report, "E002", Severity.ERROR, lineno, 1,
-                           "Unreachable code after return/throw/break/continue", raw)
+        # Post-pass: cross-file checks
+        self._check_duplicate_functions(report, st)
+        self._check_unused_imports(report, st)
 
-            # Function definition
-            m = pl.func_match
-            if m:
-                fname = m.group(2)
-                params_str = m.group(3).strip()
-                param_count = len(params_str.split()) if params_str else 0
-                func_defs.setdefault(fname, []).append(lineno)
+    @staticmethod
+    def _pop_closed_scopes(st: '_StructState', indent: int):
+        """Pop loops and blocks from tracking stacks when indentation decreases."""
+        while st.loop_indents and indent <= st.loop_indents[-1]:
+            st.loop_indents.pop()
+            st.loop_depth -= 1
+        while st.block_indents and indent <= st.block_indents[-1]:
+            st.block_indents.pop()
+            st.nesting_depth -= 1
 
-                # W007: too many params
-                if param_count > 5:
-                    self._emit(report, "W007", Severity.WARNING, lineno, 1,
-                               f"Function '{fname}' has {param_count} parameters (max 5)", raw)
+    def _check_unreachable_code(self, report: LintReport,
+                                st: '_StructState', pl: _ParsedLine):
+        """E002: Code after return/throw/break/continue at same or deeper indent."""
+        if st.in_terminated and pl.indent < st.terminated_indent:
+            st.in_terminated = False
+        if st.in_terminated and pl.indent >= st.terminated_indent:
+            self._emit(report, "E002", Severity.ERROR, pl.lineno, 1,
+                       "Unreachable code after return/throw/break/continue", pl.raw)
 
-            # Import
-            m = pl.import_match
-            if m:
-                mod = m.group(2)
-                imports[mod] = lineno
+    def _check_func_definition(self, report: LintReport,
+                               st: '_StructState', pl: _ParsedLine):
+        """Collect function definitions; W007: too many parameters."""
+        m = pl.func_match
+        if not m:
+            return
+        fname = m.group(2)
+        params_str = m.group(3).strip()
+        param_count = len(params_str.split()) if params_str else 0
+        st.func_defs.setdefault(fname, []).append(pl.lineno)
+        if param_count > 5:
+            self._emit(report, "W007", Severity.WARNING, pl.lineno, 1,
+                       f"Function '{fname}' has {param_count} parameters (max 5)", pl.raw)
 
-            # Division by zero (E003)
-            if _DIVISION_RE.search(pl.code_no_str):
-                col = _DIVISION_RE.search(pl.code_no_str).start() + 1
-                self._emit(report, "E003", Severity.ERROR, lineno, col,
-                           "Division by zero", raw)
+    @staticmethod
+    def _check_import(st: '_StructState', pl: _ParsedLine):
+        """Collect imports for later unused-import analysis."""
+        m = pl.import_match
+        if m:
+            st.imports[m.group(2)] = pl.lineno
 
-            # Pop closed loops when we dedent
-            while loop_indents and indent <= loop_indents[-1]:
-                loop_indents.pop()
-                loop_depth -= 1
+    def _check_division_by_zero(self, report: LintReport, pl: _ParsedLine):
+        """E003: Division by literal zero."""
+        m = _DIVISION_RE.search(pl.code_no_str)
+        if m:
+            self._emit(report, "E003", Severity.ERROR, pl.lineno, m.start() + 1,
+                       "Division by zero", pl.raw)
 
-            # Pop closed blocks from nesting stack when we dedent
-            while block_indents and indent <= block_indents[-1]:
-                block_indents.pop()
-                nesting_depth -= 1
+    def _check_break_continue(self, report: LintReport,
+                              st: '_StructState', pl: _ParsedLine):
+        """E005: Break/continue outside any loop."""
+        if pl.keyword in ("break", "continue") and st.loop_depth == 0:
+            self._emit(report, "E005", Severity.ERROR, pl.lineno, 1,
+                       f"'{pl.keyword}' outside of loop", pl.raw)
 
-            # Break/continue outside loop (E005)
-            if kw in ("break", "continue") and loop_depth == 0:
-                self._emit(report, "E005", Severity.ERROR, lineno, 1,
-                           f"'{kw}' outside of loop", raw)
+    def _check_self_comparison(self, report: LintReport, pl: _ParsedLine):
+        """W004: Comparison of a variable to itself (x == x)."""
+        m = _SELF_COMPARE_RE.search(pl.code_no_str)
+        if m and m.group(1) not in _KEYWORDS:
+            self._emit(report, "W004", Severity.WARNING, pl.lineno, m.start() + 1,
+                       f"Comparison of '{m.group(1)}' to itself", pl.raw)
 
-            # Self-comparison (W004)
-            m = _SELF_COMPARE_RE.search(pl.code_no_str)
-            if m:
-                var = m.group(1)
-                if var not in _KEYWORDS:
-                    self._emit(report, "W004", Severity.WARNING, lineno, m.start() + 1,
-                               f"Comparison of '{var}' to itself", raw)
+    def _check_constant_condition(self, report: LintReport, pl: _ParsedLine):
+        """W005: Condition that is always true or always false."""
+        m = _CONDITION_RE.match(pl.raw)
+        if m:
+            val = m.group(1)
+            self._emit(report, "W005", Severity.WARNING, pl.lineno, 1,
+                       f"Constant condition: always {'true' if val == 'true' else 'false'}", pl.raw)
 
-            # Constant condition (W005)
-            m = _CONDITION_RE.match(raw)
-            if m:
-                val = m.group(1)
-                self._emit(report, "W005", Severity.WARNING, lineno, 1,
-                           f"Constant condition: always {'true' if val == 'true' else 'false'}", raw)
+    @staticmethod
+    def _check_loop_entry(st: '_StructState', pl: _ParsedLine):
+        """Track entry into loops for break/continue validation."""
+        if pl.keyword in _LOOP_KEYWORDS:
+            st.loop_depth += 1
+            st.loop_indents.append(pl.indent)
 
-            # Track loop depth for break/continue checking
-            if kw in _LOOP_KEYWORDS:
-                loop_depth += 1
-                loop_indents.append(indent)
+    def _check_nesting(self, report: LintReport,
+                       st: '_StructState', pl: _ParsedLine):
+        """W008: Block nesting exceeds maximum depth."""
+        if pl.keyword not in _BLOCK_STARTERS:
+            return
+        st.nesting_depth += 1
+        st.block_indents.append(pl.indent)
+        if st.nesting_depth > self._MAX_NESTING:
+            self._emit(report, "W008", Severity.WARNING, pl.lineno, 1,
+                       f"Nesting depth {st.nesting_depth} exceeds maximum ({self._MAX_NESTING})", pl.raw)
 
-            # Track nesting
-            if kw in _BLOCK_STARTERS:
-                nesting_depth += 1
-                block_indents.append(indent)
-                if nesting_depth > max_nesting:
-                    self._emit(report, "W008", Severity.WARNING, lineno, 1,
-                               f"Nesting depth {nesting_depth} exceeds maximum ({max_nesting})", raw)
+    def _check_empty_block(self, report: LintReport, pl: _ParsedLine,
+                           parsed: List[_ParsedLine],
+                           next_non_blank: List[int], n_parsed: int):
+        """W006: Block keyword with no body statements."""
+        kw = pl.keyword
+        if kw not in _BLOCK_STARTERS or kw == "enum":
+            return
+        idx = pl.lineno - 1
+        nxt = next_non_blank[idx] if idx < n_parsed - 1 else n_parsed
+        if nxt >= n_parsed or parsed[nxt].indent <= pl.indent:
+            self._emit(report, "W006", Severity.WARNING, pl.lineno, 1,
+                       f"Empty '{kw}' block", pl.raw)
 
-            # Check for empty blocks (W006)
-            if kw in _BLOCK_STARTERS and kw != "enum":
-                # O(1) look-ahead using precomputed next-non-blank index
-                block_indent = indent
-                idx = pl.lineno - 1  # 0-based index of current line
-                nxt = _next_non_blank[idx] if idx < n_parsed - 1 else n_parsed
-                has_body = nxt < n_parsed and parsed[nxt].indent > block_indent
-                if not has_body:
-                    self._emit(report, "W006", Severity.WARNING, lineno, 1,
-                               f"Empty '{kw}' block", raw)
+    @staticmethod
+    def _check_terminator(st: '_StructState', pl: _ParsedLine):
+        """Mark position of return/throw/break/continue for unreachable-code detection."""
+        if pl.keyword in _TERMINATORS:
+            st.in_terminated = True
+            st.terminated_indent = pl.indent
 
-            # Mark termination for unreachable code detection
-            if kw in _TERMINATORS:
-                in_terminated = True
-                terminated_indent = indent
-
-        # E004: duplicate function definitions
-        for fname, line_nums in func_defs.items():
+    def _check_duplicate_functions(self, report: LintReport, st: '_StructState'):
+        """E004: Same function name defined more than once."""
+        for fname, line_nums in st.func_defs.items():
             if len(line_nums) > 1:
                 for ln in line_nums[1:]:
                     self._emit(report, "E004", Severity.ERROR, ln, 1,
                                f"Duplicate function definition '{fname}' (first at line {line_nums[0]})")
 
-        # W009: unused imports
-        for mod, ln in imports.items():
-            # Check if any identifier from the module name appears
+    def _check_unused_imports(self, report: LintReport, st: '_StructState'):
+        """W009: Imported module never referenced."""
+        for mod, ln in st.imports.items():
             mod_base = mod.replace('.srv', '').split('/')[-1]
-            if mod_base not in all_idents:
+            if mod_base not in st.all_idents:
                 self._emit(report, "W009", Severity.WARNING, ln, 1,
                            f"Unused import '{mod}'")
 
