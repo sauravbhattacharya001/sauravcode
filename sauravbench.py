@@ -41,15 +41,24 @@ REGRESSION_THRESHOLD = 0.10  # 10% slower = regression
 
 # -- Core benchmark runner ----------------------------------------
 
-def run_once(code, filename):
+def parse_once(code):
+    """Tokenize and parse code once, returning reusable AST nodes."""
+    tokens = list(tokenize(code))
+    parser = Parser(tokens)
+    return parser.parse()
+
+
+def run_once(code, filename, *, ast_nodes=None):
     """Execute a sauravcode program once, returning elapsed seconds.
 
     Captures stdout/stderr to avoid cluttering benchmark output.
     Returns (elapsed_seconds, success, error_message).
+
+    If *ast_nodes* is provided, skips tokenization/parsing (saves time
+    in tight benchmark loops where the same source is run repeatedly).
     """
-    tokens = list(tokenize(code))
-    parser = Parser(tokens)
-    ast_nodes = parser.parse()
+    if ast_nodes is None:
+        ast_nodes = parse_once(code)
 
     interpreter = Interpreter()
     abs_filename = os.path.abspath(filename)
@@ -79,9 +88,12 @@ def benchmark(code, filename, iterations, warmup):
 
     Returns dict with timing statistics.
     """
+    # Parse once, reuse AST across all iterations
+    ast_nodes = parse_once(code)
+
     # Warmup phase
     for _ in range(warmup):
-        _, ok, err = run_once(code, filename)
+        _, ok, err = run_once(code, filename, ast_nodes=ast_nodes)
         if not ok:
             return {"error": f"Warmup failed: {err}"}
 
@@ -89,7 +101,7 @@ def benchmark(code, filename, iterations, warmup):
     times = []
     errors = 0
     for _ in range(iterations):
-        elapsed, ok, err = run_once(code, filename)
+        elapsed, ok, err = run_once(code, filename, ast_nodes=ast_nodes)
         if ok:
             times.append(elapsed)
         else:
