@@ -117,7 +117,23 @@ def tokenize(code):
 # ============================================================
 
 class ASTNode:
-    pass
+    def children(self):
+        """Yield all child ASTNode instances for generic tree walking."""
+        for val in self.__dict__.values():
+            if isinstance(val, ASTNode):
+                yield val
+            elif isinstance(val, list):
+                for item in val:
+                    if isinstance(item, ASTNode):
+                        yield item
+                    elif isinstance(item, tuple):
+                        for elem in item:
+                            if isinstance(elem, ASTNode):
+                                yield elem
+                            elif isinstance(elem, list):
+                                for sub in elem:
+                                    if isinstance(sub, ASTNode):
+                                        yield sub
 
 class ProgramNode(ASTNode):
     def __init__(self, statements):
@@ -1040,89 +1056,39 @@ class CCodeGenerator:
         self.output_lines.append("    " * self.indent_level + line)
 
     def scan_features(self, program):
-        """Pre-scan AST to detect which features are used."""
+        """Pre-scan AST to detect which features are used.
+
+        Uses the generic ``ASTNode.children()`` walker instead of
+        manually listing every node type, making this automatically
+        correct for new AST nodes.
+        """
+        # Map node types to the feature flags they trigger
+        _LIST_NODES = (ListNode, AppendNode, LenNode, PopNode, IndexNode, IndexedAssignmentNode)
+        _TRY_NODES = (TryCatchNode, ThrowNode)
+
         def walk(node):
-            if isinstance(node, ListNode) or isinstance(node, AppendNode) or isinstance(node, LenNode) or isinstance(node, PopNode) or isinstance(node, IndexNode) or isinstance(node, IndexedAssignmentNode):
+            if isinstance(node, _LIST_NODES):
                 self.uses_lists = True
             if isinstance(node, MapNode):
                 self.uses_maps = True
             if isinstance(node, FunctionCallNode) and node.name in ('keys', 'values', 'has_key'):
                 self.uses_maps = True
             if isinstance(node, ForEachNode):
-                # For-each may iterate over lists or maps
                 self.uses_lists = True
                 self.uses_maps = True
             if isinstance(node, StringNode):
                 self.uses_strings = True
-            if isinstance(node, TryCatchNode):
+            if isinstance(node, _TRY_NODES):
                 self.uses_try_catch = True
-            if isinstance(node, ThrowNode):
-                self.uses_try_catch = True
-            # Walk children
-            if isinstance(node, ProgramNode):
-                for s in node.statements: walk(s)
-            elif isinstance(node, FunctionNode):
-                for s in node.body: walk(s)
-            elif isinstance(node, ClassNode):
-                for s in node.body: walk(s)
-            elif isinstance(node, IfNode):
-                walk(node.condition)
-                for s in node.body: walk(s)
-                for cond, body in node.elif_chains:
-                    walk(cond)
-                    for s in body: walk(s)
-                if node.else_body:
-                    for s in node.else_body: walk(s)
-            elif isinstance(node, WhileNode):
-                walk(node.condition)
-                for s in node.body: walk(s)
-            elif isinstance(node, ForNode):
-                walk(node.start); walk(node.end)
-                for s in node.body: walk(s)
-            elif isinstance(node, ForEachNode):
-                walk(node.iterable)
-                for s in node.body: walk(s)
-            elif isinstance(node, TryCatchNode):
-                for s in node.try_body: walk(s)
-                for s in node.catch_body: walk(s)
-            elif isinstance(node, ReturnNode):
-                walk(node.expression)
-            elif isinstance(node, PrintNode):
-                walk(node.expression)
-            elif isinstance(node, AssignmentNode):
-                walk(node.expression)
-            elif isinstance(node, IndexedAssignmentNode):
-                walk(node.index); walk(node.value)
-            elif isinstance(node, DotAssignmentNode):
-                walk(node.obj); walk(node.value)
-            elif isinstance(node, BinaryOpNode):
-                walk(node.left); walk(node.right)
-            elif isinstance(node, UnaryOpNode):
-                walk(node.operand)
-            elif isinstance(node, CompareNode):
-                walk(node.left); walk(node.right)
-            elif isinstance(node, LogicalNode):
-                walk(node.left); walk(node.right)
-            elif isinstance(node, FunctionCallNode):
+            if isinstance(node, FunctionCallNode):
                 if node.name in self.STRING_RETURNING_BUILTINS or node.name in ('contains', 'index_of', 'split'):
                     self.uses_string_helpers = True
-                for a in node.arguments: walk(a)
-            elif isinstance(node, FStringNode):
+            if isinstance(node, FStringNode):
                 self.uses_fstring = True
-                for p in node.parts: walk(p)
-            elif isinstance(node, AppendNode):
-                walk(node.value)
-            elif isinstance(node, AssertNode):
-                walk(node.condition)
-                if node.message: walk(node.message)
-            elif isinstance(node, LenNode):
-                walk(node.expression)
-            elif isinstance(node, ListNode):
-                for e in node.elements: walk(e)
-            elif isinstance(node, MapNode):
-                for k, v in node.pairs: walk(k); walk(v)
-            elif isinstance(node, IndexNode):
-                walk(node.obj); walk(node.index)
+            # Generic child traversal — no need to enumerate every node type
+            for child in node.children():
+                walk(child)
+
         walk(program)
 
     def compile(self, program):
