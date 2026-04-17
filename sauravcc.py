@@ -2137,144 +2137,172 @@ class CCodeGenerator:
         else:
             self.emit(f'printf("%.10g\\n", (double)({expr_c}));')
 
-    def compile_expression(self, expr):
-        """Compile an expression to a C expression string."""
-        if isinstance(expr, NumberNode):
-            if expr.value == int(expr.value):
-                return str(int(expr.value))
-            return str(expr.value)
+    # ── Expression compilation dispatch table ─────────────────────
+    # O(1) type-based dispatch replaces the ~20-branch isinstance chain.
+    # compile_expression is the hottest path in the compiler (called
+    # recursively for every sub-expression), so eliminating linear
+    # isinstance scanning yields measurable speedup on large ASTs.
 
-        elif isinstance(expr, StringNode):
-            # Escape the string for C
-            escaped = expr.value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
-            return f'"{escaped}"'
+    def _compile_number(self, expr):
+        if expr.value == int(expr.value):
+            return str(int(expr.value))
+        return str(expr.value)
 
-        elif isinstance(expr, BoolNode):
-            return "1" if expr.value else "0"
+    def _compile_string(self, expr):
+        escaped = expr.value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+        return f'"{escaped}"'
 
-        elif isinstance(expr, IdentifierNode):
-            return self._safe_ident(expr.name)
+    def _compile_bool(self, expr):
+        return "1" if expr.value else "0"
 
-        elif isinstance(expr, BinaryOpNode):
-            left_c = self.compile_expression(expr.left)
-            right_c = self.compile_expression(expr.right)
-            if expr.operator == '%':
-                return f"fmod({left_c}, {right_c})"
-            return f"({left_c} {expr.operator} {right_c})"
+    def _compile_identifier(self, expr):
+        return self._safe_ident(expr.name)
 
-        elif isinstance(expr, UnaryOpNode):
-            operand_c = self.compile_expression(expr.operand)
-            if expr.operator == 'not':
-                return f"(!({operand_c}))"
-            elif expr.operator == '-':
-                return f"(-({operand_c}))"
-            return operand_c
+    def _compile_binary_op(self, expr):
+        left_c = self.compile_expression(expr.left)
+        right_c = self.compile_expression(expr.right)
+        if expr.operator == '%':
+            return f"fmod({left_c}, {right_c})"
+        return f"({left_c} {expr.operator} {right_c})"
 
-        elif isinstance(expr, CompareNode):
-            left_c = self.compile_expression(expr.left)
-            right_c = self.compile_expression(expr.right)
-            # String operands need strcmp(); C's == compares pointers.
-            if self._is_string_expr(expr.left) or self._is_string_expr(expr.right):
-                self.uses_string_helpers = True
-                cmp_expr = f"strcmp({left_c}, {right_c})"
-                if expr.operator == '==':
-                    return f"({cmp_expr} == 0)"
-                elif expr.operator == '!=':
-                    return f"({cmp_expr} != 0)"
-                elif expr.operator == '<':
-                    return f"({cmp_expr} < 0)"
-                elif expr.operator == '>':
-                    return f"({cmp_expr} > 0)"
-                elif expr.operator == '<=':
-                    return f"({cmp_expr} <= 0)"
-                elif expr.operator == '>=':
-                    return f"({cmp_expr} >= 0)"
-            return f"({left_c} {expr.operator} {right_c})"
+    def _compile_unary_op(self, expr):
+        operand_c = self.compile_expression(expr.operand)
+        if expr.operator == 'not':
+            return f"(!({operand_c}))"
+        elif expr.operator == '-':
+            return f"(-({operand_c}))"
+        return operand_c
 
-        elif isinstance(expr, LogicalNode):
-            left_c = self.compile_expression(expr.left)
-            right_c = self.compile_expression(expr.right)
-            op = '&&' if expr.operator == 'and' else '||'
-            return f"({left_c} {op} {right_c})"
+    _STRCMP_OPS = {
+        '==': '== 0', '!=': '!= 0', '<': '< 0',
+        '>': '> 0', '<=': '<= 0', '>=': '>= 0',
+    }
 
-        elif isinstance(expr, FunctionCallNode):
-            return self.compile_call(expr)
+    def _compile_compare(self, expr):
+        left_c = self.compile_expression(expr.left)
+        right_c = self.compile_expression(expr.right)
+        if self._is_string_expr(expr.left) or self._is_string_expr(expr.right):
+            self.uses_string_helpers = True
+            cmp_expr = f"strcmp({left_c}, {right_c})"
+            suffix = self._STRCMP_OPS.get(expr.operator)
+            if suffix:
+                return f"({cmp_expr} {suffix})"
+        return f"({left_c} {expr.operator} {right_c})"
 
-        elif isinstance(expr, ListNode):
-            # List literal in expression context — handled differently
-            return "srv_list_new()"  # Placeholder; actual init in assignment
+    def _compile_logical(self, expr):
+        left_c = self.compile_expression(expr.left)
+        right_c = self.compile_expression(expr.right)
+        op = '&&' if expr.operator == 'and' else '||'
+        return f"({left_c} {op} {right_c})"
 
-        elif isinstance(expr, MapNode):
-            # Map literal in expression context — placeholder
-            return "srv_map_new()"  # Actual init in assignment
+    def _compile_function_call(self, expr):
+        return self.compile_call(expr)
 
-        elif isinstance(expr, IndexNode):
-            obj_c = self.compile_expression(expr.obj)
-            idx_c = self.compile_expression(expr.index)
-            # Determine if this is map access or list access
-            if isinstance(expr.obj, IdentifierNode) and expr.obj.name in self.map_vars:
-                return f"srv_map_get(&{obj_c}, {idx_c})"
-            return f"srv_list_get(&{obj_c}, (int)({idx_c}))"
+    def _compile_list(self, expr):
+        return "srv_list_new()"
 
-        elif isinstance(expr, LenNode):
-            inner = self.compile_expression(expr.expression)
-            # Check if it's a map
-            if isinstance(expr.expression, IdentifierNode) and expr.expression.name in self.map_vars:
-                return f"srv_map_size(&{inner})"
-            return f"srv_list_len(&{inner})"
+    def _compile_map(self, expr):
+        return "srv_map_new()"
 
-        elif isinstance(expr, DotAccessNode):
-            # Check for enum access: EnumName.VARIANT -> integer constant
-            if isinstance(expr.obj, IdentifierNode) and expr.obj.name in self.enums:
-                enum_map = self.enums[expr.obj.name]
-                if expr.field not in enum_map:
-                    avail = ', '.join(enum_map.keys())
-                    raise RuntimeError(
-                        f"Enum '{expr.obj.name}' has no variant '{expr.field}'. "
-                        f"Available: {avail}"
-                    )
-                return str(enum_map[expr.field])
-            obj_c = self.compile_expression(expr.obj)
-            field = self._safe_ident(expr.field)
-            # Use -> for pointer access (self is a pointer in class methods)
-            if isinstance(expr.obj, IdentifierNode) and expr.obj.name == 'self':
-                return f"{obj_c}->{field}"
-            return f"{obj_c}.{field}"
+    def _compile_index(self, expr):
+        obj_c = self.compile_expression(expr.obj)
+        idx_c = self.compile_expression(expr.index)
+        if isinstance(expr.obj, IdentifierNode) and expr.obj.name in self.map_vars:
+            return f"srv_map_get(&{obj_c}, {idx_c})"
+        return f"srv_list_get(&{obj_c}, (int)({idx_c}))"
 
-        elif isinstance(expr, NewNode):
-            # Generate struct initialization — call ClassName_init if it exists
-            class_name = expr.class_name
-            if class_name in self.classes:
-                # Create a zero-initialized struct and call init
-                args_c = ", ".join(self.compile_expression(a) for a in expr.arguments)
-                if args_c:
-                    return f"({{ {class_name} __tmp = {{0}}; {class_name}_init(&__tmp, {args_c}); __tmp; }})"
-                else:
-                    return f"({{ {class_name} __tmp = {{0}}; {class_name}_init(&__tmp); __tmp; }})"
-            else:
-                # Unknown class — just zero-init
-                return f"(({class_name}){{0}})"
+    def _compile_len(self, expr):
+        inner = self.compile_expression(expr.expression)
+        if isinstance(expr.expression, IdentifierNode) and expr.expression.name in self.map_vars:
+            return f"srv_map_size(&{inner})"
+        return f"srv_list_len(&{inner})"
 
-        elif isinstance(expr, PopNode):
-            safe_list = self._safe_ident(expr.list_name)
-            return f"srv_list_pop(&{safe_list})"
+    def _compile_dot_access(self, expr):
+        if isinstance(expr.obj, IdentifierNode) and expr.obj.name in self.enums:
+            enum_map = self.enums[expr.obj.name]
+            if expr.field not in enum_map:
+                avail = ', '.join(enum_map.keys())
+                raise RuntimeError(
+                    f"Enum '{expr.obj.name}' has no variant '{expr.field}'. "
+                    f"Available: {avail}"
+                )
+            return str(enum_map[expr.field])
+        obj_c = self.compile_expression(expr.obj)
+        field = self._safe_ident(expr.field)
+        if isinstance(expr.obj, IdentifierNode) and expr.obj.name == 'self':
+            return f"{obj_c}->{field}"
+        return f"{obj_c}.{field}"
 
-        elif isinstance(expr, FStringNode):
-            return self.compile_fstring(expr)
-
-        elif isinstance(expr, TernaryNode):
-            cond_c = self.compile_expression(expr.condition)
-            true_c = self.compile_expression(expr.true_expr)
-            false_c = self.compile_expression(expr.false_expr)
-            return f"(({cond_c}) ? ({true_c}) : ({false_c}))"
-
-        elif isinstance(expr, MethodCallNode):
-            obj_c = self.compile_expression(expr.obj)
+    def _compile_new(self, expr):
+        class_name = expr.class_name
+        if class_name in self.classes:
             args_c = ", ".join(self.compile_expression(a) for a in expr.arguments)
-            return f"{obj_c}_{expr.method}(&{obj_c}, {args_c})"
-
+            if args_c:
+                return f"({{ {class_name} __tmp = {{0}}; {class_name}_init(&__tmp, {args_c}); __tmp; }})"
+            else:
+                return f"({{ {class_name} __tmp = {{0}}; {class_name}_init(&__tmp); __tmp; }})"
         else:
-            raise ValueError(f"Unknown expression type: {type(expr).__name__}")
+            return f"(({class_name}){{0}})"
+
+    def _compile_pop(self, expr):
+        safe_list = self._safe_ident(expr.list_name)
+        return f"srv_list_pop(&{safe_list})"
+
+    def _compile_fstring(self, expr):
+        return self.compile_fstring(expr)
+
+    def _compile_ternary(self, expr):
+        cond_c = self.compile_expression(expr.condition)
+        true_c = self.compile_expression(expr.true_expr)
+        false_c = self.compile_expression(expr.false_expr)
+        return f"(({cond_c}) ? ({true_c}) : ({false_c}))"
+
+    def _compile_method_call(self, expr):
+        obj_c = self.compile_expression(expr.obj)
+        args_c = ", ".join(self.compile_expression(a) for a in expr.arguments)
+        return f"{obj_c}_{expr.method}(&{obj_c}, {args_c})"
+
+    # Built lazily on first use to avoid referencing AST node classes
+    # before they are defined (module-level ordering).
+    _expr_dispatch = None
+
+    @classmethod
+    def _build_expr_dispatch(cls):
+        cls._expr_dispatch = {
+            NumberNode:       cls._compile_number,
+            StringNode:       cls._compile_string,
+            BoolNode:         cls._compile_bool,
+            IdentifierNode:   cls._compile_identifier,
+            BinaryOpNode:     cls._compile_binary_op,
+            UnaryOpNode:      cls._compile_unary_op,
+            CompareNode:      cls._compile_compare,
+            LogicalNode:      cls._compile_logical,
+            FunctionCallNode: cls._compile_function_call,
+            ListNode:         cls._compile_list,
+            MapNode:          cls._compile_map,
+            IndexNode:        cls._compile_index,
+            LenNode:          cls._compile_len,
+            DotAccessNode:    cls._compile_dot_access,
+            NewNode:          cls._compile_new,
+            PopNode:          cls._compile_pop,
+            FStringNode:      cls._compile_fstring,
+            TernaryNode:      cls._compile_ternary,
+            MethodCallNode:   cls._compile_method_call,
+        }
+
+    def compile_expression(self, expr):
+        """Compile an expression to a C expression string.
+
+        Uses O(1) type-dispatch instead of a linear isinstance chain.
+        Since this method is called recursively for every sub-expression
+        in the AST, the speedup is proportional to tree size.
+        """
+        if self._expr_dispatch is None:
+            self._build_expr_dispatch()
+        handler = self._expr_dispatch.get(type(expr))
+        if handler is not None:
+            return handler(self, expr)
+        raise ValueError(f"Unknown expression type: {type(expr).__name__}")
 
     # Builtin functions: sauravcode name -> C expression template.
     # {0}, {1}, ... are replaced with compiled argument expressions.
