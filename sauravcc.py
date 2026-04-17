@@ -1052,6 +1052,95 @@ class CCodeGenerator:
             return True
         return False
 
+    def _build_param_list(self, func_name, params):
+        """Build a C parameter list string for a function signature.
+
+        Deduplicates the logic previously repeated in compile() for forward
+        declarations and in compile_function() for definitions.
+        """
+        string_indices = self.string_params.get(func_name, set())
+        parts = []
+        for i, p in enumerate(params):
+            c_type = "const char *" if i in string_indices else "double "
+            parts.append(c_type + self._safe_ident(p))
+        return ", ".join(parts) if parts else "void"
+
+    def _infer_c_type(self, expression):
+        """Infer the C type category for a sauravcode expression.
+
+        Returns one of: 'string', 'const_string', 'fstring', 'bool',
+        'list', 'map', 'string_func', 'split', 'double'.
+        Used to emit correct C declarations for first assignments.
+        """
+        if isinstance(expression, StringNode):
+            return 'const_string'
+        if isinstance(expression, FStringNode):
+            return 'fstring'
+        if isinstance(expression, BoolNode):
+            return 'bool'
+        if isinstance(expression, ListNode):
+            return 'list'
+        if isinstance(expression, MapNode):
+            return 'map'
+        if isinstance(expression, FunctionCallNode):
+            if expression.name in self.STRING_RETURNING_BUILTINS:
+                return 'string_func'
+            if expression.name == 'split':
+                return 'split'
+        return 'double'
+
+    def _emit_first_declaration(self, name, expression, expr_c, scope):
+        """Emit a C variable declaration for the first assignment of *name*.
+
+        Determines the correct C type from *expression*, emits the declaration,
+        and updates type-tracking sets (string_vars, list_vars, map_vars).
+        """
+        safe = self._safe_ident(name)
+        ctype = self._infer_c_type(expression)
+
+        if ctype == 'const_string':
+            self.emit(f'const char *{safe} = {expr_c};')
+            self.string_vars.add(name)
+        elif ctype == 'fstring':
+            self.emit(f'char *{safe} = {expr_c};')
+            self.string_vars.add(name)
+        elif ctype == 'bool':
+            self.emit(f'int {safe} = {expr_c};')
+        elif ctype == 'list':
+            self.emit(f'SrvList {safe} = srv_list_new();')
+            self.list_vars.add(name)
+            for elem in expression.elements:
+                self.emit(f'srv_list_append(&{safe}, {self.compile_expression(elem)});')
+        elif ctype == 'map':
+            self.emit(f'SrvMap {safe} = srv_map_new();')
+            self.map_vars.add(name)
+            for key_expr, val_expr in expression.pairs:
+                self.emit(f'srv_map_set(&{safe}, {self.compile_expression(key_expr)}, {self.compile_expression(val_expr)});')
+        elif ctype == 'string_func':
+            self.emit(f'char *{safe} = {expr_c};')
+            self.string_vars.add(name)
+        elif ctype == 'split':
+            self.emit(f'SrvList {safe} = {expr_c};')
+            self.list_vars.add(name)
+        else:
+            self.emit(f'double {safe} = {expr_c};')
+
+        self.declared_vars.setdefault(scope, set()).add(name)
+
+    def _emit_reassignment(self, name, expression, expr_c):
+        """Emit a C reassignment for an already-declared variable *name*."""
+        safe = self._safe_ident(name)
+        if isinstance(expression, ListNode):
+            self.emit(f'{safe} = srv_list_new();')
+            for elem in expression.elements:
+                self.emit(f'srv_list_append(&{safe}, {self.compile_expression(elem)});')
+        elif isinstance(expression, MapNode):
+            self.emit(f'{safe} = srv_map_new();')
+            for key_expr, val_expr in expression.pairs:
+                self.emit(f'srv_map_set(&{safe}, {self.compile_expression(key_expr)}, {self.compile_expression(val_expr)});')
+        else:
+            self.emit(f'{safe} = {expr_c};')
+
     def emit(self, line=""):
         self.output_lines.append("    " * self.indent_level + line)
 
@@ -1212,16 +1301,7 @@ class CCodeGenerator:
         # Emit forward declarations for functions
         for name, func in self.functions.items():
             safe_name = self._safe_ident(name)
-            param_parts = []
-            string_indices = self.string_params.get(name, set())
-            for i, p in enumerate(func.params):
-                if i in string_indices:
-                    param_parts.append("const char *" + self._safe_ident(p))
-                else:
-                    param_parts.append("double " + self._safe_ident(p))
-            params = ", ".join(param_parts) if param_parts else "void"
-            if not params:
-                params = "void"
+            params = self._build_param_list(name, func.params)
             self.emit(f"double {safe_name}({params});")
         self.emit("")
 
@@ -1784,20 +1864,14 @@ class CCodeGenerator:
     def compile_function(self, func):
         """Emit a C function definition."""
         safe_name = self._safe_ident(func.name)
-        string_indices = self.string_params.get(func.name, set())
-        param_parts = []
-        for i, p in enumerate(func.params):
-            if i in string_indices:
-                param_parts.append("const char *" + self._safe_ident(p))
-            else:
-                param_parts.append("double " + self._safe_ident(p))
-        params = ", ".join(param_parts) if param_parts else "void"
+        params = self._build_param_list(func.name, func.params)
         self.emit(f"double {safe_name}({params}) {{")
         self.indent_level += 1
         self.declared_vars[func.name] = set(func.params)
 
         # Mark string parameters in string_vars for correct f-string formatting
         saved_string_vars = set(self.string_vars)
+        string_indices = self.string_params.get(func.name, set())
         for i, p in enumerate(func.params):
             if i in string_indices:
                 self.string_vars.add(p)
@@ -1840,57 +1914,10 @@ class CCodeGenerator:
 
         elif isinstance(stmt, AssignmentNode):
             expr_c = self.compile_expression(stmt.expression)
-            name = self._safe_ident(stmt.name)
             if stmt.name not in self.declared_vars.get(scope, set()):
-                # Detect type from expression
-                if isinstance(stmt.expression, StringNode):
-                    self.emit(f'const char *{name} = {expr_c};')
-                    self.string_vars.add(stmt.name)
-                elif isinstance(stmt.expression, FStringNode):
-                    self.emit(f'char *{name} = {expr_c};')
-                    self.string_vars.add(stmt.name)
-                elif isinstance(stmt.expression, BoolNode):
-                    self.emit(f'int {name} = {expr_c};')
-                elif isinstance(stmt.expression, ListNode):
-                    self.emit(f'SrvList {name} = srv_list_new();')
-                    self.list_vars.add(stmt.name)
-                    for elem in stmt.expression.elements:
-                        elem_c = self.compile_expression(elem)
-                        self.emit(f'srv_list_append(&{name}, {elem_c});')
-                elif isinstance(stmt.expression, MapNode):
-                    self.emit(f'SrvMap {name} = srv_map_new();')
-                    self.map_vars.add(stmt.name)
-                    for key_expr, val_expr in stmt.expression.pairs:
-                        key_c = self.compile_expression(key_expr)
-                        val_c = self.compile_expression(val_expr)
-                        self.emit(f'srv_map_set(&{name}, {key_c}, {val_c});')
-                elif isinstance(stmt.expression, FunctionCallNode) and stmt.expression.name in self.STRING_RETURNING_BUILTINS:
-                    self.emit(f'char *{name} = {expr_c};')
-                    self.string_vars.add(stmt.name)
-                elif isinstance(stmt.expression, FunctionCallNode) and stmt.expression.name == 'split':
-                    self.emit(f'SrvList {name} = {expr_c};')
-                    self.list_vars.add(stmt.name)
-                else:
-                    self.emit(f"double {name} = {expr_c};")
-                self.declared_vars.setdefault(scope, set()).add(stmt.name)
+                self._emit_first_declaration(stmt.name, stmt.expression, expr_c, scope)
             else:
-                if isinstance(stmt.expression, ListNode):
-                    # Reassigning a list
-                    self.emit(f'{name} = srv_list_new();')
-                    for elem in stmt.expression.elements:
-                        elem_c = self.compile_expression(elem)
-                        self.emit(f'srv_list_append(&{name}, {elem_c});')
-                elif isinstance(stmt.expression, MapNode):
-                    # Reassigning a map
-                    self.emit(f'{name} = srv_map_new();')
-                    for key_expr, val_expr in stmt.expression.pairs:
-                        key_c = self.compile_expression(key_expr)
-                        val_c = self.compile_expression(val_expr)
-                        self.emit(f'srv_map_set(&{name}, {key_c}, {val_c});')
-                elif isinstance(stmt.expression, FunctionCallNode) and stmt.expression.name == 'split':
-                    self.emit(f'{name} = {expr_c};')
-                else:
-                    self.emit(f"{name} = {expr_c};")
+                self._emit_reassignment(stmt.name, stmt.expression, expr_c)
 
         elif isinstance(stmt, ReturnNode):
             expr_c = self.compile_expression(stmt.expression)
