@@ -9137,17 +9137,19 @@ class Interpreter:
 
             return self._invoke_function(func, evaluated_args, name)
 
-        # Check built-in functions
-        if name in self.builtins:
+        # Check built-in functions — single dict lookup instead of
+        # ``name in self.builtins`` followed by ``self.builtins[name]``.
+        builtin_fn = self.builtins.get(name)
+        if builtin_fn is not None:
             # Zero-arg builtin call: if a user variable shadows it, return the variable
             if len(evaluated_args) == 0 and name in self.variables:
                 return self.variables[name]
-            return self.builtins[name](evaluated_args)
+            return builtin_fn(evaluated_args)
 
         # Check if the name refers to a variable holding a callable value
         # (e.g. a closure returned from a higher-order function)
-        if name in self.variables:
-            var_val = self.variables[name]
+        var_val = self.variables.get(name, self._SENTINEL)
+        if var_val is not self._SENTINEL:
             if isinstance(var_val, FunctionNode):
                 return self._invoke_function(var_val, evaluated_args, name)
             elif isinstance(var_val, LambdaValue):
