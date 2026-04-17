@@ -46,16 +46,40 @@ from saurav import tokenize, Parser, ASTNode
 
 # ── AST Walking ─────────────────────────────────────────────────────
 
+# Cache which attributes of each ASTNode subclass are child-bearing.
+# Avoids calling sorted(vars(node)) on every node during tree walks,
+# which allocates a dict + sorted list per node.  Instead we compute
+# the attribute list once per type and reuse it for all instances.
+_NODE_CHILD_ATTRS: dict[type, tuple[str, ...]] = {}
+
+
+def _child_attrs(node):
+    """Return the cached tuple of child-bearing attribute names for *node*'s type."""
+    cls = type(node)
+    attrs = _NODE_CHILD_ATTRS.get(cls)
+    if attrs is not None:
+        return attrs
+    attrs = tuple(
+        a for a in sorted(vars(node))
+        if not a.startswith('_') and a != 'line_num'
+    )
+    _NODE_CHILD_ATTRS[cls] = attrs
+    return attrs
+
+
 def walk_ast(nodes, depth=0):
-    """Yield (node, depth) for every ASTNode in the tree."""
+    """Yield (node, depth) for every ASTNode in the tree.
+
+    Uses a cached per-type attribute list (via ``_child_attrs``) so we
+    avoid the ``sorted(vars(node))`` overhead on every node.  For a
+    1 000-node AST this eliminates ~1 000 dict + sorted-list allocations.
+    """
     if isinstance(nodes, list):
         for node in nodes:
             yield from walk_ast(node, depth)
     elif isinstance(nodes, ASTNode):
         yield (nodes, depth)
-        for attr in sorted(vars(nodes)):
-            if attr.startswith('_') or attr == 'line_num':
-                continue
+        for attr in _child_attrs(nodes):
             val = getattr(nodes, attr)
             if isinstance(val, ASTNode):
                 yield from walk_ast(val, depth + 1)
@@ -68,9 +92,7 @@ def walk_ast(nodes, depth=0):
 def children_of(node):
     """Return direct ASTNode children of a node."""
     kids = []
-    for attr in sorted(vars(node)):
-        if attr.startswith('_') or attr == 'line_num':
-            continue
+    for attr in _child_attrs(node):
         val = getattr(node, attr)
         if isinstance(val, ASTNode):
             kids.append(val)
@@ -87,6 +109,27 @@ def contains_node_type(node, type_name):
         if type(child).__name__ == type_name and child is not node:
             return True
     return False
+
+
+def contains_any_node_types(node, type_names):
+    """Check for multiple node types in a single AST walk.
+
+    Returns a dict mapping each type_name to a bool.  This is
+    significantly faster than calling ``contains_node_type`` N times,
+    since it walks the tree only once instead of N times.
+    """
+    remaining = set(type_names)
+    found = {tn: False for tn in type_names}
+    for child, _ in walk_ast(node):
+        if child is node:
+            continue
+        cname = type(child).__name__
+        if cname in remaining:
+            found[cname] = True
+            remaining.discard(cname)
+            if not remaining:
+                break
+    return found
 
 
 # ── File Parsing ─────────────────────────────────────────────────────
@@ -135,9 +178,10 @@ def query_functions(ast, filename, name_filter=None):
             # Count body statements
             body = getattr(node, 'body', [])
             body_size = len(body) if isinstance(body, list) else 1
-            # Check for return
-            has_return = contains_node_type(node, 'ReturnNode')
-            has_yield = contains_node_type(node, 'YieldNode')
+            # Single-pass check for both ReturnNode and YieldNode
+            _found = contains_any_node_types(node, ('ReturnNode', 'YieldNode'))
+            has_return = _found['ReturnNode']
+            has_yield = _found['YieldNode']
             line = getattr(node, 'line_num', '?')
             results.append({
                 'file': filename,
@@ -218,8 +262,11 @@ def query_loops(ast, filename, no_break=False, max_depth=None):
         if ntype in loop_types:
             if max_depth is not None and depth > max_depth:
                 continue
-            has_break = contains_node_type(node, 'BreakNode')
-            has_continue = contains_node_type(node, 'ContinueNode')
+            # Single-pass check for both BreakNode and ContinueNode
+            # instead of two separate tree walks.
+            _found = contains_any_node_types(node, ('BreakNode', 'ContinueNode'))
+            has_break = _found['BreakNode']
+            has_continue = _found['ContinueNode']
             if no_break and has_break:
                 continue
             line = getattr(node, 'line_num', '?')
