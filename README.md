@@ -6,8 +6,10 @@
   <!-- CI & Quality -->
   <p align="center">
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/ci.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/build-check.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/build-check.yml/badge.svg" alt="Build"></a>
     <a href="https://codecov.io/gh/sauravbhattacharya001/sauravcode"><img src="https://codecov.io/gh/sauravbhattacharya001/sauravcode/branch/main/graph/badge.svg" alt="Coverage"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/docker.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/docker.yml/badge.svg" alt="Docker"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml/badge.svg" alt="Pages"></a>
   </p>
   <!-- Package & Version -->
@@ -29,6 +31,8 @@
     <a href="https://github.com/sauravbhattacharya001/sauravcode/stargazers"><img src="https://img.shields.io/github/stars/sauravbhattacharya001/sauravcode?style=social" alt="Stars"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/issues"><img src="https://img.shields.io/github/issues/sauravbhattacharya001/sauravcode" alt="Issues"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome"></a>
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/network/dependents"><img src="https://img.shields.io/librariesio/dependents/pypi/sauravcode" alt="Dependents"></a>
+    <a href="https://hub.docker.com/r/sauravbhattacharya001/sauravcode"><img src="https://img.shields.io/docker/pulls/sauravbhattacharya001/sauravcode" alt="Docker Pulls"></a>
   </p>
 </p>
 
