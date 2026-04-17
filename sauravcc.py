@@ -58,8 +58,7 @@ token_specification = [
     ('COLON',    r':'),
     ('DOT',      r'\.'),
     ('COMMA',    r','),
-    ('KEYWORD',  r'\b(?:function|return|class|new|self|int|float|bool|string|if|else if|else|for|in|while|try|catch|throw|print|true|false|and|or|not|list|set|map|stack|queue|append|len|pop|get|break|continue|assert|enum)\b'),
-    ('IDENT',    r'[a-zA-Z_]\w*'),
+    ('IDENT',    r'[a-zA-Z_]\w*'),  # Keywords resolved via _CC_KEYWORDS post-match
     ('NEWLINE',  r'\n'),
     ('SKIP',     r'[ \t]+'),
     ('MISMATCH', r'.'),
@@ -67,6 +66,18 @@ token_specification = [
 
 tok_regex = re.compile('|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_specification))
 _indent_re = re.compile(r'[ \t]*')
+
+# Keyword set for O(1) post-match reclassification.
+# Replacing the 30+ alternation KEYWORD regex pattern with a frozenset lookup
+# eliminates the regex engine trying every keyword branch before falling through
+# to IDENT on each word token — the same optimisation applied to the interpreter.
+_CC_KEYWORDS = frozenset({
+    'function', 'return', 'class', 'new', 'self', 'int', 'float', 'bool',
+    'string', 'if', 'else', 'for', 'in', 'while', 'try', 'catch', 'throw',
+    'print', 'true', 'false', 'and', 'or', 'not', 'list', 'set', 'map',
+    'stack', 'queue', 'append', 'len', 'pop', 'get', 'break', 'continue',
+    'assert', 'enum',
+})
 
 
 def tokenize(code):
@@ -102,12 +113,31 @@ def tokenize(code):
         elif typ == 'MISMATCH':
             raise RuntimeError(f'Unexpected character {value!r} on line {line_num}')
         else:
+            # Reclassify identifiers that are keywords via O(1) set lookup.
+            if typ == 'IDENT' and value in _CC_KEYWORDS:
+                typ = 'KEYWORD'
             column = match.start() - line_start
             tokens.append((typ, value, line_num, column))
 
     while len(indent_levels) > 1:
         indent_levels.pop()
         tokens.append(('DEDENT', 0, line_num, line_start))
+
+    # Merge adjacent KEYWORD('else') + KEYWORD('if') into KEYWORD('else if')
+    # to match the old single-token behaviour expected by the parser.
+    merged = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if (tok[0] == 'KEYWORD' and tok[1] == 'else' and
+                i + 1 < n and tokens[i + 1][0] == 'KEYWORD' and tokens[i + 1][1] == 'if'):
+            merged.append(('KEYWORD', 'else if', tok[2], tok[3]))
+            i += 2
+        else:
+            merged.append(tok)
+            i += 1
+    tokens = merged
 
     return tokens
 
