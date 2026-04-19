@@ -1,0 +1,22 @@
+-- automata_demo.srv
+-- Demonstrates the sauravautomata cellular automata simulator
+
+print "=== Cellular Automata Demo ==="
+print ""
+print "sauravautomata provides 1D elementary cellular automata"
+print "(Wolfram rules 0-255) and Conway's Game of Life."
+print ""
+print "Try these commands:"
+print "  python sauravautomata.py rule 30 --generations 30 --color"
+print "  python sauravautomata.py rule 110 --generations 50 --color"
+print "  python sauravautomata.py life --preset glider --generations 40"
+print "  python sauravautomata.py life --random --density 0.25 --color"
+print "  python sauravautomata.py classify 0 30"
+print "  python sauravautomata.py repl"
+print ""
+print "Features:"
+print "  - Auto-classifies rules into Wolfram Classes I-IV"
+print "  - Detects pattern stabilization and oscillation"
+print "  - Population tracking with sparkline charts"
+print "  - Shannon entropy measurement"
+print "  - Smart recommendations for what to explore next"
