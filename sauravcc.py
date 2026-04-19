@@ -2149,8 +2149,29 @@ class CCodeGenerator:
         return str(expr.value)
 
     def _compile_string(self, expr):
-        escaped = expr.value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
-        return f'"{escaped}"'
+        # Emit Unicode characters as UTF-8 byte sequences for C compatibility
+        chars = []
+        for ch in expr.value:
+            cp = ord(ch)
+            if ch == '\\':
+                chars.append('\\\\')
+            elif ch == '"':
+                chars.append('\\"')
+            elif ch == '\n':
+                chars.append('\\n')
+            elif ch == '\r':
+                chars.append('\\r')
+            elif ch == '\t':
+                chars.append('\\t')
+            elif ch == '\0':
+                chars.append('\\0')
+            elif cp > 127:
+                # Emit as \xHH UTF-8 byte sequence
+                for b in ch.encode('utf-8'):
+                    chars.append(f'\\x{b:02x}')
+            else:
+                chars.append(ch)
+        return '"' + ''.join(chars) + '"'
 
     def _compile_bool(self, expr):
         return "1" if expr.value else "0"
@@ -2371,9 +2392,24 @@ class CCodeGenerator:
         args = []
         for part in node.parts:
             if isinstance(part, StringNode):
-                # Literal text — escape % for printf
-                escaped = part.value.replace('\\', '\\\\').replace('"', '\\"')
-                escaped = escaped.replace('%', '%%').replace('\n', '\\n')
+                # Literal text — escape % for printf and handle Unicode
+                chars = []
+                for ch in part.value:
+                    cp = ord(ch)
+                    if ch == '\\':
+                        chars.append('\\\\')
+                    elif ch == '"':
+                        chars.append('\\"')
+                    elif ch == '\n':
+                        chars.append('\\n')
+                    elif ch == '%':
+                        chars.append('%%')
+                    elif cp > 127:
+                        for b in ch.encode('utf-8'):
+                            chars.append(f'\\x{b:02x}')
+                    else:
+                        chars.append(ch)
+                escaped = ''.join(chars)
                 fmt_parts.append(escaped)
             elif isinstance(part, IdentifierNode) and part.name in self.string_vars:
                 fmt_parts.append('%s')
