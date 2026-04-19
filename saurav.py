@@ -409,11 +409,18 @@ _ESCAPE_MAP = {
     '0': '\0',
 }
 
+def _is_hex(c):
+    """Return True if *c* is a valid hexadecimal digit."""
+    return c in '0123456789abcdefABCDEF'
+
+
 def process_escapes(s):
     """Process backslash escape sequences in a string literal.
 
     Translates \\n → newline, \\t → tab, \\r → carriage return,
-    \\\\ → backslash, \\" → quote, \\0 → null.
+    \\\\ → backslash, \\" → quote, \\0 → null,
+    \\xHH → hex byte, \\uXXXX → Unicode (BMP),
+    \\UXXXXXXXX → Unicode (full range).
     Unknown escape sequences (e.g. \\d) are kept verbatim
     (backslash + character), which preserves regex patterns
     and other backslash-heavy content.
@@ -427,11 +434,27 @@ def process_escapes(s):
             nxt = s[i + 1]
             if nxt in _ESCAPE_MAP:
                 result.append(_ESCAPE_MAP[nxt])
+                i += 2
+            elif nxt == 'x' and i + 3 < len(s) and all(_is_hex(s[i + j]) for j in range(2, 4)):
+                result.append(chr(int(s[i + 2:i + 4], 16)))
+                i += 4
+            elif nxt == 'u' and i + 5 < len(s) and all(_is_hex(s[i + j]) for j in range(2, 6)):
+                result.append(chr(int(s[i + 2:i + 6], 16)))
+                i += 6
+            elif nxt == 'U' and i + 9 < len(s) and all(_is_hex(s[i + j]) for j in range(2, 10)):
+                code_point = int(s[i + 2:i + 10], 16)
+                if code_point > 0x10FFFF:
+                    result.append('\\')
+                    result.append(nxt)
+                    i += 2
+                else:
+                    result.append(chr(code_point))
+                    i += 10
             else:
                 # Unknown escape — keep both backslash and character
                 result.append('\\')
                 result.append(nxt)
-            i += 2
+                i += 2
         else:
             result.append(s[i])
             i += 1
@@ -1879,11 +1902,27 @@ class Parser:
                 nxt = content[i + 1]
                 if nxt in _ESCAPE_MAP:
                     text_buf.append(_ESCAPE_MAP[nxt])
+                    i += 2
+                elif nxt == 'x' and i + 3 < len(content) and all(_is_hex(content[i + j]) for j in range(2, 4)):
+                    text_buf.append(chr(int(content[i + 2:i + 4], 16)))
+                    i += 4
+                elif nxt == 'u' and i + 5 < len(content) and all(_is_hex(content[i + j]) for j in range(2, 6)):
+                    text_buf.append(chr(int(content[i + 2:i + 6], 16)))
+                    i += 6
+                elif nxt == 'U' and i + 9 < len(content) and all(_is_hex(content[i + j]) for j in range(2, 10)):
+                    code_point = int(content[i + 2:i + 10], 16)
+                    if code_point > 0x10FFFF:
+                        text_buf.append('\\')
+                        text_buf.append(nxt)
+                        i += 2
+                    else:
+                        text_buf.append(chr(code_point))
+                        i += 10
                 else:
                     # Unknown escape — keep both backslash and character
                     text_buf.append('\\')
                     text_buf.append(nxt)
-                i += 2
+                    i += 2
             elif ch == '{':
                 # Check for escaped brace {{ → literal {
                 if i + 1 < len(content) and content[i + 1] == '{':
