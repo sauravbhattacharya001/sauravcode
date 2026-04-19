@@ -266,6 +266,22 @@ class APIHandler(BaseHTTPRequestHandler):
 
         t0 = time.monotonic()
         stdout_capture = io.StringIO()
+
+        # Use a single release guard that covers ALL exit paths.
+        # Previously, if copy.deepcopy() or variable setup threw
+        # before the execution thread started, the semaphore was
+        # acquired but never released — a permanent concurrency
+        # slot leak that would eventually DoS the server after
+        # MAX_CONCURRENT_EXECUTIONS such failures.
+        _release_lock = threading.Lock()
+        _released = [False]
+
+        def _release_semaphore():
+            with _release_lock:
+                if not _released[0]:
+                    _released[0] = True
+                    _exec_semaphore.release()
+
         try:
             # Deep-copy the interpreter so each request gets clean state
             req_interp = copy.deepcopy(self.interp)
@@ -276,15 +292,6 @@ class APIHandler(BaseHTTPRequestHandler):
             result = None
             exc_info = [None]
             timed_out = [False]
-
-            _release_lock = threading.Lock()
-            _released = [False]
-
-            def _release_semaphore():
-                with _release_lock:
-                    if not _released[0]:
-                        _released[0] = True
-                        _exec_semaphore.release()
 
             def _execute():
                 nonlocal result
@@ -299,19 +306,12 @@ class APIHandler(BaseHTTPRequestHandler):
                     exc_info[0] = e
                 finally:
                     sys.stdout = old_stdout
-                    _release_semaphore()
 
             thread = threading.Thread(target=_execute, daemon=True)
             thread.start()
             thread.join(timeout=MAX_EXEC_TIME)
             if thread.is_alive():
                 timed_out[0] = True
-                # Release the semaphore immediately on timeout so that
-                # stuck daemon threads (e.g. infinite loops) don't
-                # permanently consume a concurrency slot, which would
-                # lead to a full DoS after MAX_CONCURRENT_EXECUTIONS
-                # timed-out requests.
-                _release_semaphore()
 
             if timed_out[0]:
                 self._json_response(504, {
@@ -340,6 +340,10 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json_response(500, {"error": str(msg)})
         except Exception as e:
             self._json_response(500, {"error": str(e)})
+        finally:
+            # Guarantee the semaphore is always released, regardless
+            # of which path we took (normal, timeout, exception).
+            _release_semaphore()
 
     def log_message(self, fmt, *args):
         """Write a compact log line to stderr (overrides default verbose format)."""
