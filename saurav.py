@@ -1118,7 +1118,7 @@ class Parser:
         'caesar_encrypt', 'caesar_decrypt', 'rot13',
         'vigenere_encrypt', 'vigenere_decrypt',
         'xor_cipher', 'atbash', 'morse_encode', 'morse_decode',
-        'md5', 'sha1', 'sha256', 'sha512', 'crc32', 'hmac_sha256',
+        'md5', 'sha1', 'sha256', 'sha512', 'crc32', 'hmac_sha256', 'timing_safe_equal',
         # Binary pack/unpack
         'pack', 'unpack', 'pack_size', 'pack_formats',
         # Event emitter (pub/sub)
@@ -3322,9 +3322,9 @@ class Interpreter:
             n = int(n)
             if n > 65536:
                 raise RuntimeError("random_string: maximum 65536 characters")
-            import random as _rng
+            import secrets as _secrets_mod
             chars = _string_mod.ascii_letters + _string_mod.digits
-            return ''.join(_rng.choice(chars) for _ in range(n))
+            return ''.join(_secrets_mod.choice(chars) for _ in range(n))
 
         def _random_float(args):
             import random as _rng
@@ -6400,7 +6400,15 @@ class Interpreter:
         self.builtins['sha256'] = _hash_fn('sha256', 'sha256')
         self.builtins['sha512'] = _hash_fn('sha512', 'sha512')
         self.builtins['crc32'] = _crc32
+        def _timing_safe_equal(args):
+            if len(args) != 2:
+                raise RuntimeError("timing_safe_equal: expected 2 arguments (a, b)")
+            a = _require_str('timing_safe_equal', args[0])
+            b = _require_str('timing_safe_equal', args[1])
+            return _hmac.compare_digest(a, b)
+
         self.builtins['hmac_sha256'] = _hmac_sha256
+        self.builtins['timing_safe_equal'] = _timing_safe_equal
 
     # ── Binary pack/unpack builtins ──────────────────────
 
