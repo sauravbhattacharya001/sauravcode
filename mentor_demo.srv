@@ -1,0 +1,88 @@
+# mentor_demo.srv — Demo file with intentional code smells for sauravmentor
+
+x = 42
+y = 100
+z = "hello"
+unused_thing = "never used anywhere"
+temp = 0
+aa = 1
+bb = 2
+cc = 3
+dd = 4
+ee = 5
+ff = 6
+gg = 7
+hh = 8
+ii = 9
+jj = 10
+kk = 11
+
+func mega_function(a, b, c, d, e, f, g)
+    result = a + b
+    if a > 0
+        if b > 0
+            if c > 0
+                if d > 0
+                    if e > 0
+                        print("deep!")
+                    end
+                end
+            end
+        end
+    end
+    x = result * 3.14159
+    y = x + 86400
+    z = y * 1024
+    w = z / 255
+    q = w + 65536
+    m = q - 32768
+    n = m * 128
+    p = n / 512
+    r = p + 2048
+    s = r - 4096
+    t = s * 16384
+    u = t / 8192
+    v = u + 1048576
+    a1 = v - 524288
+    a2 = a1 * 262144
+    a3 = a2 / 131072
+    a4 = a3 + 99999
+    a5 = a4 - 88888
+    a6 = a5 * 77777
+    a7 = a6 / 66666
+    a8 = a7 + 55555
+    a9 = a8 - 44444
+    a10 = a9 * 33333
+    a11 = a10 / 22222
+    a12 = a11 + 11111
+    a13 = a12 - 9999
+    a14 = a13 * 8888
+    a15 = a14 / 7777
+    a16 = a15 + 6666
+    a17 = a16 - 5555
+    return a17
+    print("this is dead code")
+    x = 999
+end
+
+func no_docs_function(x)
+    return x * 2
+end
+
+func risky_operation()
+    try
+        result = do_something()
+    catch
+    end
+    return result
+end
+
+func complex_check(a, b, c, d)
+    if a > 0 and b > 0 and c > 0 and d > 0 and a != b and c != d
+        print("complex!")
+    end
+end
+
+msg = "repeated string value"
+label = "repeated string value"
+tag = "repeated string value"
