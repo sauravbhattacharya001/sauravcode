@@ -7046,9 +7046,15 @@ class Interpreter:
 
     def _invoke_func_node(self, func_node, evaluated_args):
         """Invoke a FunctionNode with recursion depth tracking and scoped environment.
-        
+
         Handles closure scope restoration, parameter binding, body interpretation,
         and ReturnSignal handling — the common logic for all FunctionNode invocations.
+
+        Inlines the scope push/pop rather than using ``_scoped_env()`` to
+        avoid the ``@contextlib.contextmanager`` generator protocol overhead
+        (~500 ns/call on CPython).  This method is the HOF callback path
+        (map/filter/reduce/each with named functions), so the savings
+        compound over large lists.
         """
         self._call_depth += 1
         if self._call_depth > MAX_RECURSION_DEPTH:
@@ -7058,18 +7064,24 @@ class Interpreter:
                 f"in function '{func_node.name}'"
             )
         result = None
-        with self._scoped_env():
+        # Inline scope push (avoids _scoped_env generator overhead)
+        parent_vars = self.variables
+        self.variables = ChainMap({}, parent_vars)
+        try:
             # Inject closure scope via ChainMap splicing — O(1) instead
-            # of iterating all closure variables.  Matches the approach
-            # used by _invoke_function(); previously this path did an
-            # O(k) loop per call which was a bottleneck for map/filter/
-            # reduce over large lists with closures.
-            if hasattr(func_node, 'closure_scope') and func_node.closure_scope:
-                cs = func_node.closure_scope
-                closure_maps = cs.maps if isinstance(cs, ChainMap) else [cs] if isinstance(cs, dict) else []
+            # of iterating all closure variables.  Uses getattr+None to
+            # avoid the hasattr double-lookup.
+            cs = getattr(func_node, 'closure_scope', None)
+            if cs:
+                if isinstance(cs, ChainMap):
+                    closure_maps = cs.maps
+                elif isinstance(cs, dict):
+                    closure_maps = [cs]
+                else:
+                    closure_maps = []
                 if closure_maps:
-                    local = self.variables.maps[0]
-                    self.variables = ChainMap(local, *closure_maps, *self.variables.maps[1:])
+                    maps = self.variables.maps
+                    self.variables = ChainMap(maps[0], *closure_maps, *maps[1:])
             for param, val in zip(func_node.params, evaluated_args):
                 self.variables[param] = val
             try:
@@ -7079,6 +7091,9 @@ class Interpreter:
                 result = ret.value
             finally:
                 self._call_depth -= 1
+        finally:
+            # Inline scope pop
+            self.variables = parent_vars
         return result
 
     def _resolve_callable(self, func_ref):
