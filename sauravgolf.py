@@ -31,7 +31,6 @@ import os
 import json
 import argparse
 import io
-import tempfile
 from datetime import datetime
 from contextlib import redirect_stdout, redirect_stderr
 
@@ -264,11 +263,13 @@ def _count_chars(code):
 
 
 def _run_solution(code, input_text="", timeout=10):
-    """Run a .srv solution and capture output."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".srv", delete=False, encoding="utf-8") as f:
-        f.write(code)
-        f.flush()
-        tmppath = f.name
+    """Run a .srv solution and capture output.
+
+    Parses and executes the code in-process via the interpreter.
+    No temp file is created — the source string is parsed directly,
+    avoiding CWE-377 (insecure temp file) and unnecessary disk I/O
+    that leaked source code to world-readable temp directories.
+    """
     try:
         tokens = tokenize(code)
         parser = Parser(tokens)
@@ -289,11 +290,6 @@ def _run_solution(code, input_text="", timeout=10):
         return buf.getvalue().rstrip("\n")
     except Exception as e:
         return f"ERROR: {e}"
-    finally:
-        try:
-            os.unlink(tmppath)
-        except OSError:
-            pass
 
 
 def _run_tests(challenge, code):
