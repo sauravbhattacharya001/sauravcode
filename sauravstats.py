@@ -116,9 +116,10 @@ def _indent_level(line):
 def analyze_file(filepath, base_dir=None):
     """Parse a single .srv file and return a populated :class:`FileMetrics`.
 
-    Scans the file line-by-line using regex patterns to count structural
-    elements, control-flow constructs, and nesting depth.  A weighted
-    complexity score is derived from branches, loops, nesting, and more.
+    Scans the file line-by-line using fast string prefix checks for simple
+    keyword detection, falling back to regex only for patterns that need
+    capture groups or mid-line searches.  A weighted complexity score is
+    derived from branches, loops, nesting, and more.
 
     Args:
         filepath: Path to the .srv source file.
@@ -137,63 +138,79 @@ def analyze_file(filepath, base_dir=None):
         return fm
 
     fm.total_lines = len(lines)
-    depths = []
+    depth_sum = 0
+    depth_count = 0
     func_start_line = None
     func_lengths = []
 
     for i, raw in enumerate(lines):
         line = raw.rstrip('\n\r')
-        if _BLANK_RE.match(line):
+        stripped = line.lstrip()
+
+        # Blank / comment — fast path via stripped string, no regex
+        if not stripped:
             fm.blank_lines += 1
             continue
-        if _COMMENT_RE.match(line):
+        if stripped[0] == '#':
             fm.comment_lines += 1
             continue
 
         fm.code_lines += 1
-        depth = _indent_level(line)
-        depths.append(depth)
-        fm.max_depth = max(fm.max_depth, depth)
+        depth = len(line) - len(stripped)  # leading-space count (faster than _indent_level when no tabs)
+        if '\t' in line:
+            depth = _indent_level(line)  # tabs need the old helper
+        depth_count += 1
+        depth_sum += depth
+        if depth > fm.max_depth:
+            fm.max_depth = depth
 
-        m = _FUNCTION_RE.match(line)
-        if m:
-            fm.functions += 1
-            fm.function_names.append(m.group(1))
-            if depth > 0:
-                fm.nested_functions += 1
-            if func_start_line is not None:
-                func_lengths.append(i - func_start_line)
-            func_start_line = i
+        # --- keyword detection using str.startswith on stripped line ---
+        # function / class / enum need capture groups → regex only when prefix matches
+        if stripped.startswith('function '):
+            m = _FUNCTION_RE.match(line)
+            if m:
+                fm.functions += 1
+                fm.function_names.append(m.group(1))
+                if depth > 0:
+                    fm.nested_functions += 1
+                if func_start_line is not None:
+                    func_lengths.append(i - func_start_line)
+                func_start_line = i
 
-        m = _CLASS_RE.match(line)
-        if m:
-            fm.classes += 1
-            fm.class_names.append(m.group(1))
+        if stripped.startswith('class '):
+            m = _CLASS_RE.match(line)
+            if m:
+                fm.classes += 1
+                fm.class_names.append(m.group(1))
 
-        m = _ENUM_RE.match(line)
-        if m:
-            fm.enums += 1
-            fm.enum_names.append(m.group(1))
+        if stripped.startswith('enum '):
+            m = _ENUM_RE.match(line)
+            if m:
+                fm.enums += 1
+                fm.enum_names.append(m.group(1))
 
-        if _IMPORT_RE.match(line): fm.imports += 1
-        if _LAMBDA_RE.search(line): fm.lambdas += 1
-        if _LOOP_RE.match(line): fm.loops += 1
-        if _IF_RE.match(line): fm.branches += 1
-        if _MATCH_RE.match(line): fm.match_cases += 1
-        if _CASE_RE.match(line): fm.match_cases += 1
-        if _TRY_RE.match(line): fm.try_catches += 1
-        if _CATCH_RE.match(line): fm.try_catches += 1
-        if _ASSERT_RE.match(line): fm.asserts += 1
-        if _YIELD_RE.search(line): fm.yields += 1
-        if _RETURN_RE.match(line): fm.returns += 1
-        if _THROW_RE.match(line): fm.throws += 1
-        if _PRINT_RE.match(line): fm.prints += 1
+        # Simple prefix checks — no regex needed
+        if stripped.startswith('import '): fm.imports += 1
+        if stripped.startswith(('for ', 'while ')): fm.loops += 1
+        if stripped.startswith(('if ', 'else if ')): fm.branches += 1
+        if stripped.startswith('match '): fm.match_cases += 1
+        if stripped.startswith('case '): fm.match_cases += 1
+        if stripped.startswith('try'): fm.try_catches += 1
+        if stripped.startswith('catch'): fm.try_catches += 1
+        if stripped.startswith('assert '): fm.asserts += 1
+        if stripped.startswith('return'): fm.returns += 1
+        if stripped.startswith('throw '): fm.throws += 1
+        if stripped.startswith('print('): fm.prints += 1
+
+        # Mid-line searches — still need regex (but only 2 instead of 17)
+        if 'lambda' in stripped and _LAMBDA_RE.search(line): fm.lambdas += 1
+        if 'yield' in stripped and _YIELD_RE.search(line): fm.yields += 1
 
     if func_start_line is not None:
         func_lengths.append(len(lines) - func_start_line)
 
     fm.max_func_length = max(func_lengths) if func_lengths else 0
-    fm.avg_depth = sum(depths) / len(depths) if depths else 0.0
+    fm.avg_depth = depth_sum / depth_count if depth_count else 0.0
     fm.complexity_score = (
         fm.branches * 1.0 + fm.loops * 1.5 + fm.match_cases * 0.5 +
         fm.try_catches * 1.0 + fm.nested_functions * 2.0 +
