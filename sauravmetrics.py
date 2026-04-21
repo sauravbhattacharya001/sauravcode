@@ -38,7 +38,6 @@ import re
 import json
 import math
 import argparse
-from collections import defaultdict
 
 # ── ANSI Colors ──────────────────────────────────────────────────────
 

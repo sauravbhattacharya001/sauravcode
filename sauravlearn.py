@@ -26,7 +26,6 @@ import io
 import json
 import os
 import sys
-import textwrap
 import contextlib
 
 # ---------------------------------------------------------------------------

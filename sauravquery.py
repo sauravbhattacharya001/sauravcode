@@ -38,7 +38,7 @@ import sys
 import os
 import argparse
 import json as _json
-from collections import defaultdict, Counter
+from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import tokenize, Parser, ASTNode

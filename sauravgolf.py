@@ -31,7 +31,6 @@ import os
 import json
 import argparse
 import io
-from datetime import datetime
 from contextlib import redirect_stdout, redirect_stderr
 
 # Import the sauravcode interpreter
