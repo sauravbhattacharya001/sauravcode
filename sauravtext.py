@@ -14,6 +14,7 @@ __all__ = [
     "strip_string_literals",
     "extract_identifiers",
     "scan_segments",
+    "html_escape",
 ]
 
 # Matches identifiers (excludes leading digits)
@@ -171,3 +172,19 @@ def scan_segments(source: str):
         # Everything else (one character at a time)
         yield ('other', ch, i, i + 1)
         i += 1
+
+
+def html_escape(text: str) -> str:
+    """Escape HTML special characters in *text*.
+
+    Covers the four characters that must be escaped in HTML content
+    and attribute values: ``&``, ``<``, ``>``, and ``"``.
+
+    >>> html_escape('<script>alert("xss")</script>')
+    '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+    """
+    return (text
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('"', '&quot;'))

@@ -21,6 +21,7 @@ import os
 import argparse
 import json as _json
 from collections import defaultdict
+from sauravtext import html_escape as _html_escape
 
 # Import the sauravcode interpreter and parser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -514,10 +515,7 @@ class CoverageReporter:
                 cls = 'uncovered'
                 hit_str = '!'
 
-            escaped = (src_line.rstrip()
-                       .replace('&', '&amp;')
-                       .replace('<', '&lt;')
-                       .replace('>', '&gt;'))
+            escaped = _html_escape(src_line.rstrip())
             rows.append(
                 '<tr class="{cls}">'
                 '<td class="hits">{hits}</td>'

@@ -21,6 +21,7 @@ import json
 import argparse
 from pathlib import Path
 from datetime import datetime
+from sauravtext import html_escape as _html_escape
 
 
 # --- Source Parsing -----------------------------------------------------------
@@ -587,13 +588,7 @@ class HtmlGenerator:
         return html
 
 
-def _html_escape(text):
-    """Basic HTML escaping."""
-    return (text
-        .replace('&', '&amp;')
-        .replace('<', '&lt;')
-        .replace('>', '&gt;')
-        .replace('"', '&quot;'))
+# _html_escape is now imported from sauravtext
 
 
 # --- JSON Generator -----------------------------------------------------------
