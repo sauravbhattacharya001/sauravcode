@@ -43,7 +43,6 @@ Example .srv file:
 import sys
 import os
 import math
-import copy
 import argparse
 
 

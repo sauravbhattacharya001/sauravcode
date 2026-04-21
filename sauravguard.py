@@ -31,7 +31,6 @@ import subprocess
 import argparse
 import hashlib
 from datetime import datetime
-from collections import defaultdict
 
 # ---------------------------------------------------------------------------
 # Configuration

@@ -38,7 +38,6 @@ import os
 import json
 import io
 import re
-import textwrap
 
 # Add script dir so we can import the interpreter
 _script_dir = os.path.dirname(os.path.abspath(__file__))

@@ -35,7 +35,6 @@ import argparse
 import random as _random
 import tempfile
 from pathlib import Path
-from datetime import datetime
 
 # ── Challenge definitions ──────────────────────────────────────────────
 

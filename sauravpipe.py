@@ -42,7 +42,6 @@ import sys
 import tempfile
 import time
 import threading
-from collections import defaultdict
 from pathlib import Path
 
 

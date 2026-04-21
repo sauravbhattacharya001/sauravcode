@@ -26,8 +26,6 @@ import hashlib
 import argparse
 import subprocess
 from datetime import datetime
-from collections import defaultdict
-from pathlib import Path
 
 HEAL_HISTORY = ".sauravheal_history.json"
 HEAL_KB = ".sauravheal_kb.json"  # Knowledge base of learned fixes

@@ -2583,48 +2583,6 @@ class Interpreter:
             h = make_handler(name, fn)
             self.builtins[name] = lambda args, h=h: h(self, args)
 
-    # ── Data-driven hash & encoding builtins ──────────
-
-    def _register_hash_builtins(self):
-        """Register hash/encoding builtins via a data-driven table.
-
-        All these functions take a single string argument (auto-coercing
-        non-strings via ``str()``), encode to UTF-8, and apply a
-        transform.  This eliminates ~70 lines of near-identical methods.
-        """
-        import hashlib, binascii
-        from urllib.parse import quote, unquote
-
-        # Simple transforms: coerce to str, encode, apply fn
-        _HASH_TABLE = {
-            'md5':           lambda s: hashlib.md5(s.encode('utf-8')).hexdigest(),
-            'sha256':        lambda s: hashlib.sha256(s.encode('utf-8')).hexdigest(),
-            'sha1':          lambda s: hashlib.sha1(s.encode('utf-8')).hexdigest(),
-            'crc32':         lambda s: float(binascii.crc32(s.encode('utf-8')) & 0xFFFFFFFF),
-            'url_encode':    lambda s: quote(s, safe=''),
-            'hex_encode':    lambda s: s.encode('utf-8').hex(),
-        }
-        for name, fn in _HASH_TABLE.items():
-            def make_handler(n, f):
-                def handler(self_inner, args):
-                    self_inner._expect_args(n, args, 1)
-                    s = args[0]
-                    if not isinstance(s, str):
-                        s = str(s)
-                    return f(s)
-                return handler
-            h = make_handler(name, fn)
-            self.builtins[name] = lambda args, h=h: h(self, args)
-
-        # url_decode: coerce to str (no auto-str), just unquote
-        def _url_decode(self_inner, args):
-            self_inner._expect_args('url_decode', args, 1)
-            s = args[0]
-            if not isinstance(s, str):
-                raise RuntimeError("url_decode expects a string argument")
-            return unquote(s)
-        self.builtins['url_decode'] = lambda args: _url_decode(self, args)
-
     # ── Data-driven bitwise builtins ─────────────────
 
     def _register_bitwise_builtins(self):
@@ -6400,6 +6358,14 @@ class Interpreter:
         self.builtins['sha256'] = _hash_fn('sha256', 'sha256')
         self.builtins['sha512'] = _hash_fn('sha512', 'sha512')
         self.builtins['crc32'] = _crc32
+
+        def _hex_encode(args):
+            if len(args) != 1:
+                raise RuntimeError("hex_encode: expected 1 argument (text)")
+            text = _require_str('hex_encode', args[0])
+            return text.encode('utf-8').hex()
+
+        self.builtins['hex_encode'] = _hex_encode
         def _timing_safe_equal(args):
             if len(args) != 2:
                 raise RuntimeError("timing_safe_equal: expected 2 arguments (a, b)")

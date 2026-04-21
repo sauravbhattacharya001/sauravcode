@@ -23,7 +23,6 @@ Options:
 """
 
 import sys
-import math
 
 # ── ANSI colors ──────────────────────────────────────────────────────
 COLORS = [
