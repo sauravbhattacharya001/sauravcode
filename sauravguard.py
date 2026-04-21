@@ -92,7 +92,22 @@ class SafetyEvent:
 # ---------------------------------------------------------------------------
 
 class StaticAnalyzer:
-    """Analyzes .srv source code for risky patterns without execution."""
+    """Analyzes .srv source code for risky patterns without execution.
+
+    All checks run in a single pass over the source lines, avoiding
+    6 separate O(N) traversals.  Pre-compiled regexes are class-level
+    constants so they are built once per process, not per invocation.
+    """
+
+    # Pre-compiled patterns (class-level, built once)
+    _RE_LOOP_START = re.compile(r'^(while|loop|for)\b')
+    _RE_WHILE_TRUE = re.compile(r'while\s+(true|1|yes)', re.IGNORECASE)
+    _RE_FUNC_DEF = re.compile(r'^(fun|function|def)\s+(\w+)')
+    _RE_COLLECTION_GROW = re.compile(r'\.(append|push|add|insert)\s*\(')
+    _RE_SIZE_GUARD = re.compile(r'\b(len|size|count|limit|max)\b')
+    _RE_FILE_OPS = re.compile(r'\b(file_read|file_write|open)\s*\(')
+    _RE_SLEEP = re.compile(r'\b(sleep|wait|delay)\s*\(')
+    _RE_LOOP_CONT = re.compile(r'^(while|loop|for|if|else|elif|end)\b')
 
     def __init__(self, source, config):
         self.source = source
@@ -101,99 +116,87 @@ class StaticAnalyzer:
         self.events = []
 
     def analyze(self):
-        """Run all static checks."""
-        self._check_unbounded_loops()
-        self._check_recursion_without_base()
-        self._check_collection_growth_in_loops()
-        self._check_file_ops_without_handling()
-        self._check_sleep_in_loops()
-        self._check_deep_nesting()
-        return self.events
+        """Run all static checks in a single pass over source lines.
 
-    def _check_unbounded_loops(self):
-        """Detect loops without break/return conditions."""
-        loop_starts = []
-        for i, line in enumerate(self.lines, 1):
+        Collects per-line signals (loop starts, function defs, file ops,
+        indent depth, etc.) in one traversal, then performs deferred
+        cross-reference checks (recursion base-case, unbounded loops)
+        on the collected data.
+        """
+        lines = self.lines
+        n = len(lines)
+
+        # -- accumulators filled during the single pass --
+        loop_starts = []          # (line_no, stripped_text)
+        functions = {}            # name -> line_no
+        max_indent = 0
+        max_indent_line = 0
+
+        # -- stateful trackers for in-loop checks --
+        in_loop = False
+        loop_line = 0
+        growth_warned = False     # avoid duplicate memory-pressure per loop
+        sleep_warned = False      # avoid duplicate sleep-in-loop per loop
+
+        for i, line in enumerate(lines, 1):
             stripped = line.strip()
-            if re.match(r'^(while|loop|for)\b', stripped):
+
+            # --- deep nesting (replaces _check_deep_nesting) ---
+            if stripped:
+                indent = len(line) - len(line.lstrip())
+                if indent > max_indent:
+                    max_indent = indent
+                    max_indent_line = i
+
+            # --- loop detection ---
+            is_loop = bool(self._RE_LOOP_START.match(stripped))
+            if is_loop:
                 loop_starts.append((i, stripped))
+                in_loop = True
+                loop_line = i
+                growth_warned = False
+                sleep_warned = False
+            elif in_loop and stripped and not stripped[0].isspace():
+                # Rough heuristic: non-blank, non-indented, non-keyword → loop ended
+                if not self._RE_LOOP_CONT.match(stripped):
+                    in_loop = False
 
-        for line_no, loop_line in loop_starts:
-            # Check if "while true" or similar infinite patterns
-            if re.search(r'while\s+(true|1|yes)', loop_line, re.IGNORECASE):
-                # Look for break within ~50 lines
-                block = "\n".join(self.lines[line_no:min(line_no + 50, len(self.lines))])
-                if "break" not in block and "return" not in block:
-                    self.events.append(SafetyEvent(
-                        SafetyEvent.SEVERITY_CRITICAL,
-                        "infinite-loop",
-                        f"Potentially unbounded loop without break/return",
-                        line=line_no,
-                        context={"pattern": loop_line.strip()},
-                    ))
-
-    def _check_recursion_without_base(self):
-        """Detect recursive functions missing obvious base cases."""
-        func_pattern = re.compile(r'^(fun|function|def)\s+(\w+)')
-        functions = {}
-        for i, line in enumerate(self.lines, 1):
-            m = func_pattern.match(line.strip())
+            # --- function definition (replaces _check_recursion_without_base scan) ---
+            m = self._RE_FUNC_DEF.match(stripped)
             if m:
                 functions[m.group(2)] = i
 
-        for fname, start_line in functions.items():
-            # Get function body (next 50 lines or until next function)
-            end = min(start_line + 50, len(self.lines))
-            body = "\n".join(self.lines[start_line:end])
-            # Check if function calls itself
-            if re.search(rf'\b{re.escape(fname)}\s*\(', body):
-                # Check for base case patterns (if/return without recursion)
-                if not re.search(r'\b(if|when|match)\b', body):
-                    self.events.append(SafetyEvent(
-                        SafetyEvent.SEVERITY_WARN,
-                        "recursion",
-                        f"Recursive function '{fname}' may lack a base case",
-                        line=start_line,
-                        context={"function": fname},
-                    ))
-
-    def _check_collection_growth_in_loops(self):
-        """Detect unbounded list/collection growth inside loops."""
-        in_loop = False
-        loop_line = 0
-        for i, line in enumerate(self.lines, 1):
-            stripped = line.strip()
-            if re.match(r'^(while|loop|for)\b', stripped):
-                in_loop = True
-                loop_line = i
-            elif in_loop and stripped and not stripped.startswith(" ") and not stripped.startswith("\t"):
-                # Rough heuristic: dedent means loop ended (imperfect but useful)
-                if not re.match(r'^(while|loop|for|if|else|elif|end)\b', stripped):
-                    in_loop = False
-
-            if in_loop:
-                if re.search(r'\.(append|push|add|insert)\s*\(', stripped):
-                    # Check if there's a size guard
-                    block = "\n".join(self.lines[loop_line - 1:i + 5])
-                    if not re.search(r'\b(len|size|count|limit|max)\b', block):
+            # --- collection growth inside loops ---
+            if in_loop and not growth_warned:
+                if self._RE_COLLECTION_GROW.search(stripped):
+                    block = "\n".join(lines[loop_line - 1:min(i + 5, n)])
+                    if not self._RE_SIZE_GUARD.search(block):
                         self.events.append(SafetyEvent(
                             SafetyEvent.SEVERITY_WARN,
                             "memory-pressure",
                             "Collection grows in loop without apparent size limit",
                             line=i,
-                            context={"code": stripped.strip()},
+                            context={"code": stripped},
                         ))
-                        in_loop = False  # avoid duplicate warnings for same loop
+                        growth_warned = True  # one warning per loop
 
-    def _check_file_ops_without_handling(self):
-        """Detect file operations without error handling."""
-        file_ops = re.compile(r'\b(file_read|file_write|open)\s*\(')
-        for i, line in enumerate(self.lines, 1):
-            if file_ops.search(line):
-                # Check surrounding context for try/catch
-                ctx_start = max(0, i - 3)
-                ctx_end = min(len(self.lines), i + 3)
-                context = "\n".join(self.lines[ctx_start:ctx_end])
+            # --- sleep inside loops ---
+            if in_loop and not sleep_warned:
+                if self._RE_SLEEP.search(stripped):
+                    self.events.append(SafetyEvent(
+                        SafetyEvent.SEVERITY_INFO,
+                        "performance",
+                        "Sleep/delay inside loop \u2014 may cause sluggish execution",
+                        line=i,
+                        context={"code": stripped},
+                    ))
+                    sleep_warned = True
+
+            # --- file operations without error handling ---
+            if self._RE_FILE_OPS.search(line):
+                ctx_start = max(0, i - 4)  # 0-indexed: lines[i-4..i+2]
+                ctx_end = min(n, i + 2)
+                context = "\n".join(lines[ctx_start:ctx_end])
                 if "try" not in context and "catch" not in context:
                     self.events.append(SafetyEvent(
                         SafetyEvent.SEVERITY_INFO,
@@ -203,35 +206,7 @@ class StaticAnalyzer:
                         context={"code": line.strip()},
                     ))
 
-    def _check_sleep_in_loops(self):
-        """Detect sleep calls inside loops (potential DoS or busy-wait)."""
-        in_loop = False
-        for i, line in enumerate(self.lines, 1):
-            stripped = line.strip()
-            if re.match(r'^(while|loop|for)\b', stripped):
-                in_loop = True
-            elif in_loop and re.search(r'\b(sleep|wait|delay)\s*\(', stripped):
-                self.events.append(SafetyEvent(
-                    SafetyEvent.SEVERITY_INFO,
-                    "performance",
-                    "Sleep/delay inside loop — may cause sluggish execution",
-                    line=i,
-                    context={"code": stripped},
-                ))
-                in_loop = False
-
-    def _check_deep_nesting(self):
-        """Detect deeply nested code blocks (complexity smell)."""
-        max_indent = 0
-        max_indent_line = 0
-        for i, line in enumerate(self.lines, 1):
-            if not line.strip():
-                continue
-            indent = len(line) - len(line.lstrip())
-            if indent > max_indent:
-                max_indent = indent
-                max_indent_line = i
-
+        # -- post-pass: deep nesting --
         if max_indent >= 20:  # 5+ levels at 4-space indent
             self.events.append(SafetyEvent(
                 SafetyEvent.SEVERITY_INFO,
@@ -239,6 +214,35 @@ class StaticAnalyzer:
                 f"Deep nesting detected ({max_indent // 4}+ levels)",
                 line=max_indent_line,
             ))
+
+        # -- post-pass: unbounded while-true loops --
+        for line_no, loop_line_text in loop_starts:
+            if self._RE_WHILE_TRUE.search(loop_line_text):
+                block = "\n".join(lines[line_no:min(line_no + 50, n)])
+                if "break" not in block and "return" not in block:
+                    self.events.append(SafetyEvent(
+                        SafetyEvent.SEVERITY_CRITICAL,
+                        "infinite-loop",
+                        "Potentially unbounded loop without break/return",
+                        line=line_no,
+                        context={"pattern": loop_line_text},
+                    ))
+
+        # -- post-pass: recursive functions without base cases --
+        for fname, start_line in functions.items():
+            end = min(start_line + 50, n)
+            body = "\n".join(lines[start_line:end])
+            if re.search(rf'\b{re.escape(fname)}\s*\(', body):
+                if not re.search(r'\b(if|when|match)\b', body):
+                    self.events.append(SafetyEvent(
+                        SafetyEvent.SEVERITY_WARN,
+                        "recursion",
+                        f"Recursive function '{fname}' may lack a base case",
+                        line=start_line,
+                        context={"function": fname},
+                    ))
+
+        return self.events
 
 
 # ---------------------------------------------------------------------------
