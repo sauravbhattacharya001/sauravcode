@@ -27,15 +27,45 @@ from pathlib import Path
 
 # -- Cipher implementations (standalone, no .srv interpreter needed) -----
 
-def caesar_encrypt(text, shift):
-    result = []
+def _map_alpha(text, fn):
+    """Apply *fn(char_index_0_25, is_upper)* → new_index to each letter; pass others through.
+
+    *fn* receives ``(index, is_upper)`` where *index* is 0–25 and returns a new 0–25 index.
+    This eliminates the repeated isalpha/base/chr boilerplate shared by every
+    substitution cipher.
+    """
+    out = []
+    for ch in text:
+        if ch.isalpha():
+            upper = ch.isupper()
+            base = ord('A') if upper else ord('a')
+            out.append(chr(fn(ord(ch) - base, upper) % 26 + base))
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+
+def _map_alpha_keyed(text, key_upper, fn):
+    """Like :func:`_map_alpha` but advances a key index on each letter.
+
+    *fn* receives ``(char_index, key_shift)`` where *key_shift* is 0–25
+    derived from *key_upper* and returns a new 0–25 index.
+    """
+    out = []
+    ki = 0
     for ch in text:
         if ch.isalpha():
             base = ord('A') if ch.isupper() else ord('a')
-            result.append(chr((ord(ch) - base + shift) % 26 + base))
+            shift = ord(key_upper[ki % len(key_upper)]) - ord('A')
+            out.append(chr(fn(ord(ch) - base, shift) % 26 + base))
+            ki += 1
         else:
-            result.append(ch)
-    return ''.join(result)
+            out.append(ch)
+    return ''.join(out)
+
+
+def caesar_encrypt(text, shift):
+    return _map_alpha(text, lambda idx, _upper: idx + shift)
 
 def caesar_decrypt(text, shift):
     return caesar_encrypt(text, -shift)
@@ -44,40 +74,13 @@ def rot13(text):
     return caesar_encrypt(text, 13)
 
 def atbash(text):
-    result = []
-    for ch in text:
-        if ch.isalpha():
-            base = ord('A') if ch.isupper() else ord('a')
-            result.append(chr(base + 25 - (ord(ch) - base)))
-        else:
-            result.append(ch)
-    return ''.join(result)
+    return _map_alpha(text, lambda idx, _upper: 25 - idx)
 
 def vigenere_encrypt(text, key):
-    key = key.upper()
-    result, ki = [], 0
-    for ch in text:
-        if ch.isalpha():
-            base = ord('A') if ch.isupper() else ord('a')
-            shift = ord(key[ki % len(key)]) - ord('A')
-            result.append(chr((ord(ch) - base + shift) % 26 + base))
-            ki += 1
-        else:
-            result.append(ch)
-    return ''.join(result)
+    return _map_alpha_keyed(text, key.upper(), lambda idx, shift: idx + shift)
 
 def vigenere_decrypt(text, key):
-    key = key.upper()
-    result, ki = [], 0
-    for ch in text:
-        if ch.isalpha():
-            base = ord('A') if ch.isupper() else ord('a')
-            shift = ord(key[ki % len(key)]) - ord('A')
-            result.append(chr((ord(ch) - base - shift) % 26 + base))
-            ki += 1
-        else:
-            result.append(ch)
-    return ''.join(result)
+    return _map_alpha_keyed(text, key.upper(), lambda idx, shift: idx - shift)
 
 def xor_cipher(text, key):
     result = []
