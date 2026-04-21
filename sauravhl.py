@@ -21,6 +21,7 @@ import re
 import sys
 import argparse
 from pathlib import Path
+from sauravtext import html_escape as _html_escape
 
 # ── Token patterns (mirrors saurav.py lexer) ──────────────────────────
 
@@ -378,9 +379,7 @@ def highlight_ansi(source, theme_name='default', line_numbers=False):
 
 # ── HTML Output ───────────────────────────────────────────────────────
 
-def _html_escape(text):
-    """Escape HTML special characters."""
-    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+# _html_escape is now imported from sauravtext
 
 
 def highlight_html(source, theme_name='default', line_numbers=False, standalone=True, title=None):
