@@ -7854,12 +7854,12 @@ class Interpreter:
         lst = args[0]
         if not isinstance(lst, list):
             raise RuntimeError("unique expects a list argument")
-        seen = []
+        seen = set()
         result = []
         for item in lst:
             key = repr(item)
             if key not in seen:
-                seen.append(key)
+                seen.add(key)
                 result.append(item)
         return result
 
