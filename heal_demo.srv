@@ -1,0 +1,36 @@
+# heal_demo.srv — Demonstrates sauravheal autonomous self-healing
+#
+# Usage:
+#   python sauravheal.py heal_demo.srv               Auto-heal on error
+#   python sauravheal.py heal_demo.srv --dry-run      Preview patches
+#   python sauravheal.py heal_demo.srv --report        HTML report
+#   python sauravheal.py --history                     Show past runs
+#   python sauravheal.py --stats                       KB statistics
+
+print "=== Self-Healing Runtime Demo ==="
+print ""
+
+# This program should run fine — demonstrating a clean run
+set name = "sauravcode"
+set version = 3
+print f"Running {name} v{version}"
+
+# Simple math
+set x = 10
+set y = 5
+set result = x + y
+print f"  {x} + {y} = {result}"
+
+set ratio = x / y
+print f"  {x} / {y} = {ratio}"
+
+print ""
+print "Try introducing bugs and running with sauravheal!"
+print "Examples:"
+print "  - Remove a variable definition"
+print "  - Delete an 'end' keyword"
+print "  - Misspell a variable name"
+print "  - Add division by zero"
+print ""
+print "sauravheal will diagnose, patch, and retry automatically."
+print "✅ Demo complete"
