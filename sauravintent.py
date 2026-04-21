@@ -20,6 +20,11 @@ from pathlib import Path
 from datetime import datetime
 from collections import Counter, defaultdict
 
+# Pre-compiled regexes for function/variable extraction
+_FUNC_DEF_RE = re.compile(r'^function\s+(\w+)\s*\((.*?)\)')
+_BLOCK_OPEN_RE = re.compile(r'^(function|if|for|while|class|match)\b')
+_VAR_ASSIGN_RE = re.compile(r'^\s*(\w+)\s*=\s*(.+)')
+
 # ── Intent Categories ──────────────────────────────────────────────
 
 INTENT_CATEGORIES = {
@@ -113,7 +118,7 @@ class IntentAnalyzer:
         funcs = []
         i = 0
         while i < len(self.lines):
-            m = re.match(r'^func\s+(\w+)\s*\((.*?)\)', self.lines[i])
+            m = _FUNC_DEF_RE.match(self.lines[i])
             if m:
                 name, params = m.group(1), m.group(2)
                 start = i
@@ -125,7 +130,7 @@ class IntentAnalyzer:
                     if s in ("end",) and depth == 1:
                         depth -= 1
                     else:
-                        if re.match(r'^(func|if|for|while|class|match)\b', s):
+                        if _BLOCK_OPEN_RE.match(s):
                             depth += 1
                         if s == "end":
                             depth -= 1
@@ -147,7 +152,7 @@ class IntentAnalyzer:
         """Extract variable assignments with context."""
         variables = []
         for i, line in enumerate(self.lines):
-            m = re.match(r'^\s*(\w+)\s*=\s*(.+)', line)
+            m = _VAR_ASSIGN_RE.match(line)
             if m:
                 variables.append({
                     "name": m.group(1),

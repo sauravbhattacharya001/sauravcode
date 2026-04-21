@@ -24,6 +24,10 @@ from datetime import datetime
 
 HISTORY_FILE = ".sauravmentor_history.json"
 
+# Pre-compiled regexes for .srv function detection
+_FUNC_DEF_RE = re.compile(r'^function\s+\w+')
+_FUNC_NAME_RE = re.compile(r'^function\s+(\w+)')
+
 # ─── Smell Detectors ───────────────────────────────────────────────────────────
 
 class Smell:
@@ -47,13 +51,13 @@ def _detect_long_functions(lines):
     depth = 0
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if re.match(r'^func\s+\w+', stripped):
+        if _FUNC_DEF_RE.match(stripped):
             if func_start is not None and (i - func_start) > 30:
                 smells.append(Smell("long_function", 2, func_start + 1,
                     f"Function '{func_name}' is {i - func_start} lines long (>30)",
                     "Break into smaller helper functions"))
             func_start = i
-            func_name = re.match(r'^func\s+(\w+)', stripped).group(1)
+            func_name = _FUNC_NAME_RE.match(stripped).group(1)
         elif stripped == "end" and func_start is not None:
             length = i - func_start
             if length > 30:
