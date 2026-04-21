@@ -151,6 +151,7 @@ _SELF_COMPARE_RE = re.compile(r'\b([a-zA-Z_]\w*)\s*(?:==|!=)\s*\1\b')
 _CONDITION_RE = re.compile(r'^\s*(?:if|while|else\s+if)\s+(true|false)\s*$')
 _DIVISION_RE = re.compile(r'/\s*0(?:\.\s*0*)?\b')
 _TRAILING_WS_RE = re.compile(r'[ \t]+$')
+_STRING_LITERAL_RE = re.compile(r'f?"(?:[^"\\]|\\.)*"')
 
 
 def _get_indent(line: str) -> int:
@@ -176,18 +177,30 @@ def _extract_identifiers(line: str) -> Set[str]:
 
 
 def _line_keyword(line: str) -> Optional[str]:
-    """Get the first keyword token of a stripped line."""
+    """Get the first keyword token of a stripped line.
+
+    Uses pure string splitting instead of regex for speed — this is
+    called once per non-blank line during _scan_lines.
+    """
     stripped = line.strip()
     if not stripped or stripped.startswith('#'):
         return None
-    m = re.match(r'(\w+(?:\s+\w+)?)', stripped)
-    if m:
-        word = m.group(1)
-        if word in _BLOCK_STARTERS or word.startswith("else if"):
-            return word.split()[0] if word != "else if" else "else"
-        first = word.split()[0]
-        if first in _KEYWORDS:
+    # Fast path: split once to get the first word
+    first = stripped.split(None, 1)[0] if stripped else None
+    if not first or not first.isidentifier():
+        return None
+    if first == "else":
+        # Check for "else if"
+        rest = stripped[4:].lstrip()
+        if rest.startswith("if"):
+            return "else"
+        if first in _BLOCK_STARTERS:
             return first
+        return None
+    if first in _BLOCK_STARTERS:
+        return first
+    if first in _KEYWORDS:
+        return first
     return None
 
 
@@ -275,7 +288,7 @@ class SauravLinter:
 
             # Strip comments/strings for code analysis
             code_part = _strip_comment(raw)
-            code_no_str = re.sub(r'f?"(?:[^"\\]|\\.)*"', '', code_part)
+            code_no_str = _STRING_LITERAL_RE.sub('', code_part)
 
             identifiers = _extract_identifiers(raw) if not is_blank else set()
 
@@ -545,12 +558,17 @@ class SauravLinter:
             if current_func and current_func in func_body_idents:
                 func_body_idents[current_func] |= pl.identifiers
 
+        # Pre-build flat set of all parameter names across all functions
+        # to replace O(n*m) nested iteration in the unused-variable check.
+        all_param_names = set()
+        for fp_dict in func_params.values():
+            all_param_names.update(fp_dict)
+
         # W001: unused variables (only for non-function, non-param vars)
         for var, ln in defined.items():
             if var not in used and var not in _BUILTIN_FUNCTIONS:
                 # Skip function names (they might be called elsewhere)
-                is_func = any(var in fp_dict for fp_dict in func_params.values()) or \
-                          any(var == fn for fn in func_params.keys())
+                is_func = var in all_param_names or var in func_params
                 if not is_func:
                     self._emit(report, "W001", Severity.WARNING, ln, 1,
                                f"Variable '{var}' is assigned but never used")
