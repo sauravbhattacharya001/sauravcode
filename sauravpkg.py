@@ -26,6 +26,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -410,6 +411,20 @@ def install_package(name, constraint="*", project_dir=".", registry=None):
     pkg_dest.mkdir(parents=True, exist_ok=True)
 
     with tarfile.open(archive_path, "r:gz") as tar:
+        # CWE-22: validate all members to prevent path-traversal (Zip Slip)
+        dest = Path(pkg_dest).resolve()
+        for member in tar.getmembers():
+            member_path = (dest / member.name).resolve()
+            if not str(member_path).startswith(str(dest) + os.sep) and member_path != dest:
+                raise ValueError(
+                    f"Refusing to extract '{member.name}': path traversal detected"
+                )
+            if member.issym() or member.islnk():
+                link_target = (dest / member.linkname).resolve()
+                if not str(link_target).startswith(str(dest) + os.sep) and link_target != dest:
+                    raise ValueError(
+                        f"Refusing to extract '{member.name}': symlink escapes target"
+                    )
         tar.extractall(path=str(pkg_dest))
 
     # Install transitive dependencies
