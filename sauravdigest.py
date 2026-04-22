@@ -82,8 +82,9 @@ class ProjectDigest:
 # Analysis engine
 # ---------------------------------------------------------------------------
 
-# Patterns we detect in .srv code
-PATTERN_DEFS = {
+# Patterns we detect in .srv code — pre-compiled at module level
+# instead of calling re.search(raw_string, ...) on every line.
+_PATTERN_DEFS_RAW = {
     "error_handling": r'\b(try|catch|throw)\b',
     "loops": r'\b(for|while|foreach)\b',
     "conditionals": r'\b(if|else|elif|match)\b',
@@ -95,8 +96,15 @@ PATTERN_DEFS = {
     "async_patterns": r'\b(async|await)\b',
     "f_strings": r'f"[^"]*\{',
     "assertions": r'\bassert\b',
-    "recursion_hint": r'',  # detected separately
 }
+# Compiled patterns — skip empty/special entries (recursion_hint is detected separately)
+PATTERN_COMPILED = [
+    (name, re.compile(pat))
+    for name, pat in _PATTERN_DEFS_RAW.items()
+    if pat
+]
+# Keep original dict for feature-diversity checks in generate_recommendations
+PATTERN_NAMES = set(_PATTERN_DEFS_RAW.keys()) | {"recursion_hint"}
 
 
 def _is_comment(line: str) -> bool:
@@ -116,6 +124,12 @@ def _count_nesting(line: str) -> int:
     indent = len(line) - len(stripped)
     # Try 4-space first, then 2-space
     return indent // 4 if indent >= 4 else indent // 2
+
+
+# Pre-compiled regexes for structure detection in analyze_file
+_FN_RE = re.compile(r'\s*(?:fun|function)\s+(\w+)\s*\(')
+_CLS_RE = re.compile(r'\s*class\s+(\w+)')
+_IMP_RE = re.compile(r'\s*import\s+"([^"]+)"')
 
 
 def analyze_file(filepath: str) -> FileMetrics:
@@ -155,24 +169,24 @@ def analyze_file(filepath: str) -> FileMetrics:
         if depth > max_nesting:
             max_nesting = depth
 
-        # Detect functions: "fun name(" or "function name("
-        fn_match = re.match(r'\s*(?:fun|function)\s+(\w+)\s*\(', line)
+        # Detect functions
+        fn_match = _FN_RE.match(line)
         if fn_match:
             func_names.append(fn_match.group(1))
 
         # Detect classes
-        cls_match = re.match(r'\s*class\s+(\w+)', line)
+        cls_match = _CLS_RE.match(line)
         if cls_match:
             class_names.append(cls_match.group(1))
 
         # Detect imports
-        imp_match = re.match(r'\s*import\s+"([^"]+)"', line)
+        imp_match = _IMP_RE.match(line)
         if imp_match:
             import_names.append(imp_match.group(1))
 
-        # Pattern detection
-        for pname, pattern in PATTERN_DEFS.items():
-            if pattern and re.search(pattern, line):
+        # Pattern detection — uses pre-compiled regexes
+        for pname, compiled in PATTERN_COMPILED:
+            if compiled.search(line):
                 pattern_hits[pname] += 1
 
     # Check for recursion (function calls its own name)
