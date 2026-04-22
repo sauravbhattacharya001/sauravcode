@@ -190,13 +190,12 @@ def analyze_file(filepath: str) -> FileMetrics:
                 pattern_hits[pname] += 1
 
     # Check for recursion (function calls its own name)
+    # Compile one regex per function and scan content once (not twice)
     for fn in func_names:
-        if re.search(r'\b' + re.escape(fn) + r'\s*\(', content):
-            # Count occurrences - if > 1 (definition + call), likely recursive
-            count = len(re.findall(r'\b' + re.escape(fn) + r'\s*\(', content))
-            if count > 1:
-                pattern_hits["recursion_hint"] += 1
-                break
+        pat = re.compile(r'\b' + re.escape(fn) + r'\s*\(')
+        if len(pat.findall(content)) > 1:  # >1 = definition + recursive call
+            pattern_hits["recursion_hint"] += 1
+            break
 
     metrics.functions = func_names
     metrics.classes = class_names
@@ -360,8 +359,13 @@ def generate_recommendations(digest: ProjectDigest) -> List[Dict]:
 
 
 def compute_health_score(digest: ProjectDigest) -> Tuple[float, str]:
-    """Compute overall project health score (0-100) and letter grade."""
+    """Compute overall project health score (0-100) and letter grade.
+
+    Reuses pre-computed aggregates (_complexity_sum) from scan_project
+    instead of re-iterating digest.files for averages.
+    """
     score = 100.0
+    n_files = max(len(digest.files), 1)
 
     # Comment ratio penalty
     if digest.comment_ratio < 0.05:
@@ -369,8 +373,11 @@ def compute_health_score(digest: ProjectDigest) -> Tuple[float, str]:
     elif digest.comment_ratio < 0.1:
         score -= 8
 
-    # Complexity penalty
-    avg_complexity = sum(f.complexity_score for f in digest.files) / max(len(digest.files), 1)
+    # Complexity penalty — reuse cached sum when available
+    complexity_sum = getattr(digest, '_complexity_sum', None)
+    if complexity_sum is None:
+        complexity_sum = sum(f.complexity_score for f in digest.files)
+    avg_complexity = complexity_sum / n_files
     if avg_complexity > 100:
         score -= 15
     elif avg_complexity > 60:
@@ -380,15 +387,17 @@ def compute_health_score(digest: ProjectDigest) -> Tuple[float, str]:
     high_hotspots = sum(1 for h in digest.hotspots if h["severity"] == "high")
     score -= high_hotspots * 5
 
-    # File size uniformity bonus
+    # File size uniformity — single-pass Welford variance avoids
+    # building an intermediate list + two iterations
     if digest.files:
-        sizes = [f.code_lines for f in digest.files]
-        if sizes:
-            mean_size = sum(sizes) / len(sizes)
-            variance = sum((s - mean_size) ** 2 for s in sizes) / len(sizes)
-            cv = math.sqrt(variance) / max(mean_size, 1)
-            if cv > 2.0:
-                score -= 8
+        mean_size = digest.total_code_lines / n_files
+        var_sum = 0.0
+        for f in digest.files:
+            d = f.code_lines - mean_size
+            var_sum += d * d
+        cv = math.sqrt(var_sum / n_files) / max(mean_size, 1)
+        if cv > 2.0:
+            score -= 8
 
     # Recommendation penalty
     high_recs = sum(1 for r in digest.recommendations if r["priority"] == "high")
@@ -422,6 +431,11 @@ def scan_project(directory: str) -> ProjectDigest:
 
     digest.total_files = len(srv_files)
 
+    # Single-pass accumulation: track largest file and most complex file
+    # inline instead of separate max() scans at the end.
+    _complexity_sum = 0.0
+    _size_sum_sq = 0.0  # for variance in health score
+
     for filepath in srv_files:
         fm = analyze_file(filepath)
         digest.files.append(fm)
@@ -431,24 +445,28 @@ def scan_project(directory: str) -> ProjectDigest:
         digest.total_blank_lines += fm.blank_lines
         digest.total_functions += len(fm.functions)
         digest.total_classes += len(fm.classes)
+        _complexity_sum += fm.complexity_score
 
         # Track patterns
         for p in fm.patterns:
             digest.pattern_counts[p] = digest.pattern_counts.get(p, 0) + 1
 
+        # Track largest file (by line count)
+        if fm.lines > digest.largest_file_lines:
+            digest.largest_file = os.path.basename(fm.path)
+            digest.largest_file_lines = fm.lines
+
+        # Track most complex file
+        if fm.complexity_score > digest.most_complex_score:
+            digest.most_complex_file = os.path.basename(fm.path)
+            digest.most_complex_score = fm.complexity_score
+
     # Averages
     digest.avg_file_size = digest.total_lines / max(digest.total_files, 1)
     digest.comment_ratio = digest.total_comment_lines / max(digest.total_code_lines, 1)
 
-    # Largest file
-    if digest.files:
-        largest = max(digest.files, key=lambda f: f.lines)
-        digest.largest_file = os.path.basename(largest.path)
-        digest.largest_file_lines = largest.lines
-
-        most_complex = max(digest.files, key=lambda f: f.complexity_score)
-        digest.most_complex_file = os.path.basename(most_complex.path)
-        digest.most_complex_score = most_complex.complexity_score
+    # Cache aggregates on digest for compute_health_score to reuse
+    digest._complexity_sum = _complexity_sum
 
     # Dependencies
     digest.dependency_graph = build_dependency_graph(digest.files)
