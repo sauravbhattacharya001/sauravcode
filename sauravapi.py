@@ -109,6 +109,51 @@ MAX_BODY_SIZE = 1_048_576  # 1 MB
 # Maximum execution time per request (seconds).
 MAX_EXEC_TIME = 10
 
+# Builtins that are disabled when running API-served functions.
+# Without this sandbox, a .srv function exposed via the API could call
+# env_list() to exfiltrate environment variables (API keys, tokens),
+# use http_get/http_post for SSRF attacks against internal networks,
+# read/write arbitrary files within the project directory, or leak
+# system information.  The playground (sauravplay.py) already blocks
+# these; the API server must do the same since its callers are
+# untrusted remote clients.
+_API_DISABLED_BUILTINS = frozenset([
+    # File I/O — API functions should compute, not access the filesystem
+    'read_file', 'write_file', 'append_file', 'read_lines', 'file_exists',
+    'delete_file',
+    # CSV I/O (bypasses file builtin restrictions)
+    'csv_read', 'csv_write',
+    # Directory operations
+    'list_dir', 'make_dir', 'is_dir', 'is_file', 'path_abs', 'path_exists',
+    # Environment variables — can leak secrets like API keys
+    'env_get', 'env_set', 'env_unset', 'env_list', 'env_has',
+    # System information disclosure
+    'sys_info',
+    # HTTP — SSRF risk (attacker can probe internal networks)
+    'http_get', 'http_post', 'http_put', 'http_delete',
+    # Interactive / blocking
+    'sleep', 'input',
+])
+
+
+def _make_disabled_builtin(name):
+    """Return a function that raises RuntimeError when called in API context."""
+    def _disabled(*_args, **_kwargs):
+        raise RuntimeError(
+            f"'{name}' is disabled in API mode (sandbox). "
+            f"API-served functions cannot access the filesystem, "
+            f"environment variables, or make outbound HTTP requests."
+        )
+    return _disabled
+
+
+def _sandbox_interpreter(interp):
+    """Disable dangerous builtins on an interpreter instance for API use."""
+    for name in _API_DISABLED_BUILTINS:
+        if name in interp.builtins:
+            interp.builtins[name] = _make_disabled_builtin(name)
+    return interp
+
 # Maximum concurrent function executions to prevent thread-leak DoS.
 # When a request times out the daemon thread keeps running; capping
 # concurrency limits the blast radius.
@@ -283,8 +328,11 @@ class APIHandler(BaseHTTPRequestHandler):
                     _exec_semaphore.release()
 
         try:
-            # Deep-copy the interpreter so each request gets clean state
-            req_interp = copy.deepcopy(self.interp)
+            # Deep-copy the interpreter so each request gets clean state.
+            # Apply sandbox restrictions to the copy — the base interpreter
+            # retains full builtins for top-level init code, but per-request
+            # copies are sandboxed to prevent env/file/network access.
+            req_interp = _sandbox_interpreter(copy.deepcopy(self.interp))
             for p, v in zip(params, arg_values):
                 req_interp.variables[p] = v
 
