@@ -1920,6 +1920,13 @@ class CCodeGenerator:
         # Restore string_vars to avoid leaking function-scope info
         self.string_vars = saved_string_vars
 
+    def _emit_block(self, stmts, scope):
+        """Emit a list of statements inside an indented block."""
+        self.indent_level += 1
+        for s in stmts:
+            self.compile_statement(s, scope=scope)
+        self.indent_level -= 1
+
     def compile_statement(self, stmt, scope='main', is_top_level=False):
         """Compile a single statement to C."""
         if isinstance(stmt, IndexedAssignmentNode):
@@ -1966,34 +1973,22 @@ class CCodeGenerator:
         elif isinstance(stmt, IfNode):
             cond_c = self.compile_expression(stmt.condition)
             self.emit(f"if ({cond_c}) {{")
-            self.indent_level += 1
-            for s in stmt.body:
-                self.compile_statement(s, scope=scope)
-            self.indent_level -= 1
+            self._emit_block(stmt.body, scope)
 
             for elif_cond, elif_body in stmt.elif_chains:
                 elif_c = self.compile_expression(elif_cond)
                 self.emit(f"}} else if ({elif_c}) {{")
-                self.indent_level += 1
-                for s in elif_body:
-                    self.compile_statement(s, scope=scope)
-                self.indent_level -= 1
+                self._emit_block(elif_body, scope)
 
             if stmt.else_body:
                 self.emit("} else {")
-                self.indent_level += 1
-                for s in stmt.else_body:
-                    self.compile_statement(s, scope=scope)
-                self.indent_level -= 1
+                self._emit_block(stmt.else_body, scope)
             self.emit("}")
 
         elif isinstance(stmt, WhileNode):
             cond_c = self.compile_expression(stmt.condition)
             self.emit(f"while ({cond_c}) {{")
-            self.indent_level += 1
-            for s in stmt.body:
-                self.compile_statement(s, scope=scope)
-            self.indent_level -= 1
+            self._emit_block(stmt.body, scope)
             self.emit("}")
 
         elif isinstance(stmt, ForNode):
@@ -2002,10 +1997,7 @@ class CCodeGenerator:
             var = self._safe_ident(stmt.var)
             self.declared_vars.setdefault(scope, set()).add(stmt.var)
             self.emit(f"for (double {var} = {start_c}; {var} < {end_c}; {var}++) {{")
-            self.indent_level += 1
-            for s in stmt.body:
-                self.compile_statement(s, scope=scope)
-            self.indent_level -= 1
+            self._emit_block(stmt.body, scope)
             self.emit("}")
 
         elif isinstance(stmt, ForEachNode):
@@ -2048,10 +2040,7 @@ class CCodeGenerator:
         elif isinstance(stmt, TryCatchNode):
             self.emit("__has_error = 0;")
             self.emit("if (setjmp(__catch_buf) == 0) {")
-            self.indent_level += 1
-            for s in stmt.try_body:
-                self.compile_statement(s, scope=scope)
-            self.indent_level -= 1
+            self._emit_block(stmt.try_body, scope)
             self.emit("} else {")
             self.indent_level += 1
             if stmt.catch_var:
