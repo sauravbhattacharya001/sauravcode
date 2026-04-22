@@ -45,12 +45,12 @@ import threading
 from pathlib import Path
 
 
-# ─── Colors ───────────────────────────────────────────────────────────────────
+# ─── Colors (shared via _termcolors) ───────────────────────────────────
 
-def _c(code, text):
-    if sys.stdout.isatty() and os.environ.get("TERM"):
-        return f"\033[{code}m{text}\033[0m"
-    return str(text)
+from _termcolors import Colors as _Colors
+
+_TC = _Colors(sys.stdout.isatty() and bool(os.environ.get("TERM")))
+_c = _TC.c
 
 def _safe(text):
     """Replace Unicode symbols with ASCII fallbacks on non-UTF8 terminals."""
@@ -58,14 +58,14 @@ def _safe(text):
         text.encode(sys.stdout.encoding or "utf-8")
         return text
     except (UnicodeEncodeError, LookupError):
-        return text.replace("\u2713", "OK").replace("\u2717", "X").replace("\u25b6", ">").replace("\u2298", "-").replace("\u25cb", "o").replace("\u2500", "-").replace("\u256d", "+").replace("\u2502", "|").replace("\u2570", "+")
+        return text.replace("✓", "OK").replace("✗", "X").replace("▶", ">").replace("⊘", "-").replace("○", "o").replace("─", "-").replace("╭", "+").replace("│", "|").replace("╰", "+")
 
-def _green(t):  return _c("32", t)
-def _red(t):    return _c("31", t)
-def _yellow(t): return _c("33", t)
-def _cyan(t):   return _c("36", t)
-def _bold(t):   return _c("1", t)
-def _dim(t):    return _c("2", t)
+_green = _TC.green
+_red = _TC.red
+_yellow = _TC.yellow
+_cyan = _TC.cyan
+_bold = _TC.bold
+_dim = _TC.dim
 
 
 # ─── Pipeline model ──────────────────────────────────────────────────────────

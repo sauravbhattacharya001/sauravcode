@@ -41,21 +41,20 @@ from contextlib import redirect_stdout, redirect_stderr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ── Color helpers ─────────────────────────────────────────────────
+# ── Color helpers (shared via _termcolors) ────────────────────────
+
+from _termcolors import Colors as _Colors
 
 _NO_COLOR = os.environ.get("NO_COLOR") is not None
-
-def _c(code, text):
-    if _NO_COLOR: return str(text)
-    return f"\033[{code}m{text}\033[0m"
-
-def _green(t):  return _c("32", t)
-def _red(t):    return _c("31", t)
-def _cyan(t):   return _c("36", t)
-def _yellow(t): return _c("33", t)
-def _dim(t):    return _c("2", t)
-def _bold(t):   return _c("1", t)
-def _mag(t):    return _c("35", t)
+_TC = _Colors(not _NO_COLOR)
+_c = _TC.c
+_green = _TC.green
+_red = _TC.red
+_cyan = _TC.cyan
+_yellow = _TC.yellow
+_dim = _TC.dim
+_bold = _TC.bold
+_mag = _TC.magenta
 
 TIER_COLORS = {
     "warm-up": _green,
