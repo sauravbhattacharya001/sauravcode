@@ -43,6 +43,7 @@ from typing import List, Dict, Set, Optional
 from enum import Enum
 
 from sauravtext import strip_comment, extract_identifiers as _text_extract_identifiers
+from _srv_utils import get_indent as _get_indent_shared
 
 
 class Severity(Enum):
@@ -155,16 +156,8 @@ _STRING_LITERAL_RE = re.compile(r'f?"(?:[^"\\]|\\.)*"')
 
 
 def _get_indent(line: str) -> int:
-    """Get indentation level (number of leading spaces; tabs count as 4)."""
-    count = 0
-    for ch in line:
-        if ch == ' ':
-            count += 1
-        elif ch == '\t':
-            count += 4
-        else:
-            break
-    return count
+    """Get indentation level (delegates to shared _srv_utils)."""
+    return _get_indent_shared(line)
 
 
 # _strip_comment is now provided by sauravtext.strip_comment (imported above)
