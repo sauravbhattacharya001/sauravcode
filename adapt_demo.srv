@@ -1,0 +1,50 @@
+// adapt_demo.srv - Demonstrates sauravadapt optimizer
+// Run: python sauravadapt.py adapt_demo.srv
+
+// Dead code after return
+fn dead_example() {
+    return 42
+    let unreachable = "never runs"
+    print(unreachable)
+}
+
+// Constant folding opportunity
+let tau = 2 * 3.14159
+let big = 1000 * 1000 * 1000
+
+// Redundant assignment
+let unused_var = "I am never used"
+let also_unused = [1, 2, 3]
+
+// Deeply nested code
+fn complex_func(x) {
+    if x > 0 {
+        if x > 10 {
+            if x > 100 {
+                if x > 1000 {
+                    return "very big"
+                }
+            }
+        }
+    }
+    return "small"
+}
+
+// String concat that could use f-string
+let name = "World"
+let greeting = "Hello, " + name + "! Welcome to " + name + "'s place."
+
+// Duplicate logic
+fn calc_area_1(w, h) {
+    let result = w * h
+    return result
+}
+fn calc_area_2(width, height) {
+    let res = width * height
+    return res
+}
+
+print(dead_example())
+print(tau)
+print(complex_func(5))
+print(greeting)
