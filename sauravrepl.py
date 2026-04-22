@@ -43,21 +43,19 @@ try:
 except ImportError:
     ThrowSignal = None  # Older versions may not have it
 
-# ── Color helpers ─────────────────────────────────────────────────
+# ── Color helpers (shared via _termcolors) ───────────────────────────
+
+from _termcolors import Colors as _Colors
 
 _NO_COLOR = os.environ.get("NO_COLOR") is not None
-
-def _color(code, text):
-    if _NO_COLOR:
-        return text
-    return "\033[{}m{}\033[0m".format(code, text)
-
-def _green(t):   return _color("32", t)
-def _red(t):     return _color("31", t)
-def _cyan(t):    return _color("36", t)
-def _yellow(t):  return _color("33", t)
-def _dim(t):     return _color("2", t)
-def _bold(t):    return _color("1", t)
+_TC = _Colors(not _NO_COLOR)
+_color = _TC.c
+_green = _TC.green
+_red = _TC.red
+_cyan = _TC.cyan
+_yellow = _TC.yellow
+_dim = _TC.dim
+_bold = _TC.bold
 
 # ── Block detection ───────────────────────────────────────────────
 

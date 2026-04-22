@@ -115,28 +115,19 @@ class SuiteResult:
 
 
 # ---------------------------------------------------------------------------
-# ANSI helpers
+# ANSI helpers (shared via _termcolors)
 # ---------------------------------------------------------------------------
 
+from _termcolors import Colors as _Colors
+
 _USE_COLOR = sys.stdout.isatty()
-
-def _green(text):
-    return f"\033[32m{text}\033[0m" if _USE_COLOR else text
-
-def _red(text):
-    return f"\033[31m{text}\033[0m" if _USE_COLOR else text
-
-def _yellow(text):
-    return f"\033[33m{text}\033[0m" if _USE_COLOR else text
-
-def _cyan(text):
-    return f"\033[36m{text}\033[0m" if _USE_COLOR else text
-
-def _bold(text):
-    return f"\033[1m{text}\033[0m" if _USE_COLOR else text
-
-def _dim(text):
-    return f"\033[2m{text}\033[0m" if _USE_COLOR else text
+_TC = _Colors(_USE_COLOR)
+_green = _TC.green
+_red = _TC.red
+_yellow = _TC.yellow
+_cyan = _TC.cyan
+_bold = _TC.bold
+_dim = _TC.dim
 
 
 # ---------------------------------------------------------------------------
@@ -532,8 +523,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.no_color:
-        global _USE_COLOR
+        global _USE_COLOR, _TC, _green, _red, _yellow, _cyan, _bold, _dim
         _USE_COLOR = False
+        _TC = _Colors(False)
+        _green = _TC.green
+        _red = _TC.red
+        _yellow = _TC.yellow
+        _cyan = _TC.cyan
+        _bold = _TC.bold
+        _dim = _TC.dim
 
     suite = run_tests(
         args.paths,

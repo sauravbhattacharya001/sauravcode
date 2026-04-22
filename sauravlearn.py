@@ -42,22 +42,20 @@ except ImportError:
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
-# Color helpers
+# Color helpers (shared via _termcolors)
 # ---------------------------------------------------------------------------
+from _termcolors import Colors as _Colors
+
 _use_color = True
-
-def _c(code, text):
-    if not _use_color:
-        return text
-    return f"\033[{code}m{text}\033[0m"
-
-def _green(t):   return _c("32", t)
-def _red(t):     return _c("31", t)
-def _cyan(t):    return _c("36", t)
-def _yellow(t):  return _c("33", t)
-def _bold(t):    return _c("1", t)
-def _dim(t):     return _c("2", t)
-def _magenta(t): return _c("35", t)
+_TC = _Colors(_use_color)
+_c = _TC.c
+_green = _TC.green
+_red = _TC.red
+_cyan = _TC.cyan
+_yellow = _TC.yellow
+_bold = _TC.bold
+_dim = _TC.dim
+_magenta = _TC.magenta
 
 # ---------------------------------------------------------------------------
 # Code runner
@@ -524,7 +522,7 @@ def _run_lesson(lesson_idx, lessons, progress):
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    global _use_color
+    global _use_color, _TC, _c, _green, _red, _cyan, _yellow, _bold, _dim, _magenta
 
     parser = argparse.ArgumentParser(
         description="sauravlearn — Interactive tutorial for sauravcode",
@@ -539,6 +537,15 @@ def main():
 
     if args.no_color or not sys.stdout.isatty():
         _use_color = False
+        _TC = _Colors(False)
+        _c = _TC.c
+        _green = _TC.green
+        _red = _TC.red
+        _cyan = _TC.cyan
+        _yellow = _TC.yellow
+        _bold = _TC.bold
+        _dim = _TC.dim
+        _magenta = _TC.magenta
 
     lessons = _lessons()
     progress = _load_progress()
