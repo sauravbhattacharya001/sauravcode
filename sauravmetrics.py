@@ -39,6 +39,8 @@ import json
 import math
 import argparse
 
+from _srv_utils import get_indent as _get_indent, find_srv_files as _find_srv_files
+
 # ── ANSI Colors ──────────────────────────────────────────────────────
 
 USE_COLOR = True
@@ -139,13 +141,7 @@ class FileMetrics:
         return round(mi * 100 / 171, 1)
 
 
-def _get_indent(line):
-    """Return the indentation level (number of leading spaces / 4)."""
-    stripped = line.rstrip()
-    if not stripped:
-        return 0
-    spaces = len(stripped) - len(stripped.lstrip())
-    return spaces // 4
+# _get_indent is now imported from _srv_utils
 
 
 def analyze_file(filepath):
@@ -399,30 +395,8 @@ def output_csv(all_metrics):
 # ── File Discovery ───────────────────────────────────────────────────
 
 def find_srv_files(paths, recursive=False):
-    """Find .srv files from given paths."""
-    files = []
-    for p in paths:
-        if os.path.isfile(p):
-            if p.endswith('.srv'):
-                files.append(p)
-            else:
-                print(f"Skipping non-.srv file: {p}", file=sys.stderr)
-        elif os.path.isdir(p):
-            if recursive:
-                for root, dirs, fnames in os.walk(p):
-                    # Skip hidden dirs and common non-source dirs
-                    dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__'
-                               and d != '__snapshots__' and d != 'node_modules']
-                    for fn in sorted(fnames):
-                        if fn.endswith('.srv'):
-                            files.append(os.path.join(root, fn))
-            else:
-                for fn in sorted(os.listdir(p)):
-                    if fn.endswith('.srv'):
-                        files.append(os.path.join(p, fn))
-        else:
-            print(f"Path not found: {p}", file=sys.stderr)
-    return files
+    """Find .srv files from given paths (delegates to shared _srv_utils)."""
+    return _find_srv_files(paths, recursive=recursive)
 
 
 # ── Main ─────────────────────────────────────────────────────────────

@@ -27,6 +27,8 @@ import argparse
 import io
 from datetime import datetime
 
+from _srv_utils import get_indent, find_srv_files as _find_srv_files_shared
+
 __version__ = "1.0.0"
 
 _COMMENT_RE = re.compile(r'^\s*#')
@@ -101,16 +103,8 @@ class FileMetrics:
 
 
 def _indent_level(line):
-    """Calculate the indentation level of *line* in spaces (tabs count as 4)."""
-    count = 0
-    for ch in line:
-        if ch == ' ':
-            count += 1
-        elif ch == '\t':
-            count += 4
-        else:
-            break
-    return count
+    """Calculate the indentation level of *line* (delegates to shared util)."""
+    return get_indent(line)
 
 
 def analyze_file(filepath, base_dir=None):
@@ -220,24 +214,8 @@ def analyze_file(filepath, base_dir=None):
 
 
 def find_srv_files(path):
-    """Recursively discover all .srv files under *path*.
-
-    If *path* is a single file it is returned in a one-element list (provided
-    it has the ``.srv`` extension).  Directories starting with ``.`` are
-    skipped.
-
-    Returns:
-        Sorted list of absolute file paths.
-    """
-    if os.path.isfile(path):
-        return [path] if path.endswith('.srv') else []
-    results = []
-    for root, dirs, files in os.walk(path):
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
-        for f in sorted(files):
-            if f.endswith('.srv'):
-                results.append(os.path.join(root, f))
-    return results
+    """Recursively discover all .srv files under *path* (delegates to shared util)."""
+    return _find_srv_files_shared(path, recursive=True)
 
 
 def analyze_path(path):
