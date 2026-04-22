@@ -30,6 +30,28 @@ from datetime import datetime
 HEAL_HISTORY = ".sauravheal_history.json"
 HEAL_KB = ".sauravheal_kb.json"  # Knowledge base of learned fixes
 
+# ─── Pre-compiled diagnostic regexes ────────────────────────────────────────────
+# These patterns are used in the diagnostic rules below.  Pre-compiling them
+# avoids re-parsing the same regex strings on every healing attempt (there can
+# be several per run, each scanning the same set of rules).
+
+_RE_UNDEF_VAR = re.compile(r"(?:Undefined variable|NameError|not defined)[:\s]*['\"]?(\w+)['\"]?")
+_RE_UNKNOWN_VAR = re.compile(r"Unknown variable ['\"]?(\w+)['\"]?")
+_RE_SET_LET_ASSIGN = re.compile(r'^\s*(?:set|let)?\s*(\w+)\s*=')
+_RE_FOR_VAR = re.compile(r'^\s*for\s+(\w+)\s+in')
+_RE_FUNC_PARAMS = re.compile(r'^\s*func\s+\w+\((.*?)\)')
+_RE_MISSING_END = re.compile(r"(?:expected 'end'|unexpected end|missing end|unterminated)", re.I)
+_RE_BLOCK_OPENER = re.compile(r'^(if|for|while|func|class|try)\b')
+_RE_TYPE_ERROR = re.compile(r"(?:TypeError|type error|cannot (?:add|subtract|multiply|compare))[:\s]*(.*)", re.I)
+_RE_STR_NUM_MIX = re.compile(r"str.*(?:int|float|number)|(?:int|float|number).*str", re.I)
+_RE_INDEX_ERROR = re.compile(r"(?:IndexError|index out of (?:range|bounds))[:\s]*(.*)", re.I)
+_RE_DIV_ZERO = re.compile(r"(?:division by zero|divide by zero|ZeroDivisionError)", re.I)
+_RE_DIVISOR = re.compile(r'/\s*(\w+)')
+_RE_IMPORT_ERROR = re.compile(r"(?:ImportError|ModuleNotFoundError|Cannot import|No module)[:\s]*['\"]?(\w+)['\"]?", re.I)
+_RE_FILE_NOT_FOUND = re.compile(r"(?:File not found|cannot open)[:\s]*['\"]?([^\s'\"]+)['\"]?", re.I)
+_RE_SYNTAX_LINE = re.compile(r"(?:SyntaxError|syntax error|parse error).*?line\s*(\d+)", re.I)
+_RE_LINE_SYNTAX = re.compile(r"line\s*(\d+).*?(?:SyntaxError|syntax error|parse error)", re.I)
+
 # ─── Error Diagnosis ────────────────────────────────────────────────────────────
 
 class Diagnosis:
@@ -60,9 +82,9 @@ class Diagnosis:
 
 def _diagnose_undefined_variable(error_msg, source_lines):
     """Detect and fix undefined variable errors."""
-    m = re.search(r"(?:Undefined variable|NameError|not defined)[:\s]*['\"]?(\w+)['\"]?", error_msg)
+    m = _RE_UNDEF_VAR.search(error_msg)
     if not m:
-        m = re.search(r"Unknown variable ['\"]?(\w+)['\"]?", error_msg)
+        m = _RE_UNKNOWN_VAR.search(error_msg)
     if not m:
         return None
 
@@ -82,15 +104,15 @@ def _diagnose_undefined_variable(error_msg, source_lines):
     defined_vars = set()
     for line in source_lines:
         # Match: set x = ..., let x = ..., x = ...
-        vm = re.match(r'^\s*(?:set|let)?\s*(\w+)\s*=', line)
+        vm = _RE_SET_LET_ASSIGN.match(line)
         if vm:
             defined_vars.add(vm.group(1))
         # Match: for x in ...
-        vm = re.match(r'^\s*for\s+(\w+)\s+in', line)
+        vm = _RE_FOR_VAR.match(line)
         if vm:
             defined_vars.add(vm.group(1))
         # Match: func params
-        vm = re.match(r'^\s*func\s+\w+\((.*?)\)', line)
+        vm = _RE_FUNC_PARAMS.match(line)
         if vm:
             for p in vm.group(1).split(','):
                 p = p.strip()
@@ -132,7 +154,7 @@ def _diagnose_undefined_variable(error_msg, source_lines):
 
 def _diagnose_missing_end(error_msg, source_lines):
     """Detect missing 'end' keywords for blocks."""
-    if not re.search(r"(?:expected 'end'|unexpected end|missing end|unterminated)", error_msg, re.I):
+    if not _RE_MISSING_END.search(error_msg):
         return None
 
     # Count block openers vs 'end'
@@ -141,7 +163,7 @@ def _diagnose_missing_end(error_msg, source_lines):
     last_opener_line = 0
     for i, line in enumerate(source_lines):
         stripped = line.strip()
-        if re.match(r'^(if|for|while|func|class|try)\b', stripped):
+        if _RE_BLOCK_OPENER.match(stripped):
             openers += 1
             last_opener_line = i
         if stripped == 'end':
@@ -163,14 +185,14 @@ def _diagnose_missing_end(error_msg, source_lines):
 
 def _diagnose_type_error(error_msg, source_lines):
     """Detect type mismatch errors."""
-    m = re.search(r"(?:TypeError|type error|cannot (?:add|subtract|multiply|compare))[:\s]*(.*)", error_msg, re.I)
+    m = _RE_TYPE_ERROR.search(error_msg)
     if not m:
         return None
 
     detail = m.group(1).strip()
 
     # Common: string + number
-    if re.search(r"str.*(?:int|float|number)|(?:int|float|number).*str", detail, re.I):
+    if _RE_STR_NUM_MIX.search(detail):
         return Diagnosis(
             "type_error", error_msg, None,
             "Mixing string and numeric types in an operation",
@@ -188,7 +210,7 @@ def _diagnose_type_error(error_msg, source_lines):
 
 def _diagnose_index_error(error_msg, source_lines):
     """Detect out-of-bounds access."""
-    m = re.search(r"(?:IndexError|index out of (?:range|bounds))[:\s]*(.*)", error_msg, re.I)
+    m = _RE_INDEX_ERROR.search(error_msg)
     if not m:
         return None
 
@@ -202,7 +224,7 @@ def _diagnose_index_error(error_msg, source_lines):
 
 def _diagnose_division_by_zero(error_msg, source_lines):
     """Detect division by zero."""
-    if not re.search(r"(?:division by zero|divide by zero|ZeroDivisionError)", error_msg, re.I):
+    if not _RE_DIV_ZERO.search(error_msg):
         return None
 
     # Find division operations
@@ -210,7 +232,7 @@ def _diagnose_division_by_zero(error_msg, source_lines):
         stripped = line.strip()
         if '/' in stripped and not stripped.startswith('#'):
             # Find the divisor
-            dm = re.search(r'/\s*(\w+)', stripped)
+            dm = _RE_DIVISOR.search(stripped)
             if dm:
                 divisor = dm.group(1)
                 old_line = source_lines[i]
@@ -234,9 +256,9 @@ def _diagnose_division_by_zero(error_msg, source_lines):
 
 def _diagnose_import_error(error_msg, source_lines):
     """Detect missing import/module errors."""
-    m = re.search(r"(?:ImportError|ModuleNotFoundError|Cannot import|No module)[:\s]*['\"]?(\w+)['\"]?", error_msg, re.I)
+    m = _RE_IMPORT_ERROR.search(error_msg)
     if not m:
-        m = re.search(r"(?:File not found|cannot open)[:\s]*['\"]?([^\s'\"]+)['\"]?", error_msg, re.I)
+        m = _RE_FILE_NOT_FOUND.search(error_msg)
     if not m:
         return None
 
@@ -251,9 +273,9 @@ def _diagnose_import_error(error_msg, source_lines):
 
 def _diagnose_syntax_error(error_msg, source_lines):
     """Detect common syntax errors."""
-    m = re.search(r"(?:SyntaxError|syntax error|parse error).*?line\s*(\d+)", error_msg, re.I)
+    m = _RE_SYNTAX_LINE.search(error_msg)
     if not m:
-        m = re.search(r"line\s*(\d+).*?(?:SyntaxError|syntax error|parse error)", error_msg, re.I)
+        m = _RE_LINE_SYNTAX.search(error_msg)
     if not m:
         return None
 
