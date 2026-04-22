@@ -364,20 +364,32 @@ class Matrix:
         """QR decomposition via modified Gram-Schmidt. Returns (Q, R)."""
         if self.nrows < self.ncols:
             raise ValueError("QR requires nrows >= ncols")
-        cols = [[self.rows[i][j] for i in range(self.nrows)] for j in range(self.ncols)]
+        m, nc = self.nrows, self.ncols
+        cols = [[self.rows[i][j] for i in range(m)] for j in range(nc)]
         q_cols = []
-        R = [[0.0] * self.ncols for _ in range(self.ncols)]
-        for j in range(self.ncols):
+        R = [[0.0] * nc for _ in range(nc)]
+        for j in range(nc):
             v = cols[j][:]
             for i in range(len(q_cols)):
-                R[i][j] = sum(q_cols[i][k] * v[k] for k in range(self.nrows))
-                v = [v[k] - R[i][j] * q_cols[i][k] for k in range(self.nrows)]
-            norm = math.sqrt(sum(x * x for x in v))
+                qi = q_cols[i]
+                dot = 0.0
+                for k in range(m):
+                    dot += qi[k] * v[k]
+                R[i][j] = dot
+                for k in range(m):
+                    v[k] -= dot * qi[k]
+            norm_sq = 0.0
+            for k in range(m):
+                norm_sq += v[k] * v[k]
+            norm = math.sqrt(norm_sq)
             if norm < 1e-14:
                 raise ValueError("Matrix columns are linearly dependent")
             R[j][j] = norm
-            q_cols.append([x / norm for x in v])
-        Q = Matrix([[q_cols[j][i] for j in range(self.ncols)] for i in range(self.nrows)])
+            inv_norm = 1.0 / norm
+            for k in range(m):
+                v[k] *= inv_norm
+            q_cols.append(v)
+        Q = Matrix([[q_cols[j][i] for j in range(nc)] for i in range(m)])
         return Q, Matrix(R)
 
     # ── Eigenvalues (QR algorithm for small matrices) ──────────────────
@@ -391,11 +403,22 @@ class Matrix:
         for _ in range(iterations):
             try:
                 Q, R = A.qr()
-                A = R * Q
+                # Inline R*Q: pre-extract Q columns to avoid _matmul's
+                # transpose overhead on every iteration.
+                q_cols = [[Q.rows[i][j] for i in range(n)] for j in range(n)]
+                new_rows = [[0.0] * n for _ in range(n)]
+                for i in range(n):
+                    r_row = R.rows[i]
+                    for j in range(n):
+                        s = 0.0
+                        qj = q_cols[j]
+                        for k in range(n):
+                            s += r_row[k] * qj[k]
+                        new_rows[i][j] = s
+                A = Matrix(new_rows)
             except ValueError:
                 break
         eigs = [A.rows[i][i] for i in range(n)]
-        # Clean near-zero imaginary artifacts
         eigs = [round(e, 10) if isinstance(e, float) else e for e in eigs]
         return sorted(eigs, key=lambda x: -abs(x))
 
