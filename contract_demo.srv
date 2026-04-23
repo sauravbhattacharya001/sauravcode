@@ -1,0 +1,71 @@
+# Contract Demo — sauravcontract
+# Run: python sauravcontract.py contract_demo.srv --suggest --blame --report
+
+# @requires n >= 0
+# @ensures result >= 1
+fun factorial(n)
+    if n == 0
+        return 1
+    end
+    return n * factorial(n - 1)
+end
+
+# @requires items != []
+# @ensures result >= 0
+fun average(items)
+    let total = 0
+    for item in items
+        total = total + item
+    end
+    return total / len(items)
+end
+
+# @requires radius > 0
+# @ensures result > 0
+# @invariant area >= 0
+fun circle_area(radius)
+    let pi = 3.14159
+    let area = pi * radius * radius
+    return area
+end
+
+# @requires a > 0
+# @requires b > 0
+# @ensures result > 0
+fun gcd(a, b)
+    while b != 0
+        let temp = b
+        b = a % b
+        a = temp
+    end
+    return a
+end
+
+# No contracts — tool should suggest some
+fun mystery(x, y)
+    if x > y
+        return x - y
+    end
+    return y - x
+end
+
+# No contracts — uses division, tool should suggest @requires y != 0
+fun divide(x, y)
+    return x / y
+end
+
+# @requires n >= 0
+fun fibonacci(n)
+    if n == 0
+        return 0
+    end
+    if n == 1
+        return 1
+    end
+    return fibonacci(n - 1) + fibonacci(n - 2)
+end
+
+# Calls factorial without guarding — blame analysis target
+fun permutations(n, r)
+    return factorial(n) / factorial(n - r)
+end
