@@ -336,32 +336,35 @@ def query_imports(ast, filename):
 def query_conditions(ast, filename, min_depth=None):
     """Find all if/else chains.
 
-    Previously counted nested ifs via a separate ``walk_ast`` per IfNode,
-    resulting in O(N²) behaviour on deep if-chains.  Now collects all
-    IfNodes in one pass and counts nested ifs by comparing depths.
+    Uses DFS pre-order with depth tracking to count nested IfNodes in
+    O(N) total — no per-node subtree walks.  Each IfNode that appears
+    after another at a greater depth (before the depth drops back) is
+    counted as nested under all shallower IfNode ancestors.
     """
-    # Single-pass: collect all IfNodes with their depths
-    if_nodes = []
+    # Single pass: collect IfNodes in DFS order with depths
+    if_entries = []  # (index, node, depth)
     for node, depth in walk_ast(ast):
         if type(node).__name__ == 'IfNode':
-            if_nodes.append((node, depth))
+            if_entries.append((len(if_entries), node, depth))
 
-    # Build per-node nested-if counts in a second fast pass.
-    # For each IfNode we count how many other IfNodes are its
-    # descendants.  We use the walk_ast order (pre-order DFS) +
-    # depth info: a subsequent node B is a descendant of A if B
-    # appears after A and B.depth > A.depth, until we hit a node
-    # at A.depth or shallower.
-    #
-    # For truly accurate counts we still need a subtree walk, but
-    # we can batch: walk the full AST once and, for each IfNode,
-    # use contains_node_type only when needed (the common case is
-    # few IfNodes).  However the simplest correct optimisation is
-    # to compute nested_ifs via a single walk_ast of the node.
-    # Since we already collected the nodes, use a helper.
+    # Count nested ifs per IfNode using DFS order + depth.
+    # In pre-order DFS, a node B at index j is a descendant of node A
+    # at index i (i < j) iff B.depth > A.depth and no node between
+    # i and j has depth <= A.depth.
+    # We use a stack of (index, depth) to track active ancestors.
+    nested_counts = [0] * len(if_entries)
+    ancestor_stack = []  # stack of (entry_index, depth)
+    for idx, _node, depth in if_entries:
+        # Pop ancestors that this node is NOT nested under
+        while ancestor_stack and depth <= ancestor_stack[-1][1]:
+            ancestor_stack.pop()
+        # This node is nested under all remaining ancestors
+        for anc_idx, _anc_depth in ancestor_stack:
+            nested_counts[anc_idx] += 1
+        ancestor_stack.append((idx, depth))
 
     results = []
-    for node, depth in if_nodes:
+    for idx, node, depth in if_entries:
         if min_depth is not None and depth < min_depth:
             continue
         has_else = getattr(node, 'else_body', None) is not None
@@ -370,18 +373,13 @@ def query_conditions(ast, filename, min_depth=None):
         if isinstance(elifs, list):
             elif_count = len(elifs)
         line = getattr(node, 'line_num', '?')
-        # Count nested ifs by walking children only (not re-walking root)
-        nested = 0
-        for c, _ in walk_ast(node):
-            if c is not node and type(c).__name__ == 'IfNode':
-                nested += 1
         results.append({
             'file': filename,
             'line': line,
             'depth': depth,
             'has_else': has_else,
             'elif_count': elif_count,
-            'nested_ifs': nested,
+            'nested_ifs': nested_counts[idx],
         })
     return results
 
@@ -516,38 +514,73 @@ def query_patterns(ast, filename, node_type=None, has_child=None):
 # ── Query: summary ───────────────────────────────────────────────────
 
 def query_summary(ast, filename):
-    """Full structural summary."""
+    """Full structural summary.
+
+    Collects all data in a single AST walk instead of six separate
+    passes (type counting, functions, calls, loops, imports, variables).
+    For a 1 000-node AST this eliminates ~5 000 redundant node visits.
+    """
     type_counts = Counter()
     max_depth = 0
+    func_names = []
+    generators = 0
+    call_targets = Counter()
+    total_calls = 0
+    loop_count = 0
+    assigned = {}   # name -> True
+    used = set()
+    import_modules = []
+
+    _LOOP_TYPES = frozenset(('ForNode', 'ForEachNode', 'WhileNode'))
+
     for node, depth in walk_ast(ast):
-        type_counts[type(node).__name__] += 1
-        max_depth = max(max_depth, depth)
+        ntype = type(node).__name__
+        type_counts[ntype] += 1
+        if depth > max_depth:
+            max_depth = depth
 
-    funcs = query_functions(ast, filename)
-    calls = query_calls(ast, filename)
-    loops = query_loops(ast, filename)
-    imports = query_imports(ast, filename)
-    variables = query_variables(ast, filename)
-    unused = [v for v in variables if v['unused']]
+        if ntype == 'FunctionNode':
+            fname = getattr(node, 'name', '?')
+            func_names.append(fname)
+            if contains_node_type(node, 'YieldNode'):
+                generators += 1
+        elif ntype == 'FunctionCallNode':
+            total_calls += 1
+            call_targets[getattr(node, 'name', '?')] += 1
+        elif ntype in _LOOP_TYPES:
+            loop_count += 1
+        elif ntype == 'ImportNode':
+            module = getattr(node, 'module_path',
+                             getattr(node, 'module',
+                                     getattr(node, 'name', '?')))
+            import_modules.append(module)
+        elif ntype == 'AssignmentNode':
+            name = getattr(node, 'name', None)
+            if name:
+                assigned[name] = True
+        elif ntype == 'IdentifierNode':
+            name = getattr(node, 'name', None)
+            if name:
+                used.add(name)
 
-    call_targets = Counter(c['name'] for c in calls)
+    unused_names = [n for n in sorted(assigned) if n not in used]
 
     return {
         'file': filename,
         'total_nodes': sum(type_counts.values()),
         'node_types': len(type_counts),
         'max_depth': max_depth,
-        'functions': len(funcs),
-        'function_names': [f['name'] for f in funcs],
-        'generators': sum(1 for f in funcs if f['is_generator']),
-        'total_calls': len(calls),
+        'functions': len(func_names),
+        'function_names': func_names,
+        'generators': generators,
+        'total_calls': total_calls,
         'top_called': dict(call_targets.most_common(10)),
-        'loops': len(loops),
-        'variables': len(variables),
-        'unused_variables': len(unused),
-        'unused_names': [v['name'] for v in unused],
-        'imports': len(imports),
-        'import_modules': [i['module'] for i in imports],
+        'loops': loop_count,
+        'variables': len(assigned),
+        'unused_variables': len(unused_names),
+        'unused_names': unused_names[:5],
+        'imports': len(import_modules),
+        'import_modules': import_modules,
         'type_breakdown': dict(type_counts.most_common(15)),
     }
 
