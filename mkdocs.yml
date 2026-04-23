@@ -47,6 +47,7 @@ nav:
   - Compiler Guide: compiler.md
   - Developer Tooling: tooling.md
   - Security & Limits: SECURITY.md
+  - FAQ & Common Patterns: faq.md
   - Changelog: changelog.md
 
 markdown_extensions:
