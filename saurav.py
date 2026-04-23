@@ -6778,44 +6778,30 @@ class Interpreter:
     # --- String built-ins ---
     def _builtin_upper(self, args):
         self._expect_args('upper', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            raise RuntimeError("upper expects a string argument")
-        return s.upper()
+        return self._require_str_arg('upper', args[0]).upper()
 
     def _builtin_lower(self, args):
         self._expect_args('lower', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            raise RuntimeError("lower expects a string argument")
-        return s.lower()
+        return self._require_str_arg('lower', args[0]).lower()
 
     def _builtin_trim(self, args):
         self._expect_args('trim', args, 1)
-        s = args[0]
-        if not isinstance(s, str):
-            raise RuntimeError("trim expects a string argument")
-        return s.strip()
+        return self._require_str_arg('trim', args[0]).strip()
 
     def _builtin_replace(self, args):
         self._expect_args('replace', args, 3)
-        s, old, new = args
-        if not isinstance(s, str):
-            raise RuntimeError("replace expects a string as first argument")
-        return s.replace(str(old), str(new))
+        s = self._require_str_arg('replace', args[0], 1)
+        return s.replace(str(args[1]), str(args[2]))
 
     def _builtin_split(self, args):
         self._expect_args('split', args, 2)
-        s, delim = args
-        if not isinstance(s, str):
-            raise RuntimeError("split expects a string as first argument")
-        return s.split(str(delim))
+        s = self._require_str_arg('split', args[0], 1)
+        return s.split(str(args[1]))
 
     def _builtin_join(self, args):
         self._expect_args('join', args, 2)
-        delim, lst = args
-        if not isinstance(lst, list):
-            raise RuntimeError("join expects a list as second argument")
+        delim = args[0]
+        lst = self._require_list_arg('join', args[1], 2)
         items = []
         for item in lst:
             if isinstance(item, float) and item == int(item):
@@ -6837,39 +6823,28 @@ class Interpreter:
 
     def _builtin_starts_with(self, args):
         self._expect_args('starts_with', args, 2)
-        s, prefix = args
-        if not isinstance(s, str):
-            raise RuntimeError("starts_with expects a string as first argument")
-        return s.startswith(str(prefix))
+        s = self._require_str_arg('starts_with', args[0], 1)
+        return s.startswith(str(args[1]))
 
     def _builtin_ends_with(self, args):
         self._expect_args('ends_with', args, 2)
-        s, suffix = args
-        if not isinstance(s, str):
-            raise RuntimeError("ends_with expects a string as first argument")
-        return s.endswith(str(suffix))
+        s = self._require_str_arg('ends_with', args[0], 1)
+        return s.endswith(str(args[1]))
 
     def _builtin_substring(self, args):
         self._expect_args('substring', args, 3)
-        s, start, end = args
-        if not isinstance(s, str):
-            raise RuntimeError("substring expects a string as first argument")
-        return s[int(start):int(end)]
+        s = self._require_str_arg('substring', args[0], 1)
+        return s[int(args[1]):int(args[2])]
 
     def _builtin_index_of(self, args):
         self._expect_args('index_of', args, 2)
-        s, sub = args
-        if not isinstance(s, str):
-            raise RuntimeError("index_of expects a string as first argument")
-        idx = s.find(str(sub))
-        return float(idx)
+        s = self._require_str_arg('index_of', args[0], 1)
+        return float(s.find(str(args[1])))
 
     def _builtin_char_at(self, args):
         self._expect_args('char_at', args, 2)
-        s, idx = args
-        if not isinstance(s, str):
-            raise RuntimeError("char_at expects a string as first argument")
-        i = int(idx)
+        s = self._require_str_arg('char_at', args[0], 1)
+        i = int(args[1])
         if i < 0 or i >= len(s):
             raise RuntimeError(f"char_at index {i} out of bounds (length {len(s)})")
         return s[i]
@@ -8553,6 +8528,20 @@ class Interpreter:
     def _expect_args(self, name, args, count):
         if len(args) != count:
             raise RuntimeError(f"{name} expects {count} argument(s), got {len(args)}")
+
+    def _require_str_arg(self, name, val, pos=None):
+        """Validate that *val* is a string, raising a clear error if not."""
+        if not isinstance(val, str):
+            where = f" as argument {pos}" if pos else ""
+            raise RuntimeError(f"{name} expects a string{where}")
+        return val
+
+    def _require_list_arg(self, name, val, pos=None):
+        """Validate that *val* is a list, raising a clear error if not."""
+        if not isinstance(val, list):
+            where = f" as argument {pos}" if pos else ""
+            raise RuntimeError(f"{name} expects a list{where}")
+        return val
 
     def _has_yield(self, body):
         """Check if a function body contains any yield statements (recursively)."""
