@@ -28,6 +28,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import tokenize
 
 
+def _is_code_line(line: str) -> bool:
+    """Return True if *line* is non-blank and not a comment.
+
+    Strips once to avoid the redundant double-strip() that was inlined
+    in every SLOC counting expression.
+    """
+    stripped = line.strip()
+    return bool(stripped) and not stripped.startswith('#')
+
+
+def _count_sloc(lines) -> int:
+    """Count source lines of code (non-blank, non-comment) in *lines*."""
+    return sum(1 for line in lines if _is_code_line(line))
+
+
 # ─── Data Classes ───────────────────────────────────────────────────────────
 
 class HalsteadMetrics:
@@ -240,7 +255,7 @@ class ComplexityAnalyzer:
         lines = source.split('\n')
         fc = FileComplexity(path)
         fc.total_loc = len(lines)
-        fc.total_sloc = sum(1 for line in lines if line.strip() and not line.strip().startswith('#'))
+        fc.total_sloc = _count_sloc(lines)
 
         # Tokenize
         tokens = list(tokenize(source))
@@ -361,7 +376,8 @@ class ComplexityAnalyzer:
         end_line = func_line
         for li in range(func_line_idx + 1, len(lines)):
             line = lines[li]
-            if line.strip() == '' or line.strip().startswith('#'):
+            stripped = line.strip()
+            if stripped == '' or stripped.startswith('#'):
                 end_line = li + 1
                 continue
             line_indent = len(line) - len(line.lstrip())
@@ -391,8 +407,7 @@ class ComplexityAnalyzer:
         module_tokens = [t for t in all_tokens if t[2] not in func_ranges]
         module_lines = [i for i in range(len(lines))
                         if (i + 1) not in func_ranges]
-        sloc = sum(1 for i in module_lines
-                   if lines[i].strip() and not lines[i].strip().startswith('#'))
+        sloc = sum(1 for i in module_lines if _is_code_line(lines[i]))
 
         fc = FunctionComplexity('<module>', line=1)
         fc.end_line = len(lines)
@@ -413,7 +428,7 @@ class ComplexityAnalyzer:
 
         body_lines = lines[func_info['line'] - 1:func_info['end_line']]
         fc.loc = len(body_lines)
-        fc.sloc = sum(1 for l in body_lines if l.strip() and not l.strip().startswith('#'))
+        fc.sloc = _count_sloc(body_lines)
 
         tokens = func_info['tokens']
         fc.cyclomatic = self._compute_cyclomatic(tokens)
