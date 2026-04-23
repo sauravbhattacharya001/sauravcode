@@ -1927,175 +1927,201 @@ class CCodeGenerator:
             self.compile_statement(s, scope=scope)
         self.indent_level -= 1
 
+    # ── Statement compilation dispatch table ──────────────────────
+    # O(1) type-based dispatch replaces the ~19-branch isinstance chain.
+    # compile_statement is called for every statement in every block,
+    # so eliminating linear isinstance scanning yields measurable
+    # speedup on programs with many statements.
+
+    _stmt_dispatch = None
+
+    @classmethod
+    def _build_stmt_dispatch(cls):
+        cls._stmt_dispatch = {
+            IndexedAssignmentNode: cls._compile_stmt_indexed_assign,
+            DotAssignmentNode:    cls._compile_stmt_dot_assign,
+            AssignmentNode:       cls._compile_stmt_assign,
+            ReturnNode:           cls._compile_stmt_return,
+            PrintNode:            cls._compile_stmt_print,
+            FunctionCallNode:     cls._compile_stmt_call,
+            IfNode:               cls._compile_stmt_if,
+            WhileNode:            cls._compile_stmt_while,
+            ForNode:              cls._compile_stmt_for,
+            ForEachNode:          cls._compile_stmt_foreach,
+            TryCatchNode:         cls._compile_stmt_try_catch,
+            ThrowNode:            cls._compile_stmt_throw,
+            AssertNode:           cls._compile_stmt_assert,
+            AppendNode:           cls._compile_stmt_append,
+            PopNode:              cls._compile_stmt_pop,
+            BreakNode:            cls._compile_stmt_break,
+            ContinueNode:         cls._compile_stmt_continue,
+            EnumNode:             cls._compile_stmt_noop,
+            ClassNode:            cls._compile_stmt_noop,
+        }
+
     def compile_statement(self, stmt, scope='main', is_top_level=False):
-        """Compile a single statement to C."""
-        if isinstance(stmt, IndexedAssignmentNode):
-            name = self._safe_ident(stmt.name)
-            idx_c = self.compile_expression(stmt.index)
-            val_c = self.compile_expression(stmt.value)
-            if stmt.name in self.map_vars:
-                # Map key assignment: m["key"] = value
-                self.emit(f"srv_map_set(&{name}, {idx_c}, {val_c});")
-            else:
-                self.emit(f"srv_list_set(&{name}, (int)({idx_c}), {val_c});")
+        """Compile a single statement to C.
 
-        elif isinstance(stmt, DotAssignmentNode):
-            obj_c = self.compile_expression(stmt.obj)
-            field = self._safe_ident(stmt.field)
-            val_c = self.compile_expression(stmt.value)
-            # Use -> for pointer access (self is a pointer in class methods)
-            if isinstance(stmt.obj, IdentifierNode) and stmt.obj.name == 'self':
-                self.emit(f"{obj_c}->{field} = {val_c};")
-            else:
-                self.emit(f"{obj_c}.{field} = {val_c};")
+        Uses O(1) type-dispatch instead of a linear isinstance chain.
+        """
+        if self._stmt_dispatch is None:
+            self._build_stmt_dispatch()
+        handler = self._stmt_dispatch.get(type(stmt))
+        if handler is not None:
+            handler(self, stmt, scope, is_top_level)
+        else:
+            raise ValueError(f"Unknown statement type: {type(stmt).__name__}")
 
-        elif isinstance(stmt, AssignmentNode):
-            expr_c = self.compile_expression(stmt.expression)
-            if stmt.name not in self.declared_vars.get(scope, set()):
-                self._emit_first_declaration(stmt.name, stmt.expression, expr_c, scope)
-            else:
-                self._emit_reassignment(stmt.name, stmt.expression, expr_c)
+    def _compile_stmt_indexed_assign(self, stmt, scope, is_top_level):
+        name = self._safe_ident(stmt.name)
+        idx_c = self.compile_expression(stmt.index)
+        val_c = self.compile_expression(stmt.value)
+        if stmt.name in self.map_vars:
+            self.emit(f"srv_map_set(&{name}, {idx_c}, {val_c});")
+        else:
+            self.emit(f"srv_list_set(&{name}, (int)({idx_c}), {val_c});")
 
-        elif isinstance(stmt, ReturnNode):
-            expr_c = self.compile_expression(stmt.expression)
-            self.emit(f"return {expr_c};")
+    def _compile_stmt_dot_assign(self, stmt, scope, is_top_level):
+        obj_c = self.compile_expression(stmt.obj)
+        field = self._safe_ident(stmt.field)
+        val_c = self.compile_expression(stmt.value)
+        if isinstance(stmt.obj, IdentifierNode) and stmt.obj.name == 'self':
+            self.emit(f"{obj_c}->{field} = {val_c};")
+        else:
+            self.emit(f"{obj_c}.{field} = {val_c};")
 
-        elif isinstance(stmt, PrintNode):
-            self.compile_print(stmt)
+    def _compile_stmt_assign(self, stmt, scope, is_top_level):
+        expr_c = self.compile_expression(stmt.expression)
+        if stmt.name not in self.declared_vars.get(scope, set()):
+            self._emit_first_declaration(stmt.name, stmt.expression, expr_c, scope)
+        else:
+            self._emit_reassignment(stmt.name, stmt.expression, expr_c)
 
-        elif isinstance(stmt, FunctionCallNode):
-            call_c = self.compile_call(stmt)
-            if is_top_level:
-                self.emit(f'printf("%.10g\\n", {call_c});')
-            else:
-                self.emit(f"{call_c};")
+    def _compile_stmt_return(self, stmt, scope, is_top_level):
+        expr_c = self.compile_expression(stmt.expression)
+        self.emit(f"return {expr_c};")
 
-        elif isinstance(stmt, IfNode):
-            cond_c = self.compile_expression(stmt.condition)
-            self.emit(f"if ({cond_c}) {{")
-            self._emit_block(stmt.body, scope)
+    def _compile_stmt_print(self, stmt, scope, is_top_level):
+        self.compile_print(stmt)
 
-            for elif_cond, elif_body in stmt.elif_chains:
-                elif_c = self.compile_expression(elif_cond)
-                self.emit(f"}} else if ({elif_c}) {{")
-                self._emit_block(elif_body, scope)
+    def _compile_stmt_call(self, stmt, scope, is_top_level):
+        call_c = self.compile_call(stmt)
+        if is_top_level:
+            self.emit(f'printf("%.10g\\n", {call_c});')
+        else:
+            self.emit(f"{call_c};")
 
-            if stmt.else_body:
-                self.emit("} else {")
-                self._emit_block(stmt.else_body, scope)
-            self.emit("}")
-
-        elif isinstance(stmt, WhileNode):
-            cond_c = self.compile_expression(stmt.condition)
-            self.emit(f"while ({cond_c}) {{")
-            self._emit_block(stmt.body, scope)
-            self.emit("}")
-
-        elif isinstance(stmt, ForNode):
-            start_c = self.compile_expression(stmt.start)
-            end_c = self.compile_expression(stmt.end)
-            var = self._safe_ident(stmt.var)
-            self.declared_vars.setdefault(scope, set()).add(stmt.var)
-            self.emit(f"for (double {var} = {start_c}; {var} < {end_c}; {var}++) {{")
-            self._emit_block(stmt.body, scope)
-            self.emit("}")
-
-        elif isinstance(stmt, ForEachNode):
-            var = self._safe_ident(stmt.var)
-            self.declared_vars.setdefault(scope, set()).add(stmt.var)
-            iterable_c = self.compile_expression(stmt.iterable)
-
-            # Determine collection type from context
-            is_map_iter = (isinstance(stmt.iterable, IdentifierNode) and
-                          stmt.iterable.name in self.map_vars)
-            is_list_iter = (isinstance(stmt.iterable, IdentifierNode) and
-                           stmt.iterable.name in self.list_vars)
-
-            if is_map_iter:
-                # Iterate over map keys
-                idx_var = f"__i_{var}"
-                self.emit(f"for (int {idx_var} = 0; {idx_var} < {iterable_c}.capacity; {idx_var}++) {{")
-                self.indent_level += 1
-                self.emit(f"if (!{iterable_c}.entries[{idx_var}].occupied) continue;")
-                # Bind loop variable as string key — but our vars are doubles.
-                # For map iteration, the var gets the key as a string (const char*).
-                # We need to track it as a string var.
-                self.string_vars.add(stmt.var)
-                self.emit(f"const char *{var} = {iterable_c}.entries[{idx_var}].key;")
-                for s in stmt.body:
-                    self.compile_statement(s, scope=scope)
-                self.indent_level -= 1
-                self.emit("}")
-            else:
-                # Default: iterate over list
-                idx_var = f"__i_{var}"
-                self.emit(f"for (int {idx_var} = 0; {idx_var} < srv_list_len(&{iterable_c}); {idx_var}++) {{")
-                self.indent_level += 1
-                self.emit(f"double {var} = srv_list_get(&{iterable_c}, {idx_var});")
-                for s in stmt.body:
-                    self.compile_statement(s, scope=scope)
-                self.indent_level -= 1
-                self.emit("}")
-
-        elif isinstance(stmt, TryCatchNode):
-            self.emit("__has_error = 0;")
-            self.emit("if (setjmp(__catch_buf) == 0) {")
-            self._emit_block(stmt.try_body, scope)
+    def _compile_stmt_if(self, stmt, scope, is_top_level):
+        cond_c = self.compile_expression(stmt.condition)
+        self.emit(f"if ({cond_c}) {{")
+        self._emit_block(stmt.body, scope)
+        for elif_cond, elif_body in stmt.elif_chains:
+            elif_c = self.compile_expression(elif_cond)
+            self.emit(f"}} else if ({elif_c}) {{")
+            self._emit_block(elif_body, scope)
+        if stmt.else_body:
             self.emit("} else {")
+            self._emit_block(stmt.else_body, scope)
+        self.emit("}")
+
+    def _compile_stmt_while(self, stmt, scope, is_top_level):
+        cond_c = self.compile_expression(stmt.condition)
+        self.emit(f"while ({cond_c}) {{")
+        self._emit_block(stmt.body, scope)
+        self.emit("}")
+
+    def _compile_stmt_for(self, stmt, scope, is_top_level):
+        start_c = self.compile_expression(stmt.start)
+        end_c = self.compile_expression(stmt.end)
+        var = self._safe_ident(stmt.var)
+        self.declared_vars.setdefault(scope, set()).add(stmt.var)
+        self.emit(f"for (double {var} = {start_c}; {var} < {end_c}; {var}++) {{")
+        self._emit_block(stmt.body, scope)
+        self.emit("}")
+
+    def _compile_stmt_foreach(self, stmt, scope, is_top_level):
+        var = self._safe_ident(stmt.var)
+        self.declared_vars.setdefault(scope, set()).add(stmt.var)
+        iterable_c = self.compile_expression(stmt.iterable)
+        is_map_iter = (isinstance(stmt.iterable, IdentifierNode) and
+                      stmt.iterable.name in self.map_vars)
+        if is_map_iter:
+            idx_var = f"__i_{var}"
+            self.emit(f"for (int {idx_var} = 0; {idx_var} < {iterable_c}.capacity; {idx_var}++) {{")
             self.indent_level += 1
-            if stmt.catch_var:
-                safe_catch = self._safe_ident(stmt.catch_var)
-                if stmt.catch_var not in self.declared_vars.get(scope, set()):
-                    self.emit(f'const char *{safe_catch} = __error_msg;')
-                    self.declared_vars.setdefault(scope, set()).add(stmt.catch_var)
-                else:
-                    self.emit(f'{safe_catch} = __error_msg;')
-                self.string_vars.add(stmt.catch_var)
-            for s in stmt.catch_body:
+            self.emit(f"if (!{iterable_c}.entries[{idx_var}].occupied) continue;")
+            self.string_vars.add(stmt.var)
+            self.emit(f"const char *{var} = {iterable_c}.entries[{idx_var}].key;")
+            for s in stmt.body:
+                self.compile_statement(s, scope=scope)
+            self.indent_level -= 1
+            self.emit("}")
+        else:
+            idx_var = f"__i_{var}"
+            self.emit(f"for (int {idx_var} = 0; {idx_var} < srv_list_len(&{iterable_c}); {idx_var}++) {{")
+            self.indent_level += 1
+            self.emit(f"double {var} = srv_list_get(&{iterable_c}, {idx_var});")
+            for s in stmt.body:
                 self.compile_statement(s, scope=scope)
             self.indent_level -= 1
             self.emit("}")
 
-        elif isinstance(stmt, ThrowNode):
-            msg_c = self.compile_expression(stmt.expression)
-            if self._is_string_expr(stmt.expression):
-                self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%s", {msg_c});')
+    def _compile_stmt_try_catch(self, stmt, scope, is_top_level):
+        self.emit("__has_error = 0;")
+        self.emit("if (setjmp(__catch_buf) == 0) {")
+        self._emit_block(stmt.try_body, scope)
+        self.emit("} else {")
+        self.indent_level += 1
+        if stmt.catch_var:
+            safe_catch = self._safe_ident(stmt.catch_var)
+            if stmt.catch_var not in self.declared_vars.get(scope, set()):
+                self.emit(f'const char *{safe_catch} = __error_msg;')
+                self.declared_vars.setdefault(scope, set()).add(stmt.catch_var)
             else:
-                self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%s", srv_to_string({msg_c}));')
-            self.emit("__has_error = 1;")
-            self.emit("longjmp(__catch_buf, 1);")
+                self.emit(f'{safe_catch} = __error_msg;')
+            self.string_vars.add(stmt.catch_var)
+        for s in stmt.catch_body:
+            self.compile_statement(s, scope=scope)
+        self.indent_level -= 1
+        self.emit("}")
 
-        elif isinstance(stmt, AssertNode):
-            cond_c = self.compile_expression(stmt.condition)
-            if stmt.message:
-                msg_c = self.compile_expression(stmt.message)
-                if self._is_string_expr(stmt.message):
-                    self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed: %s\\n", {msg_c}); exit(1); }}')
-                else:
-                    self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed: %s\\n", srv_to_string({msg_c})); exit(1); }}')
+    def _compile_stmt_throw(self, stmt, scope, is_top_level):
+        msg_c = self.compile_expression(stmt.expression)
+        if self._is_string_expr(stmt.expression):
+            self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%s", {msg_c});')
+        else:
+            self.emit(f'snprintf(__error_msg, sizeof(__error_msg), "%s", srv_to_string({msg_c}));')
+        self.emit("__has_error = 1;")
+        self.emit("longjmp(__catch_buf, 1);")
+
+    def _compile_stmt_assert(self, stmt, scope, is_top_level):
+        cond_c = self.compile_expression(stmt.condition)
+        if stmt.message:
+            msg_c = self.compile_expression(stmt.message)
+            if self._is_string_expr(stmt.message):
+                self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed: %s\\n", {msg_c}); exit(1); }}')
             else:
-                self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed\\n"); exit(1); }}')
+                self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed: %s\\n", srv_to_string({msg_c})); exit(1); }}')
+        else:
+            self.emit(f'if (!({cond_c})) {{ fprintf(stderr, "Assertion failed\\n"); exit(1); }}')
 
-        elif isinstance(stmt, AppendNode):
-            safe_list = self._safe_ident(stmt.list_name)
-            val_c = self.compile_expression(stmt.value)
-            self.emit(f"srv_list_append(&{safe_list}, {val_c});")
+    def _compile_stmt_append(self, stmt, scope, is_top_level):
+        safe_list = self._safe_ident(stmt.list_name)
+        val_c = self.compile_expression(stmt.value)
+        self.emit(f"srv_list_append(&{safe_list}, {val_c});")
 
-        elif isinstance(stmt, PopNode):
-            safe_list = self._safe_ident(stmt.list_name)
-            self.emit(f"srv_list_pop(&{safe_list});")
+    def _compile_stmt_pop(self, stmt, scope, is_top_level):
+        safe_list = self._safe_ident(stmt.list_name)
+        self.emit(f"srv_list_pop(&{safe_list});")
 
-        elif isinstance(stmt, BreakNode):
-            self.emit('break;')
+    def _compile_stmt_break(self, stmt, scope, is_top_level):
+        self.emit('break;')
 
-        elif isinstance(stmt, ContinueNode):
-            self.emit('continue;')
+    def _compile_stmt_continue(self, stmt, scope, is_top_level):
+        self.emit('continue;')
 
-        elif isinstance(stmt, EnumNode):
-            pass  # Already handled in first pass (stored in self.enums)
-
-        elif isinstance(stmt, ClassNode):
-            pass  # Already handled in first pass
+    def _compile_stmt_noop(self, stmt, scope, is_top_level):
+        pass  # Already handled in first pass
 
     def compile_print(self, stmt):
         """Smart print that detects type."""
