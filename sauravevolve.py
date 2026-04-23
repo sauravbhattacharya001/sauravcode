@@ -41,6 +41,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import textwrap
 import threading
@@ -66,8 +67,15 @@ _SIGNAL_TYPES = tuple(
 
 # ── Safe program execution ──────────────────────────────────────────
 
-def _run_program(code: str, stdin_text: str = "", timeout: float = 2.0) -> Tuple[str, bool]:
-    """Run .srv code, return (stdout, success)."""
+def _run_program(code: str, stdin_text: str = "", timeout: float = 2.0,
+                 _precompiled: Any = None) -> Tuple[str, bool]:
+    """Run .srv code, return (stdout, success).
+
+    If *_precompiled* is a list of AST nodes (from a previous
+    ``saurav.Parser(saurav.tokenize(code)).parse()`` call), the
+    tokenize+parse step is skipped — a significant speedup when the
+    same program is evaluated against many test inputs.
+    """
     result = {"output": "", "ok": False}
 
     def _exec():
@@ -78,9 +86,12 @@ def _run_program(code: str, stdin_text: str = "", timeout: float = 2.0) -> Tuple
             capture = io.StringIO()
             sys.stdout = capture
             try:
-                tokens = saurav.tokenize(code)
-                parser = saurav.Parser(tokens)
-                program = parser.parse()
+                if _precompiled is not None:
+                    program = _precompiled
+                else:
+                    tokens = saurav.tokenize(code)
+                    parser = saurav.Parser(tokens)
+                    program = parser.parse()
                 interpreter = saurav.Interpreter()
                 interpreter.run(program)
                 result["ok"] = True
@@ -101,6 +112,16 @@ def _run_program(code: str, stdin_text: str = "", timeout: float = 2.0) -> Tuple
     t.start()
     t.join(timeout)
     return result["output"].rstrip("\n"), result["ok"]
+
+
+def _precompile(code: str) -> Optional[Any]:
+    """Tokenize + parse *code* once, returning the AST or None on error."""
+    try:
+        tokens = saurav.tokenize(code)
+        parser = saurav.Parser(tokens)
+        return parser.parse()
+    except Exception:
+        return None
 
 
 # ── Test case definition ────────────────────────────────────────────
@@ -315,13 +336,22 @@ def generate_random_program(max_lines: int = 8) -> str:
 # ── Fitness evaluation ──────────────────────────────────────────────
 
 def evaluate(individual: Individual, problem: Problem) -> float:
-    """Evaluate fitness: fraction of test cases passed + partial credit."""
+    """Evaluate fitness: fraction of test cases passed + partial credit.
+
+    The program is tokenized and parsed *once* via :func:`_precompile`;
+    the resulting AST is reused for every test case, avoiding redundant
+    O(code-length) tokenize+parse work per case.
+    """
     total = len(problem.cases)
     passed = 0
     partial = 0.0
 
+    # Parse once, reuse for all test cases
+    ast = _precompile(individual.code)
+
     for tc in problem.cases:
-        output, ok = _run_program(individual.code, tc.input, timeout=2.0)
+        output, ok = _run_program(individual.code, tc.input, timeout=2.0,
+                                  _precompiled=ast)
         if output.strip() == tc.expected.strip():
             passed += 1
         elif ok and output.strip():
@@ -417,8 +447,7 @@ def mutate(individual: Individual, rate: float = 0.3) -> Individual:
     elif mutation_type == "constant":
         # Tweak a numeric constant
         code = individual.code
-        import re as _re
-        nums = list(_re.finditer(r'\b(\d+)\b', code))
+        nums = list(re.finditer(r'\b(\d+)\b', code))
         if nums:
             m = random.choice(nums)
             val = int(m.group())
@@ -465,9 +494,10 @@ def evolve(problem: Problem, pop_size: int = 100, max_gens: int = 50,
         population[0] = Individual(code=problem.hint, generation=0)
 
     for gen in range(max_gens):
-        # Evaluate
+        # Evaluate — skip elite carry-overs that already have scores
         for ind in population:
-            evaluate(ind, problem)
+            if ind.fitness == 0.0 or ind.generation == gen:
+                evaluate(ind, problem)
 
         # Sort by fitness
         population.sort(key=lambda x: x.fitness, reverse=True)
