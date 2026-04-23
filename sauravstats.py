@@ -232,28 +232,80 @@ class ProjectSummary:
     """
 
     def __init__(self, file_metrics):
-        """Build a project summary by aggregating a list of :class:`FileMetrics`."""
-        self.file_count = len(file_metrics)
-        self.total_lines = sum(f.total_lines for f in file_metrics)
-        self.code_lines = sum(f.code_lines for f in file_metrics)
-        self.blank_lines = sum(f.blank_lines for f in file_metrics)
-        self.comment_lines = sum(f.comment_lines for f in file_metrics)
-        self.functions = sum(f.functions for f in file_metrics)
-        self.classes = sum(f.classes for f in file_metrics)
-        self.enums = sum(f.enums for f in file_metrics)
-        self.imports = sum(f.imports for f in file_metrics)
-        self.lambdas = sum(f.lambdas for f in file_metrics)
-        self.loops = sum(f.loops for f in file_metrics)
-        self.branches = sum(f.branches for f in file_metrics)
-        self.asserts = sum(f.asserts for f in file_metrics)
-        self.yields = sum(f.yields for f in file_metrics)
-        self.nested_functions = sum(f.nested_functions for f in file_metrics)
-        self.avg_complexity = sum(f.complexity_score for f in file_metrics) / max(len(file_metrics), 1)
-        self.max_complexity = max((f.complexity_score for f in file_metrics), default=0)
-        self.max_depth = max((f.max_depth for f in file_metrics), default=0)
-        self.avg_file_size = self.code_lines / max(self.file_count, 1)
-        self.comment_ratio = self.comment_lines / max(self.code_lines, 1)
-        self.max_func_length = max((f.max_func_length for f in file_metrics), default=0)
+        """Build a project summary by aggregating a list of :class:`FileMetrics`.
+
+        Uses a single pass over *file_metrics* to accumulate all sums and
+        maxima, replacing ~22 separate iterations with one O(N) traversal.
+        """
+        n = len(file_metrics)
+        self.file_count = n
+
+        # Single-pass accumulation
+        total_lines = 0
+        code_lines = 0
+        blank_lines = 0
+        comment_lines = 0
+        functions = 0
+        classes = 0
+        enums = 0
+        imports = 0
+        lambdas = 0
+        loops = 0
+        branches = 0
+        asserts = 0
+        yields = 0
+        nested_functions = 0
+        complexity_sum = 0.0
+        max_complexity = 0.0
+        max_depth = 0
+        max_func_length = 0
+
+        for f in file_metrics:
+            total_lines += f.total_lines
+            code_lines += f.code_lines
+            blank_lines += f.blank_lines
+            comment_lines += f.comment_lines
+            functions += f.functions
+            classes += f.classes
+            enums += f.enums
+            imports += f.imports
+            lambdas += f.lambdas
+            loops += f.loops
+            branches += f.branches
+            asserts += f.asserts
+            yields += f.yields
+            nested_functions += f.nested_functions
+            cs = f.complexity_score
+            complexity_sum += cs
+            if cs > max_complexity:
+                max_complexity = cs
+            d = f.max_depth
+            if d > max_depth:
+                max_depth = d
+            fl = f.max_func_length
+            if fl > max_func_length:
+                max_func_length = fl
+
+        self.total_lines = total_lines
+        self.code_lines = code_lines
+        self.blank_lines = blank_lines
+        self.comment_lines = comment_lines
+        self.functions = functions
+        self.classes = classes
+        self.enums = enums
+        self.imports = imports
+        self.lambdas = lambdas
+        self.loops = loops
+        self.branches = branches
+        self.asserts = asserts
+        self.yields = yields
+        self.nested_functions = nested_functions
+        self.avg_complexity = complexity_sum / max(n, 1)
+        self.max_complexity = max_complexity
+        self.max_depth = max_depth
+        self.avg_file_size = code_lines / max(n, 1)
+        self.comment_ratio = comment_lines / max(code_lines, 1)
+        self.max_func_length = max_func_length
         self.health_score = self._compute_health()
 
     def _compute_health(self):
