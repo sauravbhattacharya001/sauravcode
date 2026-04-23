@@ -3990,6 +3990,7 @@ class Interpreter:
             interpreter._expect_args('re_test', args, 2)
             if not isinstance(args[0], str) or not isinstance(args[1], str):
                 raise RuntimeError("re_test: both arguments must be strings")
+            interpreter._regex_validate('re_test', args[0])
             return bool(_re.search(args[0], args[1]))
 
         # re_match(pattern, text) -> map {matched, groups, start, end} or nil
@@ -3997,6 +3998,7 @@ class Interpreter:
             interpreter._expect_args('re_match', args, 2)
             if not isinstance(args[0], str) or not isinstance(args[1], str):
                 raise RuntimeError("re_match: both arguments must be strings")
+            interpreter._regex_validate('re_match', args[0])
             m = _re.match(args[0], args[1])
             if m is None:
                 return None
@@ -4012,6 +4014,7 @@ class Interpreter:
             interpreter._expect_args('re_search', args, 2)
             if not isinstance(args[0], str) or not isinstance(args[1], str):
                 raise RuntimeError("re_search: both arguments must be strings")
+            interpreter._regex_validate('re_search', args[0])
             m = _re.search(args[0], args[1])
             if m is None:
                 return None
@@ -4027,6 +4030,7 @@ class Interpreter:
             interpreter._expect_args('re_find_all', args, 2)
             if not isinstance(args[0], str) or not isinstance(args[1], str):
                 raise RuntimeError("re_find_all: both arguments must be strings")
+            interpreter._regex_validate('re_find_all', args[0])
             results = _re.findall(args[0], args[1])
             # findall returns list of tuples when groups exist; convert to lists
             return [list(r) if isinstance(r, tuple) else r for r in results]
@@ -4037,6 +4041,7 @@ class Interpreter:
                 raise RuntimeError("re_replace expects 3-4 arguments: re_replace(pattern, replacement, text) or re_replace(pattern, replacement, text, count)")
             if not isinstance(args[0], str) or not isinstance(args[1], str) or not isinstance(args[2], str):
                 raise RuntimeError("re_replace: pattern, replacement, and text must be strings")
+            interpreter._regex_validate('re_replace', args[0])
             count = 0  # 0 means replace all
             if len(args) == 4:
                 count = int(args[3])
@@ -4048,6 +4053,7 @@ class Interpreter:
                 raise RuntimeError("re_split expects 2-3 arguments: re_split(pattern, text) or re_split(pattern, text, maxsplit)")
             if not isinstance(args[0], str) or not isinstance(args[1], str):
                 raise RuntimeError("re_split: pattern and text must be strings")
+            interpreter._regex_validate('re_split', args[0])
             maxsplit = 0
             if len(args) == 3:
                 maxsplit = int(args[2])
