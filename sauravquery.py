@@ -587,17 +587,194 @@ def query_summary(ast, filename):
 
 # ── Formatting ───────────────────────────────────────────────────────
 
-# ANSI colors
-_C = {
-    'bold': '\033[1m', 'dim': '\033[2m', 'reset': '\033[0m',
-    'cyan': '\033[36m', 'yellow': '\033[33m', 'green': '\033[32m',
-    'red': '\033[31m', 'magenta': '\033[35m', 'blue': '\033[34m',
-}
+# Use shared terminal color helpers instead of duplicating ANSI codes.
+from _termcolors import colors as _make_colors, ansi as _ansi
+
+_colors = _make_colors()  # auto-detect TTY
+
 
 def _c(text, *styles):
-    """Apply ANSI styles to text."""
-    prefix = ''.join(_C.get(s, '') for s in styles)
-    return f"{prefix}{text}{_C['reset']}" if prefix else text
+    """Apply ANSI styles to text via _termcolors."""
+    _STYLE_MAP = {
+        'bold': '1', 'dim': '2', 'red': '31', 'green': '32',
+        'yellow': '33', 'blue': '34', 'magenta': '35', 'cyan': '36',
+    }
+    for s in styles:
+        code = _STYLE_MAP.get(s)
+        if code:
+            text = _ansi(code, text, _colors.enabled)
+    return str(text)
+
+
+def _disable_colors():
+    """Turn off color output."""
+    _colors.enabled = False
+
+
+# ── Table-driven result formatting ───────────────────────────────────
+#
+# Each tabular query type is described by a compact spec: column
+# definitions (header, width, key-or-callable, optional color), plus
+# an optional sort key and separator width.  ``_format_table`` renders
+# any spec, eliminating the repetitive header/separator/loop pattern
+# that was previously copy-pasted 10× in ``format_results``.
+
+def _loc(r):
+    return f"{r['file']}:{r['line']}"
+
+
+def _bool_mark(val):
+    return '✓' if val else '·'
+
+
+# Column spec tuples: (header, width, extractor, color)
+# *extractor* is a dict key string or a callable(row) → str.
+# width=0 means no padding (last column).
+_TABLE_SPECS = {
+    'functions': {
+        'cols': [
+            ('Name',   25, 'name',       'cyan'),
+            ('Params', 20, lambda r: ', '.join(r['params']) if r['params'] else '(none)', None),
+            ('Body',    6, 'body_size',  None),
+            ('Ret',     5, lambda r: _bool_mark(r['has_return']),    None),
+            ('Gen',     5, lambda r: '⚡' if r['is_generator'] else '·', None),
+            ('Line',    0, _loc, 'dim'),
+        ],
+        'sep': 80,
+    },
+    'calls': {
+        'cols': [
+            ('Function', 25, 'name',      'yellow'),
+            ('Args',      6, 'arg_count', None),
+            ('Location',  0, _loc,        'dim'),
+        ],
+        'sep': 50,
+    },
+    'variables': {
+        'cols': [
+            ('Name',    20, 'name',         'cyan'),
+            ('Assigns',  9, 'assign_count', None),
+            ('Unused',   8, lambda r: _c('⚠ YES', 'red') if r['unused'] else _c('no', 'dim'), None),
+            ('Lines',    0, lambda r: ', '.join(str(l) for l in r['lines'][:5]), 'dim'),
+        ],
+        'sep': 55,
+    },
+    'loops': {
+        'cols': [
+            ('Type',  12, 'type',  'green'),
+            ('Var',   12, lambda r: r.get('var') or '·', None),
+            ('Depth',  7, 'depth', None),
+            ('Break',  7, lambda r: _bool_mark(r['has_break']),    None),
+            ('Cont',   7, lambda r: _bool_mark(r['has_continue']), None),
+            ('Line',   0, _loc, 'dim'),
+        ],
+        'sep': 60,
+    },
+    'assignments': {
+        'cols': [
+            ('Name',      20, 'name',      'cyan'),
+            ('Idx',        5, lambda r: '[]' if r['indexed'] else '·', None),
+            ('Expr Type', 20, 'expr_type', None),
+            ('Location',   0, _loc,        'dim'),
+        ],
+        'sep': 60,
+    },
+    'imports': {
+        'cols': [
+            ('Module',   30, 'module', 'magenta'),
+            ('Location',  0, _loc,     'dim'),
+        ],
+        'sep': 45,
+    },
+    'conditions': {
+        'cols': [
+            ('Depth',    7, 'depth',      None),
+            ('Else',     6, lambda r: _bool_mark(r['has_else']), None),
+            ('Elifs',    7, 'elif_count', None),
+            ('Nested',   8, 'nested_ifs', None),
+            ('Location', 0, _loc,         'dim'),
+        ],
+        'sep': 50,
+    },
+    'complexity': {
+        'cols': [
+            ('Function', 25, 'name',        'cyan'),
+            ('Stmts',     7, 'statements',  None),
+            ('Nest',      6, 'max_nesting', None),
+            ('Brnch',     7, 'branches',    None),
+            ('Loops',     7, 'loops',       None),
+            ('Cplx',      6, 'complexity',  None),
+            ('Rating',    0, lambda r: _c(r['rating'],
+                'green' if r['rating'] == 'simple'
+                else 'yellow' if r['rating'] == 'moderate'
+                else 'red'), None),
+        ],
+        'sep': 75,
+        'sort': lambda x: -x['complexity'],
+    },
+    'strings': {
+        'cols': [
+            ('Type',     8, 'type', None),
+            ('Value',   50, lambda r: r['value'][:48] + '..' if len(r['value']) > 50 else r['value'], 'green'),
+            ('Location', 0, _loc,   'dim'),
+        ],
+        'sep': 70,
+    },
+    'patterns': {
+        'cols': [
+            ('Node Type', 25, 'node_type', 'magenta'),
+            ('Depth',      7, 'depth',     None),
+            ('Children',  10, 'children',  None),
+            ('Location',   0, _loc,        'dim'),
+        ],
+        'sep': 55,
+    },
+}
+
+
+def _format_table(results, spec):
+    """Render *results* as a table described by *spec*."""
+    cols = spec['cols']
+    sort_key = spec.get('sort')
+    if sort_key:
+        results = sorted(results, key=sort_key)
+
+    # Header
+    hdr_parts = []
+    for header, width, _ext, _clr in cols:
+        hdr_parts.append(f"{header:<{width}}" if width else header)
+    lines = [_c('  ' + ' '.join(hdr_parts), 'bold'),
+             '  ' + '─' * spec.get('sep', 60)]
+
+    # Rows
+    for r in results:
+        parts = []
+        for _header, width, extractor, color in cols:
+            val = extractor(r) if callable(extractor) else str(r.get(extractor, '?'))
+            val_padded = f"{val:<{width}}" if width else val
+            parts.append(_c(val_padded, color) if color else val_padded)
+        lines.append('  ' + ' '.join(parts))
+
+    return '\n'.join(lines)
+
+
+def _format_summary(r):
+    """Render the summary query type."""
+    lines = [_c(f"\n  ═══ {r['file']} ═══", 'bold')]
+    lines.append(f"  Nodes: {_c(r['total_nodes'], 'cyan')}  Types: {r['node_types']}  Max depth: {r['max_depth']}")
+    lines.append(f"  Functions: {_c(r['functions'], 'green')}  Generators: {r['generators']}")
+    if r['function_names']:
+        lines.append(f"    → {', '.join(_c(n, 'cyan') for n in r['function_names'][:10])}")
+    lines.append(f"  Calls: {_c(r['total_calls'], 'yellow')}  Loops: {r['loops']}  Variables: {r['variables']}")
+    if r['unused_variables'] > 0:
+        lines.append(f"  ⚠ Unused variables: {_c(r['unused_variables'], 'red')} ({', '.join(r['unused_names'][:5])})")
+    if r['top_called']:
+        top = ', '.join(f"{_c(k, 'yellow')}({v})" for k, v in list(r['top_called'].items())[:5])
+        lines.append(f"  Top called: {top}")
+    if r['import_modules']:
+        lines.append(f"  Imports: {', '.join(_c(m, 'magenta') for m in r['import_modules'])}")
+    lines.append(f"  Type breakdown: {', '.join(f'{k}={v}' for k, v in list(r['type_breakdown'].items())[:8])}")
+    return '\n'.join(lines)
 
 
 def format_results(results, query_type, use_json=False):
@@ -608,107 +785,15 @@ def format_results(results, query_type, use_json=False):
     if not results:
         return _c("No results found.", 'dim')
 
-    lines = []
+    if query_type == 'summary':
+        return _format_summary(results)
 
-    if query_type == 'functions':
-        lines.append(_c(f"  {'Name':<25} {'Params':<20} {'Body':<6} {'Ret':<5} {'Gen':<5} {'Line'}", 'bold'))
-        lines.append("  " + "─" * 80)
-        for r in results:
-            params = ', '.join(r['params']) if r['params'] else '(none)'
-            ret = '✓' if r['has_return'] else '·'
-            gen = '⚡' if r['is_generator'] else '·'
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {_c(r['name'], 'cyan'):<34} {params:<20} {r['body_size']:<6} {ret:<5} {gen:<5} {_c(loc, 'dim')}")
+    spec = _TABLE_SPECS.get(query_type)
+    if spec:
+        return _format_table(results, spec)
 
-    elif query_type == 'calls':
-        lines.append(_c(f"  {'Function':<25} {'Args':<6} {'Location'}", 'bold'))
-        lines.append("  " + "─" * 50)
-        for r in results:
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {_c(r['name'], 'yellow'):<34} {r['arg_count']:<6} {_c(loc, 'dim')}")
-
-    elif query_type == 'variables':
-        lines.append(_c(f"  {'Name':<20} {'Assigns':<9} {'Unused':<8} {'Lines'}", 'bold'))
-        lines.append("  " + "─" * 55)
-        for r in results:
-            unused = _c('⚠ YES', 'red') if r['unused'] else _c('no', 'dim')
-            line_str = ', '.join(str(l) for l in r['lines'][:5])
-            lines.append(f"  {_c(r['name'], 'cyan'):<29} {r['assign_count']:<9} {unused:<17} {_c(line_str, 'dim')}")
-
-    elif query_type == 'loops':
-        lines.append(_c(f"  {'Type':<12} {'Var':<12} {'Depth':<7} {'Break':<7} {'Cont':<7} {'Line'}", 'bold'))
-        lines.append("  " + "─" * 60)
-        for r in results:
-            brk = '✓' if r['has_break'] else '·'
-            cont = '✓' if r['has_continue'] else '·'
-            var = r.get('var') or '·'
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {_c(r['type'], 'green'):<21} {var:<12} {r['depth']:<7} {brk:<7} {cont:<7} {_c(loc, 'dim')}")
-
-    elif query_type == 'assignments':
-        lines.append(_c(f"  {'Name':<20} {'Idx':<5} {'Expr Type':<20} {'Location'}", 'bold'))
-        lines.append("  " + "─" * 60)
-        for r in results:
-            idx = '[]' if r['indexed'] else '·'
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {_c(r['name'], 'cyan'):<29} {idx:<5} {r['expr_type']:<20} {_c(loc, 'dim')}")
-
-    elif query_type == 'imports':
-        lines.append(_c(f"  {'Module':<30} {'Location'}", 'bold'))
-        lines.append("  " + "─" * 45)
-        for r in results:
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {_c(r['module'], 'magenta'):<39} {_c(loc, 'dim')}")
-
-    elif query_type == 'conditions':
-        lines.append(_c(f"  {'Depth':<7} {'Else':<6} {'Elifs':<7} {'Nested':<8} {'Location'}", 'bold'))
-        lines.append("  " + "─" * 50)
-        for r in results:
-            els = '✓' if r['has_else'] else '·'
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {r['depth']:<7} {els:<6} {r['elif_count']:<7} {r['nested_ifs']:<8} {_c(loc, 'dim')}")
-
-    elif query_type == 'complexity':
-        lines.append(_c(f"  {'Function':<25} {'Stmts':<7} {'Nest':<6} {'Brnch':<7} {'Loops':<7} {'Cplx':<6} {'Rating'}", 'bold'))
-        lines.append("  " + "─" * 75)
-        for r in sorted(results, key=lambda x: x['complexity'], reverse=True):
-            color = 'green' if r['rating'] == 'simple' else 'yellow' if r['rating'] == 'moderate' else 'red'
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {_c(r['name'], 'cyan'):<34} {r['statements']:<7} {r['max_nesting']:<6} {r['branches']:<7} {r['loops']:<7} {r['complexity']:<6} {_c(r['rating'], color)}")
-
-    elif query_type == 'strings':
-        lines.append(_c(f"  {'Type':<8} {'Value':<50} {'Location'}", 'bold'))
-        lines.append("  " + "─" * 70)
-        for r in results:
-            loc = f"{r['file']}:{r['line']}"
-            val = r['value'][:48] + '..' if len(r['value']) > 50 else r['value']
-            lines.append(f"  {r['type']:<8} {_c(val, 'green'):<50} {_c(loc, 'dim')}")
-
-    elif query_type == 'patterns':
-        lines.append(_c(f"  {'Node Type':<25} {'Depth':<7} {'Children':<10} {'Location'}", 'bold'))
-        lines.append("  " + "─" * 55)
-        for r in results:
-            loc = f"{r['file']}:{r['line']}"
-            lines.append(f"  {_c(r['node_type'], 'magenta'):<34} {r['depth']:<7} {r['children']:<10} {_c(loc, 'dim')}")
-
-    elif query_type == 'summary':
-        r = results
-        lines.append(_c(f"\n  ═══ {r['file']} ═══", 'bold'))
-        lines.append(f"  Nodes: {_c(r['total_nodes'], 'cyan')}  Types: {r['node_types']}  Max depth: {r['max_depth']}")
-        lines.append(f"  Functions: {_c(r['functions'], 'green')}  Generators: {r['generators']}")
-        if r['function_names']:
-            lines.append(f"    → {', '.join(_c(n, 'cyan') for n in r['function_names'][:10])}")
-        lines.append(f"  Calls: {_c(r['total_calls'], 'yellow')}  Loops: {r['loops']}  Variables: {r['variables']}")
-        if r['unused_variables'] > 0:
-            lines.append(f"  ⚠ Unused variables: {_c(r['unused_variables'], 'red')} ({', '.join(r['unused_names'][:5])})")
-        if r['top_called']:
-            top = ', '.join(f"{_c(k, 'yellow')}({v})" for k, v in list(r['top_called'].items())[:5])
-            lines.append(f"  Top called: {top}")
-        if r['import_modules']:
-            lines.append(f"  Imports: {', '.join(_c(m, 'magenta') for m in r['import_modules'])}")
-        lines.append(f"  Type breakdown: {', '.join(f'{k}={v}' for k, v in list(r['type_breakdown'].items())[:8])}")
-
-    return '\n'.join(lines)
+    # Fallback — shouldn't happen with known query types
+    return _json.dumps(results, indent=2, default=str)
 
 
 # ── Main ─────────────────────────────────────────────────────────────
@@ -756,8 +841,7 @@ Examples:
 
     # Disable colors if requested
     if args.no_color or not sys.stdout.isatty():
-        for k in _C:
-            _C[k] = ''
+        _disable_colors()
 
     files = collect_files(args.path, args.recursive)
     if not files:
