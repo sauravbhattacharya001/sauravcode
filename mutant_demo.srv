@@ -1,0 +1,38 @@
+# Mutation Testing Demo — sauravmutant
+# Demonstrates autonomous mutation testing for test suite quality
+
+# --- Sample library code (mutant_lib.srv) ---
+# First, let's show what mutation testing looks like
+
+print "=== sauravmutant — Mutation Testing Demo ==="
+print ""
+print "Mutation testing measures how good your tests are by:"
+print "  1. Generating small changes (mutants) in your code"
+print "  2. Running your tests against each mutant"
+print "  3. Checking if your tests catch (kill) the mutant"
+print ""
+print "Mutation operators:"
+print "  [Arithmetic]  + <-> -,  * <-> /"
+print "  [Comparison]  > <-> <,  == <-> !="
+print "  [Logical]     and <-> or, not removal"
+print "  [Constant]    n -> n+/-1, 0 <-> 1"
+print "  [Statement]   delete, swap adjacent"
+print "  [Boundary]    off-by-one in ranges"
+print ""
+print "Usage:"
+print "  python sauravmutant.py mylib.srv --test test_mylib.srv"
+print "  python sauravmutant.py mylib.srv --self-test --report --auto-harden"
+print "  python sauravmutant.py mylib.srv --test tests/ --watch"
+print ""
+print "A high mutation score means your tests are thorough!"
+print "A low score reveals blind spots in your test suite."
+print ""
+print "Features:"
+print "  • 6 mutation operator categories"
+print "  • Interactive HTML reports with dark theme"
+print "  • Auto-harden suggestions for surviving mutants"
+print "  • Watch mode for continuous mutation testing"
+print "  • Self-test mode for auto-discovering test files"
+print "  • Configurable timeout, sampling, and operators"
+print ""
+print "✅ sauravmutant demo complete!"
