@@ -38,6 +38,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
+from _termcolors import colors as _make_colors
+
 # ── Stage definitions ─────────────────────────────────────────────────
 
 STAGES = [
@@ -80,22 +82,15 @@ STAGES = [
 
 STAGE_NAMES = [s['name'] for s in STAGES]
 
-# ── Colors ────────────────────────────────────────────────────────────
-
-COLORS = {
-    'green': '\033[32m',
-    'red': '\033[31m',
-    'yellow': '\033[33m',
-    'cyan': '\033[36m',
-    'bold': '\033[1m',
-    'dim': '\033[2m',
-    'reset': '\033[0m',
-}
+# ── Colors (delegated to shared _termcolors) ─────────────────────────
 
 def _c(text, color, use_color=True):
-    if not use_color:
-        return str(text)
-    return f"{COLORS.get(color, '')}{text}{COLORS['reset']}"
+    """Wrap *text* in ANSI *color* using the shared _termcolors module."""
+    tc = _make_colors(enabled=use_color)
+    method = getattr(tc, color, None)
+    if method is not None:
+        return method(text)
+    return str(text)
 
 
 # ── Stage runner ──────────────────────────────────────────────────────
