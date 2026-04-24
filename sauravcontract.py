@@ -473,33 +473,34 @@ class ContractAnalyzer:
 # Reporter — Terminal
 # ---------------------------------------------------------------------------
 
-_COLORS = {
-    "info": "\033[36m",     # cyan
-    "warn": "\033[33m",     # yellow
-    "critical": "\033[31m", # red
-    "reset": "\033[0m",
-    "bold": "\033[1m",
-    "dim": "\033[2m",
-}
+from _termcolors import colors as _make_colors, ansi as _ansi
+
+# Severity → ANSI code mapping (replaces inline _COLORS dict)
+_SEV_CODES = {"info": "36", "warn": "33", "critical": "31"}
+
+
+def _sev_color(text, severity):
+    """Wrap text in severity-appropriate ANSI color."""
+    return _ansi(_SEV_CODES.get(severity, ""), text)
 
 
 def print_findings(findings, functions):
     """Pretty-print findings to terminal."""
     total_f = len(functions)
     covered = sum(1 for f in functions if f.has_contracts)
-    C = _COLORS
+    tc = _make_colors()
 
-    print(f"\n{C['bold']}╔══════════════════════════════════════════╗{C['reset']}")
-    print(f"{C['bold']}║     sauravcontract — Contract Verifier    ║{C['reset']}")
-    print(f"{C['bold']}╚══════════════════════════════════════════╝{C['reset']}\n")
+    print(f"\n{tc.bold('╔══════════════════════════════════════════╗')}")
+    print(f"{tc.bold('║     sauravcontract — Contract Verifier    ║')}")
+    print(f"{tc.bold('╚══════════════════════════════════════════╝')}\n")
 
     if total_f > 0:
         pct = (covered / total_f) * 100
         bar_len = 30
         filled = int(bar_len * pct / 100)
         bar = "█" * filled + "░" * (bar_len - filled)
-        color = C["info"] if pct >= 75 else (C["warn"] if pct >= 50 else C["critical"])
-        print(f"  Coverage: {color}{bar} {pct:.0f}%{C['reset']}  "
+        sev = "info" if pct >= 75 else ("warn" if pct >= 50 else "critical")
+        print(f"  Coverage: {_sev_color(f'{bar} {pct:.0f}%', sev)}  "
               f"({covered}/{total_f} functions)\n")
 
     sev_counts = {"info": 0, "warn": 0, "critical": 0}
@@ -508,20 +509,22 @@ def print_findings(findings, functions):
 
     for f in findings:
         sev = f.severity.upper()
-        color = C.get(f.severity, "")
         loc = f"  [line {f.line}]" if f.line else ""
         fn = f"  ({f.func_name})" if f.func_name else ""
-        print(f"  {color}{sev:8s}{C['reset']}  [{f.category}]{fn}{loc}")
+        print(f"  {_sev_color(f'{sev:8s}', f.severity)}  [{f.category}]{fn}{loc}")
         print(f"           {f.message}")
         if f.context.get("suggestions"):
             for s in f.context["suggestions"]:
-                print(f"           {C['dim']}  → # {s}{C['reset']}")
+                print(f"           {tc.dim(f'  → # {s}')}")
         print()
 
-    print(f"  {C['dim']}Summary: "
-          f"{C['critical']}{sev_counts['critical']} critical  "
-          f"{C['warn']}{sev_counts['warn']} warnings  "
-          f"{C['info']}{sev_counts['info']} info{C['reset']}\n")
+    crit = sev_counts['critical']
+    warn = sev_counts['warn']
+    info = sev_counts['info']
+    print(f"  {tc.dim('Summary:')} "
+          f"{_sev_color(f'{crit} critical', 'critical')}  "
+          f"{_sev_color(f'{warn} warnings', 'warn')}  "
+          f"{_sev_color(f'{info} info', 'info')}\n")
 
 
 # ---------------------------------------------------------------------------
