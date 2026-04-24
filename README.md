@@ -46,6 +46,28 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 
 ---
 
+## 📑 Table of Contents
+
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Language at a Glance](#-language-at-a-glance)
+- [Compiler](#%EF%B8%8F-compiler)
+- [AST Visualizer](#-ast-visualizer)
+- [Advanced Features](#-advanced-features)
+- [Developer Tooling](#%EF%B8%8F-developer-tooling)
+- [Architecture](#%EF%B8%8F-architecture)
+- [Docker](#-docker)
+- [Project Structure](#-project-structure)
+- [Running Tests](#-running-tests)
+- [Language Comparison](#-language-comparison)
+- [Design Philosophy](#-design-philosophy)
+- [Documentation](#-documentation)
+- [Editor Support](#%EF%B8%8F-editor-support)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
+
 ## ✨ Features
 
 - **Minimal syntax** — no parentheses, commas, semicolons, or braces
@@ -64,7 +86,7 @@ It comes with both an **interpreter** for rapid prototyping and a **compiler** t
 - **Import system** — `import "module.srv"` with closure scoping
 - **Lists** — dynamic arrays with append, pop, len, indexing, slicing, comprehensions
 - **Maps** — key-value dictionaries with `{}` syntax, bracket access, and built-in functions
-- **105 built-in functions** — strings, math, stats, regex, date/time, JSON, encoding, hashing, HTTP, I/O, bitwise
+- **124 built-in functions** — strings, math, stats, regex, date/time, JSON, encoding, hashing, HTTP, I/O, bitwise
 - **String interpolation** — `f"Hello {name}, you are {age} years old"` f-strings
 - **Logical operators** — `and`, `or`, `not`
 - **Compiler generates readable C** — inspect with `--emit-c`
@@ -288,7 +310,7 @@ catch err
 
 ### Standard Library
 
-Sauravcode includes **95 built-in functions** — no imports needed. See the full [Standard Library Reference](STDLIB.md).
+Sauravcode includes **124 built-in functions** — no imports needed. See the full [Standard Library Reference](STDLIB.md).
 
 ```
 # String functions
@@ -578,6 +600,29 @@ The compiler generates clean, readable C. Lists become dynamic arrays (`SrvList`
 
 For the full deep-dive, see the [Architecture Guide](docs/ARCHITECTURE.md).
 
+## 🐳 Docker
+
+Run sauravcode without installing anything locally:
+
+```bash
+# Build the image
+docker build -t sauravcode .
+
+# Run the interpreter
+docker run --rm sauravcode interpret examples/hello.srv
+
+# Compile a program
+docker run --rm sauravcode compile examples/hello.srv -o hello
+
+# Interactive REPL
+docker run --rm -it sauravcode repl
+
+# Mount your own scripts
+docker run --rm -v $(pwd)/scripts:/work sauravcode interpret /work/my_script.srv
+```
+
+The image uses a multi-stage build: tests run during the build phase, and the runtime image includes only Python 3.12 + GCC (for the compiler).
+
 ## 📂 Project Structure
 
 ```
@@ -667,7 +712,7 @@ The result is code that reads almost like pseudocode but actually runs.
 
 | Document | Description |
 |----------|-------------|
-| [Standard Library](STDLIB.md) | All 95 built-in functions with signatures and examples |
+| [Standard Library](STDLIB.md) | All 124 built-in functions with signatures and examples |
 | [Language Reference](docs/LANGUAGE.md) | Complete spec with EBNF grammar, types, operators, precedence |
 | [Architecture Guide](docs/ARCHITECTURE.md) | How the tokenizer, parser, interpreter, and compiler work |
 | [Examples](docs/EXAMPLES.md) | Annotated programs covering all features |
