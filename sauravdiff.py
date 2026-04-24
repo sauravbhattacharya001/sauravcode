@@ -88,7 +88,7 @@ def _node_to_dict(node, depth=0, max_depth=20):
 
     d = {"type": _node_type(node)}
     for attr in sorted(vars(node)):
-        if attr.startswith('_'):
+        if attr.startswith('_') or attr == 'line_num':
             continue
         val = getattr(node, attr)
         if isinstance(val, ASTNode):
@@ -211,7 +211,7 @@ def _diff_attrs(old_node, new_node):
     new_attrs = set(vars(new_node).keys())
 
     for attr in sorted(old_attrs | new_attrs):
-        if attr.startswith('_'):
+        if attr.startswith('_') or attr == 'line_num':
             continue
         old_val = getattr(old_node, attr, None)
         new_val = getattr(new_node, attr, None)
