@@ -260,16 +260,22 @@ class ComplexityAnalyzer:
         # Tokenize
         tokens = list(tokenize(source))
 
+        # Pre-group tokens by line number once — avoids O(functions × tokens)
+        # re-scanning in _parse_function_header and _compute_cognitive.
+        tokens_by_line = defaultdict(list)
+        for tok in tokens:
+            tokens_by_line[tok[2]].append(tok)
+
         # Extract functions and their token ranges
-        functions = self._extract_functions(tokens, lines)
+        functions = self._extract_functions(tokens, lines, tokens_by_line)
 
         # Analyze each function
         for func_info in functions:
-            func_cx = self._analyze_function(func_info, lines)
+            func_cx = self._analyze_function(func_info, lines, tokens_by_line)
             fc.functions.append(func_cx)
 
         # Analyze module-level code as <module>
-        module_cx = self._analyze_module_level(tokens, lines, functions)
+        module_cx = self._analyze_module_level(tokens, lines, functions, tokens_by_line)
         if module_cx.sloc > 0:
             fc.functions.insert(0, module_cx)
 
@@ -315,20 +321,20 @@ class ComplexityAnalyzer:
             'improved': fc2.avg_maintainability > fc1.avg_maintainability,
         }
 
-    def _extract_functions(self, tokens, lines):
+    def _extract_functions(self, tokens, lines, tokens_by_line):
         """Find function definitions and their token/line ranges."""
         functions = []
         i = 0
         while i < len(tokens):
             tok = tokens[i]
             if tok[0] == 'KEYWORD' and tok[1] == 'function':
-                func_info = self._parse_function_header(tokens, i, lines)
+                func_info = self._parse_function_header(tokens, i, lines, tokens_by_line)
                 if func_info:
                     functions.append(func_info)
             i += 1
         return functions
 
-    def _parse_function_header(self, tokens, start_idx, lines):
+    def _parse_function_header(self, tokens, start_idx, lines, tokens_by_line):
         """Parse function name, params, and find body range by indentation."""
         i = start_idx + 1
         # skip optional type annotation
@@ -386,8 +392,11 @@ class ComplexityAnalyzer:
             else:
                 break
 
-        # Collect tokens in range
-        body_tokens = [t for t in tokens if func_line <= t[2] <= end_line]
+        # Collect tokens in range using pre-built line index — O(body_lines)
+        # instead of O(total_tokens) per function.
+        body_tokens = []
+        for ln in range(func_line, end_line + 1):
+            body_tokens.extend(tokens_by_line.get(ln, ()))
 
         return {
             'name': name,
@@ -397,14 +406,19 @@ class ComplexityAnalyzer:
             'tokens': body_tokens,
         }
 
-    def _analyze_module_level(self, all_tokens, lines, functions):
+    def _analyze_module_level(self, all_tokens, lines, functions, tokens_by_line):
         """Analyze tokens that don't belong to any function."""
         func_ranges = set()
         for f in functions:
             for ln in range(f['line'], f['end_line'] + 1):
                 func_ranges.add(ln)
 
-        module_tokens = [t for t in all_tokens if t[2] not in func_ranges]
+        # Use pre-built line index to collect module tokens — avoids
+        # O(total_tokens) scan with a per-token set lookup.
+        module_tokens = []
+        for ln in sorted(tokens_by_line):
+            if ln not in func_ranges:
+                module_tokens.extend(tokens_by_line[ln])
         module_lines = [i for i in range(len(lines))
                         if (i + 1) not in func_ranges]
         sloc = sum(1 for i in module_lines if _is_code_line(lines[i]))
@@ -450,14 +464,11 @@ class ComplexityAnalyzer:
         """Cognitive complexity (Sonar-style): nesting-aware complexity."""
         cog = 0
         nesting = 0
-        prev_line = -1
 
         # Build a line-based analysis
         line_tokens = defaultdict(list)
         for tok in tokens:
             line_tokens[tok[2]].append(tok)
-
-        seen_nesting_lines = set()
 
         for line_no in sorted(line_tokens.keys()):
             toks = line_tokens[line_no]
