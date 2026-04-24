@@ -162,6 +162,7 @@ def scan_project(directory: str) -> ProjectSnapshot:
         # Also check root-level
         srv_files = sorted(glob.glob(os.path.join(directory, "*.srv")))
 
+    total_comment_lines = 0
     for path in srv_files:
         fs = scan_file(path)
         snap.total_files += 1
@@ -170,6 +171,7 @@ def scan_project(directory: str) -> ProjectSnapshot:
         snap.total_functions += fs.functions
         snap.lint_warnings += fs.lint_warnings
         snap.lint_errors += fs.lint_errors
+        total_comment_lines += fs.comment_lines
         if fs.complexity > snap.max_complexity:
             snap.max_complexity = fs.complexity
         snap.files.append({
@@ -186,8 +188,7 @@ def scan_project(directory: str) -> ProjectSnapshot:
     if snap.total_files > 0:
         complexities = [f["complexity"] for f in snap.files]
         snap.avg_complexity = round(sum(complexities) / len(complexities), 2)
-        total_comment = sum(scan_file(os.path.join(directory, f["path"])).comment_lines for f in snap.files[:5])  # sample
-        snap.comment_ratio = round(total_comment / max(snap.total_lines, 1) * 100, 1)
+        snap.comment_ratio = round(total_comment_lines / max(snap.total_lines, 1) * 100, 1)
 
     # Health score: 0-100
     snap.health_score = _compute_health(snap)
