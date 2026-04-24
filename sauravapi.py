@@ -131,6 +131,10 @@ _API_DISABLED_BUILTINS = frozenset([
     'sys_info',
     # HTTP — SSRF risk (attacker can probe internal networks)
     'http_get', 'http_post', 'http_put', 'http_delete',
+    # Logging — log_to_file writes arbitrary files, bypassing file I/O sandbox
+    'log_to_file',
+    # Path construction — path_join enables path traversal for other I/O sinks
+    'path_join',
     # Interactive / blocking
     'sleep', 'input',
 ])
