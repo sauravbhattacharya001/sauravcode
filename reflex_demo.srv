@@ -1,0 +1,89 @@
+// sauravreflex demo — reactive patterns in sauravcode
+
+// --- Reactive Variable Pattern ---
+// These variables get reassigned multiple times — ideal for ReactiveVar
+set temperature = 72
+set threshold = 80
+set alert_level = "normal"
+
+// Simulating sensor readings
+set temperature = 75
+set temperature = 82
+set temperature = 78
+set temperature = 85
+
+// --- Computed Value Pattern ---
+// These depend on other variables — ideal for Computed reactives
+set celsius = (temperature - 32) * 5 / 9
+set is_hot = temperature > threshold
+set status_msg = "Temperature: " + str(temperature) + "F / " + str(celsius) + "C"
+
+// --- State machine with reassignments ---
+set state = "idle"
+set state = "monitoring"
+set state = "alerting"
+set state = "idle"
+
+// --- Event-driven pattern ---
+// Callback-like naming suggests reactive effects
+func on_temperature_change(old_val, new_val)
+    if new_val > threshold
+        set alert_level = "warning"
+        print("⚠ Temperature exceeded threshold!")
+    else
+        set alert_level = "normal"
+    end
+end
+
+func on_alert_change(level)
+    if level == "critical"
+        print("🔴 CRITICAL ALERT!")
+    end
+end
+
+// --- Loop with state modification (Stream pattern) ---
+set readings = []
+set total = 0
+set count = 0
+
+for i in range(10)
+    set reading = random(60, 100)
+    push(readings, reading)
+    set total = total + reading
+    set count = count + 1
+    set average = total / count
+end
+
+// --- Observer pattern ---
+set subscribers = []
+
+func subscribe(callback)
+    push(subscribers, callback)
+end
+
+func emit(event, data)
+    for handler in subscribers
+        handler(event, data)
+    end
+end
+
+// --- Cascading updates ---
+set price = 100
+set quantity = 5
+set subtotal = price * quantity
+set tax = subtotal * 0.08
+set total = subtotal + tax
+set discount = 0
+
+// Price changes cascade through
+set price = 150
+set subtotal = price * quantity
+set tax = subtotal * 0.08
+set total = subtotal + tax
+
+// Apply discount
+set discount = 10
+set total = subtotal + tax - discount
+
+print("Final total: $" + str(total))
+print("Reactivity score: check with sauravreflex!")
