@@ -390,6 +390,24 @@ def crossover(parent1: Individual, parent2: Individual) -> Individual:
     return child
 
 
+# ── Shared helpers for genetic operators ────────────────────────────
+
+_VAR_NAME_SET = frozenset(VAR_NAMES)
+
+def _extract_declared_vars(lines: List[str]) -> List[str]:
+    """Extract unique variable names referenced in *lines* that appear
+    in the VAR_NAMES alphabet.  Returns at least ["n"] so callers
+    never get an empty list."""
+    seen = set()
+    result = []
+    for line in lines:
+        for part in line.split():
+            if part in _VAR_NAME_SET and part not in seen:
+                seen.add(part)
+                result.append(part)
+    return result or ["n"]
+
+
 def mutate(individual: Individual, rate: float = 0.3) -> Individual:
     """Mutate a program by modifying, inserting, or deleting lines."""
     if random.random() > rate:
@@ -403,13 +421,7 @@ def mutate(individual: Individual, rate: float = 0.3) -> Individual:
 
     if mutation_type == "modify" and lines:
         idx = random.randint(0, len(lines) - 1)
-        # Try to find declared variables
-        declared = []
-        for line in lines:
-            for part in line.split():
-                if part in VAR_NAMES:
-                    declared.append(part)
-        declared = list(set(declared)) or ["n"]
+        declared = _extract_declared_vars(lines)
 
         # Replace line with a new random action
         choice = random.random()
@@ -426,8 +438,7 @@ def mutate(individual: Individual, rate: float = 0.3) -> Individual:
             lines[idx] = f"if {cond} {{ {body} }}"
 
     elif mutation_type == "insert" and len(lines) < 15:
-        declared = [p for l in lines for p in l.split() if p in VAR_NAMES] or ["n"]
-        declared = list(set(declared))
+        declared = _extract_declared_vars(lines)
         idx = random.randint(0, len(lines))
         new_line = random.choice([
             f"print({random.choice(declared)})",
@@ -494,10 +505,14 @@ def evolve(problem: Problem, pop_size: int = 100, max_gens: int = 50,
         population[0] = Individual(code=problem.hint, generation=0)
 
     for gen in range(max_gens):
-        # Evaluate — skip elite carry-overs that already have scores
+        # Evaluate — skip elite carry-overs that already have a valid
+        # score.  Using a boolean flag avoids the fragile `fitness == 0.0`
+        # check that re-evaluated programs with legitimately zero fitness
+        # and failed to skip zero-fitness elites.
         for ind in population:
-            if ind.fitness == 0.0 or ind.generation == gen:
+            if not getattr(ind, '_evaluated', False) or ind.generation == gen:
                 evaluate(ind, problem)
+                ind._evaluated = True
 
         # Sort by fitness
         population.sort(key=lambda x: x.fitness, reverse=True)
