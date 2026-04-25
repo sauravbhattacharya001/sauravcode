@@ -80,19 +80,55 @@ class ProjectSnapshot:
 
 # ── Scanning ──────────────────────────────────────────────────────────
 
+# Reuse the analysis engine from sauravdigest to avoid duplicating the
+# line-counting, function-detection, nesting-tracking, complexity-scoring,
+# and lint-checking logic that was previously inlined here (~60 lines).
+try:
+    from sauravdigest import analyze_file as _digest_analyze, FileMetrics as _DigestFileMetrics
+    _HAS_DIGEST = True
+except ImportError:
+    _HAS_DIGEST = False
+
+
 def scan_file(path: str) -> FileSnapshot:
-    """Analyze a single .srv file."""
+    """Analyze a single .srv file.
+
+    Delegates to ``sauravdigest.analyze_file`` for the heavy lifting
+    (line classification, function detection, nesting, complexity, and
+    pattern analysis), then maps the result into a :class:`FileSnapshot`.
+    Falls back to a minimal implementation when the import is unavailable.
+    """
     snap = FileSnapshot(path=path)
+
+    # Compute file hash (needed regardless of analysis path)
+    try:
+        with open(path, "rb") as f:
+            snap.file_hash = hashlib.md5(f.read()).hexdigest()[:12]
+    except Exception:
+        return snap
+
+    if _HAS_DIGEST:
+        fm = _digest_analyze(path)
+        snap.lines = fm.lines
+        snap.code_lines = fm.code_lines
+        snap.comment_lines = fm.comment_lines
+        snap.functions = len(fm.functions)
+        snap.max_nesting = fm.max_nesting
+        snap.complexity = round(fm.complexity_score, 2)
+        # sauravdigest doesn't separate lint warnings/errors, but its
+        # hotspot detection captures similar quality signals.  Re-derive
+        # lint_warnings from the per-line checks it already performs.
+        snap.lint_warnings = _quick_lint_from_path(path)
+        return snap
+
+    # Fallback: minimal inline analysis (no sauravdigest available)
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-            raw_lines = content.splitlines()
+            raw_lines = f.read().splitlines()
     except Exception:
         return snap
 
     snap.lines = len(raw_lines)
-    snap.file_hash = hashlib.md5(content.encode()).hexdigest()[:12]
-
     nesting = 0
     max_nest = 0
     for line in raw_lines:
@@ -103,48 +139,40 @@ def scan_file(path: str) -> FileSnapshot:
             snap.comment_lines += 1
             continue
         snap.code_lines += 1
-
-        # Function detection
         if re.match(r"^(func|function|def|fn)\s+\w+", stripped):
             snap.functions += 1
-
-        # Nesting tracking
         opens = stripped.count("{") + (1 if re.match(r"^(if|for|while|loop|match)\b", stripped) and "{" not in stripped else 0)
         closes = stripped.count("}")
         nesting += opens - closes
         if nesting > max_nest:
             max_nest = nesting
-
     snap.max_nesting = max_nest
-
-    # Complexity: weighted combo of lines, nesting, function count
     snap.complexity = round(
-        (snap.code_lines * 0.1) +
-        (snap.max_nesting * 5.0) +
-        (max(0, snap.code_lines - 100) * 0.2),
-        2
+        (snap.code_lines * 0.1) + (snap.max_nesting * 5.0) + (max(0, snap.code_lines - 100) * 0.2), 2
     )
-
-    # Quick lint check (inline, no external deps)
-    snap.lint_warnings = _quick_lint(raw_lines)
-
+    snap.lint_warnings = _quick_lint_from_path(path)
     return snap
 
 
-def _quick_lint(lines: list) -> int:
-    """Fast inline lint checks - returns warning count."""
+# Pre-compiled regexes for lint checks
+_RE_TODO_MARKER = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b", re.IGNORECASE)
+
+
+def _quick_lint_from_path(path: str) -> int:
+    """Fast inline lint checks — returns warning count."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except Exception:
+        return 0
     warnings = 0
-    for i, line in enumerate(lines):
-        # Trailing whitespace
+    for line in lines:
         if line != line.rstrip():
             warnings += 1
-        # Very long lines
         if len(line) > 120:
             warnings += 1
-        # TODO/FIXME/HACK markers
-        if re.search(r"\b(TODO|FIXME|HACK|XXX)\b", line, re.IGNORECASE):
+        if _RE_TODO_MARKER.search(line):
             warnings += 1
-    # Missing final newline
     if lines and lines[-1].strip():
         warnings += 1
     return warnings
