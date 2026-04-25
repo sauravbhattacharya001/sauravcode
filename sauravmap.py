@@ -27,6 +27,7 @@ Options:
     --recommend       Show proactive recommendations
 """
 
+import bisect
 import os
 import re
 import sys
@@ -95,6 +96,25 @@ class FileAnalysis:
         self.complexity_score = 0.0
 
 
+def _build_line_offsets(content):
+    """Build a sorted list of byte offsets where each line starts.
+
+    Used with bisect to convert a byte offset to a 1-based line number
+    in O(log N) instead of the O(N) ``content[:pos].count('\\n')``.
+    """
+    offsets = [0]
+    idx = content.find('\n')
+    while idx != -1:
+        offsets.append(idx + 1)
+        idx = content.find('\n', idx + 1)
+    return offsets
+
+
+def _offset_to_line(line_offsets, pos):
+    """Convert a byte offset to a 1-based line number in O(log N)."""
+    return bisect.bisect_right(line_offsets, pos)
+
+
 def analyze_file(filepath):
     """Parse a .srv file and extract structural information."""
     analysis = FileAnalysis(filepath)
@@ -108,11 +128,17 @@ def analyze_file(filepath):
     analysis.lines = len(lines)
     analysis.comment_lines = len(RE_COMMENT.findall(content))
 
+    # Pre-compute line-start offsets for O(log N) offset→line lookups.
+    # Previously each regex match did content[:m.start()].count('\n')
+    # which is O(N) per match — O(K×N) total for K matches across all
+    # regex passes.  With bisect it becomes O(K × log N).
+    _line_offsets = _build_line_offsets(content)
+
     # Extract function definitions
     for m in RE_FUNCTION.finditer(content):
         name = m.group(1)
         params = [p.strip() for p in m.group(2).split(',') if p.strip()]
-        line_no = content[:m.start()].count('\n') + 1
+        line_no = _offset_to_line(_line_offsets, m.start())
         analysis.functions[name] = {
             'params': params,
             'line': line_no,
@@ -123,7 +149,7 @@ def analyze_file(filepath):
     for m in RE_CLASS.finditer(content):
         name = m.group(1)
         parent = m.group(2)
-        line_no = content[:m.start()].count('\n') + 1
+        line_no = _offset_to_line(_line_offsets, m.start())
         analysis.classes[name] = {
             'parent': parent,
             'line': line_no,
@@ -153,7 +179,7 @@ def analyze_file(filepath):
         callee = m.group(1)
         if callee in BUILTINS or callee in ('fun', 'class', 'if', 'for', 'while', 'return', 'import'):
             continue
-        line_no = content[:m.start()].count('\n') + 1
+        line_no = _offset_to_line(_line_offsets, m.start())
         caller = get_scope(line_no)
         analysis.calls.append((caller, callee, line_no))
 
@@ -171,7 +197,7 @@ def analyze_file(filepath):
     for m in RE_ASSIGN.finditer(content):
         name = m.group(1)
         if name not in ('fun', 'class', 'if', 'for', 'while', 'return', 'import', '#'):
-            line_no = content[:m.start()].count('\n') + 1
+            line_no = _offset_to_line(_line_offsets, m.start())
             analysis.assignments.append((name, line_no))
 
     return analysis
