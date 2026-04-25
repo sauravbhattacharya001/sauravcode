@@ -1,0 +1,28 @@
+// forecast_demo.srv — Demonstrate sauravforecast maintenance forecaster
+// Run: python sauravforecast.py
+//       python sauravforecast.py --html forecast.html
+//       python sauravforecast.py --top 5
+//       python sauravforecast.py hello.srv
+
+print("🔮 sauravforecast — Autonomous Code Maintenance Forecaster")
+print("=" * 55)
+print("")
+print("Analyzes .srv files and predicts which ones need maintenance next.")
+print("")
+print("Usage:")
+print("  python sauravforecast.py                  # Forecast all .srv files")
+print("  python sauravforecast.py --html out.html  # Interactive HTML report")
+print("  python sauravforecast.py --json           # JSON output")
+print("  python sauravforecast.py --top 5          # Top 5 riskiest files")
+print("  python sauravforecast.py --watch          # Continuous monitoring")
+print("  python sauravforecast.py --budget 72      # Alert if maintenance < 72h")
+print("  python sauravforecast.py file.srv         # Single file forecast")
+print("")
+print("What it detects:")
+print("  🦨 Code smells (long files, deep nesting, duplication, magic numbers)")
+print("  🔗 Coupling analysis (inter-file dependencies)")
+print("  ⚡ Cyclomatic complexity & structural fragility")
+print("  📊 Risk scoring with maintenance ETA predictions")
+print("  🔥 Hotspot identification (top 20% riskiest files)")
+print("  📈 Historical trend tracking across runs")
+print("  👁️ Watch mode for continuous autonomous monitoring")
