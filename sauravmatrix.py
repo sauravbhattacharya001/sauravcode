@@ -237,6 +237,7 @@ class Matrix:
         if not self.is_square:
             raise ValueError("Inverse requires square matrix")
         n = self.nrows
+        n2 = 2 * n
         # Augmented matrix [A | I]
         aug = [self.rows[i][:] + [1 if i == j else 0 for j in range(n)]
                for i in range(n)]
@@ -245,17 +246,18 @@ class Matrix:
             if abs(aug[pivot][col]) < 1e-14:
                 raise ValueError("Matrix is singular, cannot invert")
             aug[col], aug[pivot] = aug[pivot], aug[col]
-            pv = aug[col][col]
-            aug[col] = [x / pv for x in aug[col]]
+            pv = 1.0 / aug[col][col]
+            aug_col = aug[col]
+            for k in range(n2):
+                aug_col[k] *= pv
             for row in range(n):
                 if row != col:
                     factor = aug[row][col]
                     if factor == 0:
                         continue
-                    aug_col = aug[col]
                     aug_row = aug[row]
-                    aug[row] = [aug_row[k] - factor * aug_col[k]
-                                for k in range(2 * n)]
+                    for k in range(n2):
+                        aug_row[k] -= factor * aug_col[k]
         return Matrix([row[n:] for row in aug])
 
     # ── Rank (via row echelon) ──────────────────────────────────────────
@@ -273,12 +275,16 @@ class Matrix:
             if pivot is None:
                 continue
             m[rank], m[pivot] = m[pivot], m[rank]
-            pv = m[rank][col]
-            m[rank] = [x / pv for x in m[rank]]
+            pv = 1.0 / m[rank][col]
+            m_rank = m[rank]
+            for k in range(c):
+                m_rank[k] *= pv
             for row in range(r):
                 if row != rank and abs(m[row][col]) > 1e-14:
                     factor = m[row][col]
-                    m[row] = [m[row][k] - factor * m[rank][k] for k in range(c)]
+                    m_row = m[row]
+                    for k in range(c):
+                        m_row[k] -= factor * m_rank[k]
             rank += 1
         return rank
 
@@ -298,12 +304,16 @@ class Matrix:
             if pivot is None:
                 continue
             m[pivot_row], m[pivot] = m[pivot], m[pivot_row]
-            pv = m[pivot_row][col]
-            m[pivot_row] = [x / pv for x in m[pivot_row]]
+            pv = 1.0 / m[pivot_row][col]
+            m_pr = m[pivot_row]
+            for k in range(c):
+                m_pr[k] *= pv
             for row in range(r):
                 if row != pivot_row and abs(m[row][col]) > 1e-14:
                     factor = m[row][col]
-                    m[row] = [m[row][k] - factor * m[pivot_row][k] for k in range(c)]
+                    m_row = m[row]
+                    for k in range(c):
+                        m_row[k] -= factor * m_pr[k]
             pivot_row += 1
         # Clean near-zero
         for i in range(r):
@@ -361,41 +371,98 @@ class Matrix:
     # ── QR Decomposition (Gram-Schmidt) ─────────────────────────────────
 
     def qr(self):
-        """QR decomposition via modified Gram-Schmidt. Returns (Q, R)."""
-        if self.nrows < self.ncols:
+        """QR decomposition via modified Gram-Schmidt. Returns (Q, R).
+
+        Uses in-place projection subtraction to avoid per-step list
+        allocation in the inner loop.
+        """
+        nrows, ncols = self.nrows, self.ncols
+        if nrows < ncols:
             raise ValueError("QR requires nrows >= ncols")
-        cols = [[self.rows[i][j] for i in range(self.nrows)] for j in range(self.ncols)]
+        # Work on column vectors in-place
+        cols = [[self.rows[i][j] for i in range(nrows)] for j in range(ncols)]
         q_cols = []
-        R = [[0.0] * self.ncols for _ in range(self.ncols)]
-        for j in range(self.ncols):
-            v = cols[j][:]
+        R = [[0.0] * ncols for _ in range(ncols)]
+        _sqrt = math.sqrt
+        for j in range(ncols):
+            v = cols[j]  # reuse the column list directly
             for i in range(len(q_cols)):
-                R[i][j] = sum(q_cols[i][k] * v[k] for k in range(self.nrows))
-                v = [v[k] - R[i][j] * q_cols[i][k] for k in range(self.nrows)]
-            norm = math.sqrt(sum(x * x for x in v))
+                qi = q_cols[i]
+                dot = 0.0
+                for k in range(nrows):
+                    dot += qi[k] * v[k]
+                R[i][j] = dot
+                for k in range(nrows):
+                    v[k] -= dot * qi[k]
+            norm_sq = 0.0
+            for k in range(nrows):
+                norm_sq += v[k] * v[k]
+            norm = _sqrt(norm_sq)
             if norm < 1e-14:
                 raise ValueError("Matrix columns are linearly dependent")
             R[j][j] = norm
-            q_cols.append([x / norm for x in v])
-        Q = Matrix([[q_cols[j][i] for j in range(self.ncols)] for i in range(self.nrows)])
+            inv_norm = 1.0 / norm
+            for k in range(nrows):
+                v[k] *= inv_norm
+            q_cols.append(v)
+        Q = Matrix([[q_cols[j][i] for j in range(ncols)] for i in range(nrows)])
         return Q, Matrix(R)
 
     # ── Eigenvalues (QR algorithm for small matrices) ──────────────────
 
     def eigenvalues(self, iterations=200):
-        """Approximate eigenvalues using QR iteration."""
+        """Approximate eigenvalues using QR iteration.
+
+        Uses in-place modified Gram-Schmidt QR directly on flat lists to
+        avoid constructing Matrix objects each iteration.
+        """
         if not self.is_square:
             raise ValueError("Eigenvalues require square matrix")
-        A = self._copy()
         n = self.nrows
+        # Work on raw lists for speed — avoid Matrix/list-comp allocation
+        A = [row[:] for row in self.rows]
+        _sqrt = math.sqrt
         for _ in range(iterations):
-            try:
-                Q, R = A.qr()
-                A = R * Q
-            except ValueError:
-                break
-        eigs = [A.rows[i][i] for i in range(n)]
-        # Clean near-zero imaginary artifacts
+            # In-place modified Gram-Schmidt on columns of A
+            # Q stored column-major, R upper-triangular
+            # Extract columns
+            V = [[A[i][j] for i in range(n)] for j in range(n)]
+            R = [[0.0] * n for _ in range(n)]
+            for j in range(n):
+                vj = V[j]
+                for i in range(j):
+                    vi = V[i]
+                    dot = 0.0
+                    for k in range(n):
+                        dot += vi[k] * vj[k]
+                    R[i][j] = dot
+                    for k in range(n):
+                        vj[k] -= dot * vi[k]
+                norm = 0.0
+                for k in range(n):
+                    norm += vj[k] * vj[k]
+                norm = _sqrt(norm)
+                if norm < 1e-14:
+                    break
+                R[j][j] = norm
+                inv_norm = 1.0 / norm
+                for k in range(n):
+                    vj[k] *= inv_norm
+            else:
+                # A_new = R * Q  (Q stored as columns in V)
+                # A_new[i][j] = sum_k R[i][k] * Q[k][j] = sum_k R[i][k] * V[j][k]
+                for i in range(n):
+                    Ri = R[i]
+                    for j in range(n):
+                        Vj = V[j]
+                        s = 0.0
+                        # R is upper-tri so k starts at i
+                        for k in range(i, n):
+                            s += Ri[k] * Vj[k]
+                        A[i][j] = s
+                continue
+            break
+        eigs = [A[i][i] for i in range(n)]
         eigs = [round(e, 10) if isinstance(e, float) else e for e in eigs]
         return sorted(eigs, key=lambda x: -abs(x))
 
