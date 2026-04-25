@@ -245,8 +245,10 @@ class Individual:
     generation: int = 0
 
     def copy(self):
-        return Individual(code=self.code, fitness=self.fitness,
+        clone = Individual(code=self.code, fitness=self.fitness,
                          cases_passed=self.cases_passed, generation=self.generation)
+        clone._evaluated = getattr(self, '_evaluated', False)
+        return clone
 
 
 # ── Random program generation ──────────────────────────────────────
@@ -348,6 +350,13 @@ def evaluate(individual: Individual, problem: Problem) -> float:
 
     # Parse once, reuse for all test cases
     ast = _precompile(individual.code)
+
+    # Short-circuit: if program doesn't parse, skip all test-case
+    # executions — avoids N thread spawns + redundant re-parse attempts
+    if ast is None:
+        individual.cases_passed = 0
+        individual.fitness = -0.05  # slight penalty vs zero
+        return individual.fitness
 
     for tc in problem.cases:
         output, ok = _run_program(individual.code, tc.input, timeout=2.0,
