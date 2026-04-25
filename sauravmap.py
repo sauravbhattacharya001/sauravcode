@@ -169,10 +169,15 @@ def analyze_file(filepath):
         end = sorted_funcs[i + 1][1]['line'] if i + 1 < len(sorted_funcs) else len(lines) + 1
         func_ranges.append((fname, start, end))
 
+    # Build sorted start-lines + bisect index for O(log F) scope lookup
+    _scope_starts = [start for _, start, _ in func_ranges]
+    _scope_names = [fname for fname, _, _ in func_ranges]
+    _scope_ends = [end for _, _, end in func_ranges]
+
     def get_scope(line_no):
-        for fname, start, end in func_ranges:
-            if start <= line_no < end:
-                return fname
+        idx = bisect.bisect_right(_scope_starts, line_no) - 1
+        if idx >= 0 and _scope_starts[idx] <= line_no < _scope_ends[idx]:
+            return _scope_names[idx]
         return None
 
     for m in RE_CALL.finditer(content):
@@ -436,6 +441,12 @@ def generate_html(analyses, call_edges, orphans, hot_funcs, cycles, recommendati
     node_ids = {}
     idx = 0
 
+    # Pre-compute orphan set and call counts for O(1) lookups per node
+    _orphan_set = {(o['file'], o['function']) for o in orphans}
+    _call_counts = defaultdict(int)
+    for edge in call_edges:
+        _call_counts[edge['target_func']] += 1
+
     for a in analyses:
         # File node
         fid = f"file_{idx}"
@@ -451,8 +462,8 @@ def generate_html(analyses, call_edges, orphans, hot_funcs, cycles, recommendati
         for fname, finfo in a.functions.items():
             nid = f"func_{idx}"
             node_ids[(a.path, fname)] = nid
-            is_orphan = any(o['function'] == fname and o['file'] == a.path for o in orphans)
-            call_ct = sum(1 for e in call_edges if e['target_func'] == fname)
+            is_orphan = (a.path, fname) in _orphan_set
+            call_ct = _call_counts[fname]
             nodes.append({
                 'id': nid, 'label': fname, 'type': 'function',
                 'file': short, 'line': finfo['line'],
