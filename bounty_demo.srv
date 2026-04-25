@@ -1,0 +1,85 @@
+# bounty_demo.srv — Intentional bugs for sauravbounty to find
+
+# --- Unused variable ---
+set unused_counter = 0
+set name = "demo"
+print name
+
+# --- Unchecked division ---
+set total = 100
+set count = input "Enter count: "
+set average = total / count
+
+# --- Infinite loop risk ---
+loop
+    print "running forever"
+
+# --- Empty catch ---
+try
+    set x = 10 / 0
+catch
+end
+
+# --- Hardcoded secrets ---
+set api_key = "sk-proj-abcdefghijklmnop1234567890XXXXXXXXXXXXXXXX"
+set password = "SuperSecret123!"
+
+# --- Magic numbers ---
+print 42
+set result = total + 3.14159
+
+# --- Large function (simulated with 55+ lines) ---
+fun big_function()
+    print "line 1"
+    print "line 2"
+    print "line 3"
+    print "line 4"
+    print "line 5"
+    print "line 6"
+    print "line 7"
+    print "line 8"
+    print "line 9"
+    print "line 10"
+    print "line 11"
+    print "line 12"
+    print "line 13"
+    print "line 14"
+    print "line 15"
+    print "line 16"
+    print "line 17"
+    print "line 18"
+    print "line 19"
+    print "line 20"
+    print "line 21"
+    print "line 22"
+    print "line 23"
+    print "line 24"
+    print "line 25"
+    print "line 26"
+    print "line 27"
+    print "line 28"
+    print "line 29"
+    print "line 30"
+    print "line 31"
+    print "line 32"
+    print "line 33"
+    print "line 34"
+    print "line 35"
+    print "line 36"
+    print "line 37"
+    print "line 38"
+    print "line 39"
+    print "line 40"
+    print "line 41"
+    print "line 42"
+    print "line 43"
+    print "line 44"
+    print "line 45"
+    print "line 46"
+    print "line 47"
+    print "line 48"
+    print "line 49"
+    print "line 50"
+    print "line 51"
+    print "line 52"
+end
