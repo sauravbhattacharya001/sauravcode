@@ -152,11 +152,12 @@ class RedundantAssignmentPass:
                 var_name = m.group(1)
                 assignments[var_name] = (i, raw.strip())
 
+        # Single-pass word frequency count — O(N) instead of O(V×N)
+        word_counts = Counter(re.findall(r'\b\w+\b', full_text))
+
         for var_name, (line_no, orig) in assignments.items():
-            # Count occurrences of the variable in the entire source
-            pattern = re.compile(r'\b' + re.escape(var_name) + r'\b')
-            occurrences = pattern.findall(full_text)
-            if len(occurrences) <= 1:
+            # O(1) lookup instead of per-variable regex scan
+            if word_counts.get(var_name, 0) <= 1:
                 findings.append(OptFinding(
                     self.NAME, line_no,
                     f"Variable '{var_name}' is assigned but never used",
@@ -291,8 +292,11 @@ class DuplicateCodePass:
                     j += 1
                 # Normalize: replace param names with positional placeholders
                 body_text = '\n'.join(body_lines)
-                for idx, p in enumerate(params):
-                    body_text = re.sub(r'\b' + re.escape(p) + r'\b', f'__P{idx}__', body_text)
+                if params:
+                    # Single combined regex for all params — one pass instead of N passes
+                    param_map = {p: f'__P{idx}__' for idx, p in enumerate(params)}
+                    combined = re.compile(r'\b(' + '|'.join(re.escape(p) for p in params) + r')\b')
+                    body_text = combined.sub(lambda m: param_map[m.group(1)], body_text)
                 functions[fn_name] = (fn_line, body_text, len(body_lines))
                 i = j
             else:
