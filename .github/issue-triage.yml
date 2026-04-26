@@ -1,0 +1,44 @@
+# Issue Triage Labels — matched against issue title + body
+# Each key is a label name; value is a list of regexes (any match applies the label)
+
+bug:
+  - "(bug|crash|error|exception|traceback|fails?|broken|regression|segfault)"
+  - "(TypeError|ValueError|KeyError|IndexError|SyntaxError|AttributeError|ImportError|RuntimeError)"
+
+enhancement:
+  - "(feature|enhancement|improvement|request|proposal|add support|wishlist)"
+
+performance:
+  - "(perf|slow|fast|speed|latency|throughput|benchmark|memory usage|optimize)"
+
+security:
+  - "(security|vulnerab|CVE|injection|XSS|SSRF|CSRF|auth bypass|exploit|sanitiz)"
+
+documentation:
+  - "(doc|documentation|readme|example|tutorial|typo in docs|missing docs)"
+
+compiler:
+  - "(parser|lexer|tokenizer|AST|compiler|transpil|codegen|syntax error|parse error)"
+  - "(sauravast|sauravcc|sauravtranspile|sauravfmt|sauravhl)"
+
+testing:
+  - "(test|coverage|assertion|fixture|mock|pytest|unittest)"
+  - "(sauravtest|sauravcov|sauravfuzz)"
+
+cli:
+  - "(CLI|command.line|flag|argument|option|subcommand|REPL)"
+  - "(sauravrepl|sauravplay)"
+
+stdlib:
+  - "(stdlib|standard library|built.?in|collection|data structure|heap|trie|deque|ring buffer)"
+
+analysis:
+  - "(lint|static analysis|type.check|complexity|metric|refactor|dead code|smell)"
+  - "(sauravlint|sauravcomplex|sauravmetrics|sauravtype|sauravrefactor)"
+
+tooling:
+  - "(formatter|debugger|profiler|bundler|packag|scaffold|watch|migrate|deploy)"
+  - "(sauravfmt|sauravdbg|sauravprof|sauravbundle|sauravpkg|sauravscaffold|sauravwatch|sauravmigrate)"
+
+good first issue:
+  - "(good first issue|beginner|easy|starter|help wanted|newcomer)"
