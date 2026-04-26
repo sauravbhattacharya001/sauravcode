@@ -46,6 +46,7 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Compiler Guide: compiler.md
   - Developer Tooling: tooling.md
+  - Testing & Debugging: testing.md
   - Security & Limits: SECURITY.md
   - FAQ & Common Patterns: faq.md
   - Changelog: changelog.md
