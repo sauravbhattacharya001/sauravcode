@@ -51,14 +51,26 @@ def _node_signature(node):
     return name
 
 
-def _node_hash(node):
+def _node_hash(node, _cache=None):
     """
     Compute a structural hash of an AST node and its children.
     Two nodes with the same hash are structurally identical.
     Ignores line_num so position changes don't affect equality.
+
+    An optional *_cache* dict (``id(node) -> hash``) avoids re-walking
+    identical subtrees when the same AST node is hashed multiple times
+    (e.g. once during ``_match_statements``, again in ``_diff_attrs``).
+    The cache is keyed by ``id(node)`` and must only be shared among
+    calls whose AST objects remain alive (same parse tree).
     """
     if not isinstance(node, ASTNode):
         return hash(repr(node))
+
+    if _cache is not None:
+        nid = id(node)
+        cached = _cache.get(nid)
+        if cached is not None:
+            return cached
 
     parts = [_node_type(node)]
 
@@ -68,14 +80,17 @@ def _node_hash(node):
             continue
         val = getattr(node, attr)
         if isinstance(val, ASTNode):
-            parts.append(f"{attr}={_node_hash(val)}")
+            parts.append(f"{attr}={_node_hash(val, _cache)}")
         elif isinstance(val, list):
-            items = tuple(_node_hash(v) for v in val)
+            items = tuple(_node_hash(v, _cache) for v in val)
             parts.append(f"{attr}={hash(items)}")
         else:
             parts.append(f"{attr}={hash(repr(val))}")
 
-    return hash(tuple(parts))
+    h = hash(tuple(parts))
+    if _cache is not None:
+        _cache[nid] = h
+    return h
 
 
 def _node_to_dict(node, depth=0, max_depth=20):
@@ -204,8 +219,12 @@ class DiffEntry:
         return d
 
 
-def _diff_attrs(old_node, new_node):
-    """Compare attributes of two same-type nodes, return list of change descriptions."""
+def _diff_attrs(old_node, new_node, _cache=None):
+    """Compare attributes of two same-type nodes, return list of change descriptions.
+
+    Accepts an optional *_cache* dict passed through from ``compute_diff``
+    so that ``_node_hash`` reuses previously computed hashes.
+    """
     changes = []
     old_attrs = set(vars(old_node).keys())
     new_attrs = set(vars(new_node).keys())
@@ -217,7 +236,7 @@ def _diff_attrs(old_node, new_node):
         new_val = getattr(new_node, attr, None)
 
         if isinstance(old_val, ASTNode) and isinstance(new_val, ASTNode):
-            if _node_hash(old_val) != _node_hash(new_val):
+            if _node_hash(old_val, _cache) != _node_hash(new_val, _cache):
                 changes.append(f"  {attr}: {_node_signature(old_val)} -> {_node_signature(new_val)}")
         elif isinstance(old_val, list) and isinstance(new_val, list):
             old_len = len(old_val)
@@ -228,7 +247,7 @@ def _diff_attrs(old_node, new_node):
                 modified_count = 0
                 for a, b in zip(old_val, new_val):
                     if isinstance(a, ASTNode) and isinstance(b, ASTNode):
-                        if _node_hash(a) != _node_hash(b):
+                        if _node_hash(a, _cache) != _node_hash(b, _cache):
                             modified_count += 1
                     elif repr(a) != repr(b):
                         modified_count += 1
@@ -259,7 +278,14 @@ def compute_diff(old_ast, new_ast):
     """
     Compute semantic diff between two AST lists (top-level statements).
     Returns a list of DiffEntry objects.
+
+    Uses a per-invocation hash cache so that each AST node is hashed at
+    most once across matching, equality checks, and attribute comparison.
     """
+    # Per-invocation cache: both old and new ASTs are alive for the
+    # entire call, so id(node) keys are safe and won't alias.
+    _cache: dict[int, int] = {}
+
     # Filter out parser noise (stray 'end' tokens)
     old_ast = [n for n in old_ast if not _is_noise_node(n)]
     new_ast = [n for n in new_ast if not _is_noise_node(n)]
@@ -280,7 +306,7 @@ def compute_diff(old_ast, new_ast):
                 _node_signature(old_node),
                 old_node=old_node
             ))
-        elif _node_hash(old_node) == _node_hash(new_node):
+        elif _node_hash(old_node, _cache) == _node_hash(new_node, _cache):
             entries.append(DiffEntry(
                 DiffEntry.UNCHANGED,
                 _node_signature(old_node),
@@ -288,7 +314,7 @@ def compute_diff(old_ast, new_ast):
                 new_node=new_node
             ))
         else:
-            details = _diff_attrs(old_node, new_node)
+            details = _diff_attrs(old_node, new_node, _cache)
             entries.append(DiffEntry(
                 DiffEntry.MODIFIED,
                 _node_signature(old_node),
