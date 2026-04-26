@@ -23,6 +23,7 @@ import math
 import time as _time
 import glob
 from collections import defaultdict, Counter
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Set
 
@@ -190,12 +191,13 @@ def analyze_file(filepath: str) -> FileMetrics:
                 pattern_hits[pname] += 1
 
     # Check for recursion (function calls its own name)
-    # Compile one regex per function and scan content once (not twice)
-    for fn in func_names:
-        pat = re.compile(r'\b' + re.escape(fn) + r'\s*\(')
-        if len(pat.findall(content)) > 1:  # >1 = definition + recursive call
+    # Single alternation regex scans content once — O(L) instead of O(F×L)
+    if func_names:
+        alt = '|'.join(re.escape(fn) for fn in func_names)
+        call_re = re.compile(r'\b(' + alt + r')\s*\(')
+        call_counts: Counter = Counter(call_re.findall(content))
+        if any(c > 1 for c in call_counts.values()):
             pattern_hits["recursion_hint"] += 1
-            break
 
     metrics.functions = func_names
     metrics.classes = class_names
@@ -618,54 +620,58 @@ def format_json(digest: ProjectDigest) -> str:
 
 def format_html(digest: ProjectDigest) -> str:
     """Generate an interactive HTML report."""
-    # Build file table rows
-    file_rows = ""
+    # Build file table rows (list + join avoids O(N²) string concat)
+    _file_parts = []
     for fm in sorted(digest.files, key=lambda f: -f.complexity_score):
         name = os.path.basename(fm.path)
         cx_color = "#e74c3c" if fm.complexity_score > 100 else "#f39c12" if fm.complexity_score > 50 else "#27ae60"
-        file_rows += f"""<tr>
+        _file_parts.append(f"""<tr>
             <td>{name}</td>
             <td>{fm.lines}</td>
             <td>{fm.code_lines}</td>
             <td>{len(fm.functions)}</td>
             <td style="color:{cx_color};font-weight:bold">{fm.complexity_score:.0f}</td>
             <td>{fm.max_nesting}</td>
-        </tr>\n"""
+        </tr>""")
+    file_rows = '\n'.join(_file_parts)
 
     # Build hotspot cards
-    hotspot_html = ""
+    _hs_parts = []
     sev_colors = {"high": "#e74c3c", "medium": "#f39c12", "low": "#27ae60"}
     for hs in digest.hotspots[:10]:
         color = sev_colors.get(hs["severity"], "#95a5a6")
         reasons = "".join(f"<li>{r}</li>" for r in hs["reasons"])
-        hotspot_html += f"""<div style="border-left:4px solid {color};padding:8px 12px;margin:6px 0;background:#1a1a2e;border-radius:4px">
+        _hs_parts.append(f"""<div style="border-left:4px solid {color};padding:8px 12px;margin:6px 0;background:#1a1a2e;border-radius:4px">
             <strong>{hs['file']}</strong> <span style="color:{color}">({hs['severity']})</span>
             <ul style="margin:4px 0;padding-left:18px">{reasons}</ul>
-        </div>\n"""
+        </div>""")
+    hotspot_html = '\n'.join(_hs_parts)
 
     # Build recommendation cards
-    rec_html = ""
+    _rec_parts = []
     for rec in digest.recommendations:
         color = sev_colors.get(rec["priority"], "#95a5a6")
-        rec_html += f"""<div style="border-left:4px solid {color};padding:8px 12px;margin:6px 0;background:#1a1a2e;border-radius:4px">
+        _rec_parts.append(f"""<div style="border-left:4px solid {color};padding:8px 12px;margin:6px 0;background:#1a1a2e;border-radius:4px">
             <strong>[{rec['category']}]</strong> {rec['title']}
             <div style="color:#aaa;margin:4px 0">{rec['detail']}</div>
             <div style="color:#7ec8e3">→ {rec['action']}</div>
-        </div>\n"""
+        </div>""")
+    rec_html = '\n'.join(_rec_parts)
 
     # Pattern bar chart data
-    pattern_bars = ""
+    _pat_parts = []
     if digest.pattern_counts:
         max_p = max(digest.pattern_counts.values())
         for pname, count in sorted(digest.pattern_counts.items(), key=lambda x: -x[1]):
             pct = count / max_p * 100
-            pattern_bars += f"""<div style="display:flex;align-items:center;margin:3px 0">
+            _pat_parts.append(f"""<div style="display:flex;align-items:center;margin:3px 0">
                 <span style="width:160px;font-size:13px">{pname}</span>
                 <div style="flex:1;background:#1a1a2e;border-radius:3px;height:18px;overflow:hidden">
                     <div style="width:{pct}%;background:linear-gradient(90deg,#7ec8e3,#3498db);height:100%;border-radius:3px"></div>
                 </div>
                 <span style="width:40px;text-align:right;font-size:13px;color:#aaa">{count}</span>
-            </div>\n"""
+            </div>""")
+    pattern_bars = '\n'.join(_pat_parts)
 
     # Health gauge color
     h_color = "#27ae60" if digest.health_score >= 80 else "#f39c12" if digest.health_score >= 60 else "#e74c3c"
