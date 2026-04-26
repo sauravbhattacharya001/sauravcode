@@ -232,9 +232,12 @@ def send_notification(title, message):
             subprocess.run(["powershell", "-Command", ps],
                            capture_output=True, timeout=5)
         else:
-            # Linux: try notify-send
+            # Linux: try notify-send (use sanitized strings to
+            # prevent argument injection — notify-send treats args as
+            # plain text, but consistent sanitization avoids surprises
+            # if a desktop environment passes them to a shell).
             subprocess.run(
-                ["notify-send", title, message],
+                ["notify-send", safe_title, safe_message],
                 capture_output=True, timeout=5,
             )
     except Exception:
