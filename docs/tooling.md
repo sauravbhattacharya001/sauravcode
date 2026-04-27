@@ -932,3 +932,17 @@ python sauravwatch.py file.srv --on-failure "echo fail"   # Run command on failu
 - Use `--compile` to catch compilation errors immediately
 - Combine with `--clear --stats` for a clean development experience
 - `--on-success` / `--on-failure` hooks enable custom workflows (e.g., notifications, deployment)
+
+---
+
+## More Tools
+
+Sauravcode ships with 40+ additional specialized tools for testing, analysis, refactoring, learning, and creative coding. See the **[Advanced Tools Reference](advanced-tools.md)** for the full catalog including:
+
+- **`sauravtest`** — test runner, **`sauravmutant`** — mutation testing, **`sauravcontract`** — design-by-contract
+- **`sauravtrace`** — execution tracing, **`sauravchrono`** — time-travel debugging
+- **`sauravrefactor`** — automated refactoring, **`sauravmigrate`** — Python-to-sauravcode conversion
+- **`sauravtranspile`** — transpile to Python, **`sauravapi`** — instant REST API from `.srv` files
+- **`sauravlearn`** / **`sauravquest`** / **`sauravkata`** — interactive learning and practice
+- **`sauravfuzz`** — grammar-aware fuzzing, **`sauravevolve`** — genetic programming
+- And many more…

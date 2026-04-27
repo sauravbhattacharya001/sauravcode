@@ -112,4 +112,6 @@ python sauravcc.py hello.srv
 - [:material-web: Project Home Page](https://sites.google.com/view/sauravcode)
 - [:material-book-open-variant: Language Reference](language.md)
 - [:material-cog: Architecture Guide](architecture.md)
+- [:material-wrench: Developer Tooling](tooling.md)
+- [:material-toolbox: Advanced Tools](advanced-tools.md)
 - [:material-shield-check: Security & Resource Limits](SECURITY.md)
