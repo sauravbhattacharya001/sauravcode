@@ -1,0 +1,61 @@
+# Doctor Demo — sauravdoctor diagnostic showcase
+# This file intentionally contains various code pathologies for testing
+
+# P007: Duplicate strings
+print("Processing data...")
+print("Processing data...")
+print("Processing data...")
+print("Processing data...")
+
+# P004: Magic numbers in conditions
+function check_status(value)
+    if value > 42
+        print("Above threshold")
+    end
+    if value < 7
+        print("Below minimum")
+    end
+end
+
+# P005: Long parameter list
+function configure(host, port, timeout, retries, verbose, debug)
+    print("Configuring...")
+end
+
+# P003: Dead parameter
+function greet(name, unused_flag)
+    print("Hello " + name)
+end
+
+# P006: Deep nesting
+function process(data)
+    if data
+        if len(data) > 0
+            for item in data
+                if item > 0
+                    if item < 100
+                        print(item)
+                    end
+                end
+            end
+        end
+    end
+end
+
+# P019: Empty catch
+try
+    x = 1 / 0
+catch e
+    pass
+end
+
+# P014: Orphan function (never called)
+function unused_helper()
+    return 42
+end
+
+# Main flow
+check_status(50)
+greet("World", true)
+process([1, 2, 3])
+configure("localhost", 8080, 30, 3, true, false)
