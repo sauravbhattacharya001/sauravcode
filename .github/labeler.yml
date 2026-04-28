@@ -137,3 +137,75 @@ docker:
           - 'Dockerfile'
           - 'docker-compose*.yml'
           - '.dockerignore'
+
+
+# AI & Autonomous Agents
+agents:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravagent.py'
+          - 'sauravintent.py'
+          - 'sauravmentor.py'
+          - 'sauravadapt.py'
+          - 'sauravevolve.py'
+          - 'sauravreflex.py'
+
+# Cryptography & Contracts
+crypto:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravcipher.py'
+          - 'sauravcontract.py'
+          - 'sauravguard.py'
+          - 'sauravsentinel.py'
+
+# Data & Visualization
+data:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravplot.py'
+          - 'sauravdb.py'
+          - 'sauravdigest.py'
+          - 'sauravmap.py'
+          - 'sauravmatrix.py'
+          - 'sauravtext.py'
+          - 'sauravforecast.py'
+
+# Code Quality & Health
+health:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravdoctor.py'
+          - 'sauravheal.py'
+          - 'sauravdiagnose.py'
+          - 'sauravoptimize.py'
+          - 'sauravcomplex.py'
+          - 'sauravmutant.py'
+          - 'sauravsnap.py'
+
+# Productivity & Workflow
+workflow:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravtodo.py'
+          - 'sauravpipe.py'
+          - 'sauravchrono.py'
+          - 'sauravver.py'
+          - 'sauravmigrate.py'
+
+# Gamification & Competitive
+gamification:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravduel.py'
+          - 'sauravbounty.py'
+          - 'sauravquest.py'
+          - 'sauravalchemy.py'
+
+# Simulation & Formal Methods
+simulation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sauravautomata.py'
+          - 'sauravoracle.py'
+          - 'sauravregex.py'

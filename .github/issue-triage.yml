@@ -42,3 +42,32 @@ tooling:
 
 good first issue:
   - "(good first issue|beginner|easy|starter|help wanted|newcomer)"
+
+
+agents:
+  - "(agent|autonomous|intent|mentor|adapt|evolve|reflex|self-modif|learning agent)"
+  - "(sauravagent|sauravintent|sauravmentor|sauravadapt|sauravevolve|sauravreflex)"
+
+crypto:
+  - "(cipher|encrypt|decrypt|hash|sign|verify|contract|guard|sentinel|AES|RSA|HMAC)"
+  - "(sauravcipher|sauravcontract|sauravguard|sauravsentinel)"
+
+data:
+  - "(plot|chart|graph|visuali|database|SQL|query result|forecast|predict|matrix|digest)"
+  - "(sauravplot|sauravdb|sauravdigest|sauravmap|sauravmatrix|sauravtext|sauravforecast)"
+
+health:
+  - "(code.?health|doctor|diagnos|heal|optimiz|complex|mutant|mutation testing|snapshot)"
+  - "(sauravdoctor|sauravheal|sauravdiagnose|sauravoptimize|sauravcomplex|sauravmutant|sauravsnap)"
+
+workflow:
+  - "(todo|pipeline|chrono|version|migrat|workflow|task)"
+  - "(sauravtodo|sauravpipe|sauravchrono|sauravver|sauravmigrate)"
+
+gamification:
+  - "(duel|bounty|quest|challenge|alchemy|gamif|competi|leaderboard)"
+  - "(sauravduel|sauravbounty|sauravquest|sauravalchemy)"
+
+simulation:
+  - "(automata|cellular|state machine|oracle|property.based|regex|formal)"
+  - "(sauravautomata|sauravoracle|sauravregex)"
