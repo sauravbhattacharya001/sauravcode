@@ -428,14 +428,28 @@ class ComplexityAnalyzer:
         fc.loc = len(module_lines)
         fc.sloc = sloc
         fc.cyclomatic = self._compute_cyclomatic(module_tokens)
-        fc.cognitive = self._compute_cognitive(module_tokens, lines)
-        fc.max_nesting = self._compute_max_nesting(module_tokens, lines)
+
+        # Build module-scoped line→tokens index for fast cognitive/nesting
+        module_line_tokens = {ln: tokens_by_line[ln]
+                              for ln in tokens_by_line
+                              if ln not in func_ranges}
+        fc.cognitive = self._compute_cognitive_fast(module_line_tokens, lines)
+        fc.max_nesting = self._compute_max_nesting_fast(module_line_tokens, lines)
         fc.halstead = self._compute_halstead(module_tokens)
         fc.compute_maintainability()
         return fc
 
-    def _analyze_function(self, func_info, lines):
-        """Compute all metrics for a function."""
+    def _analyze_function(self, func_info, lines, tokens_by_line=None):
+        """Compute all metrics for a function.
+
+        Args:
+            func_info: Dict with 'name', 'line', 'end_line', 'params', 'tokens'.
+            lines: Full source lines for indentation-based nesting analysis.
+            tokens_by_line: Pre-built {line_no: [tokens]} index from the
+                caller.  When provided, ``_compute_cognitive`` and
+                ``_compute_max_nesting`` skip their internal O(n)
+                re-grouping passes, avoiding redundant work on large files.
+        """
         fc = FunctionComplexity(func_info['name'], func_info['line'])
         fc.end_line = func_info['end_line']
         fc.params = func_info['params']
@@ -445,9 +459,23 @@ class ComplexityAnalyzer:
         fc.sloc = _count_sloc(body_lines)
 
         tokens = func_info['tokens']
+
+        # Build a function-scoped line→tokens index once and reuse it
+        # across cognitive and nesting analysis — avoids two redundant
+        # O(tokens) grouping passes per function.
+        if tokens_by_line is not None:
+            func_line_tokens = {ln: tokens_by_line[ln]
+                                for ln in range(func_info['line'],
+                                                func_info['end_line'] + 1)
+                                if ln in tokens_by_line}
+        else:
+            func_line_tokens = defaultdict(list)
+            for tok in tokens:
+                func_line_tokens[tok[2]].append(tok)
+
         fc.cyclomatic = self._compute_cyclomatic(tokens)
-        fc.cognitive = self._compute_cognitive(tokens, lines)
-        fc.max_nesting = self._compute_max_nesting(tokens, lines)
+        fc.cognitive = self._compute_cognitive_fast(func_line_tokens, lines)
+        fc.max_nesting = self._compute_max_nesting_fast(func_line_tokens, lines)
         fc.halstead = self._compute_halstead(tokens)
         fc.compute_maintainability()
         return fc
@@ -461,28 +489,34 @@ class ComplexityAnalyzer:
         return cc
 
     def _compute_cognitive(self, tokens, lines):
-        """Cognitive complexity (Sonar-style): nesting-aware complexity."""
-        cog = 0
-        nesting = 0
+        """Cognitive complexity (Sonar-style): nesting-aware complexity.
 
-        # Build a line-based analysis
+        Legacy entry point that builds a line→tokens index internally.
+        Prefer ``_compute_cognitive_fast`` when an index is available.
+        """
         line_tokens = defaultdict(list)
         for tok in tokens:
             line_tokens[tok[2]].append(tok)
+        return self._compute_cognitive_fast(line_tokens, lines)
 
-        for line_no in sorted(line_tokens.keys()):
+    def _compute_cognitive_fast(self, line_tokens, lines):
+        """Cognitive complexity using a pre-built line→tokens index.
+
+        Eliminates the O(n) token-grouping pass that ``_compute_cognitive``
+        performs internally, saving one full scan of the token list per
+        function on large files.
+        """
+        cog = 0
+        nesting = 0
+
+        for line_no in sorted(line_tokens):
             toks = line_tokens[line_no]
             for tok in toks:
                 if tok[0] == 'KEYWORD':
                     kw = tok[1]
                     if kw in COGNITIVE_NESTING_KEYWORDS:
-                        # Nesting increment: 1 + current nesting level
                         cog += 1 + nesting
-                        if kw not in ('else if',):
-                            # else if doesn't increase nesting for subsequent
-                            pass
                     elif kw in COGNITIVE_INCREMENT_KEYWORDS:
-                        # Flat increment (no nesting bonus)
                         cog += 1
 
             # Estimate nesting from indentation
@@ -490,16 +524,32 @@ class ComplexityAnalyzer:
                 line = lines[line_no - 1]
                 if line.strip():
                     indent = len(line) - len(line.lstrip())
-                    # Approximate nesting as indent / 4
                     nesting = indent // 4
 
         return cog
 
     def _compute_max_nesting(self, tokens, lines):
-        """Maximum nesting depth based on indentation."""
-        max_nest = 0
+        """Maximum nesting depth based on indentation.
+
+        Legacy entry point — builds a line set internally.
+        Prefer ``_compute_max_nesting_fast`` when a line index exists.
+        """
         line_set = set(t[2] for t in tokens)
-        for ln in line_set:
+        return self._compute_max_nesting_from_lines(line_set, lines)
+
+    def _compute_max_nesting_fast(self, line_tokens, lines):
+        """Maximum nesting depth using a pre-built line→tokens index.
+
+        Avoids the O(n) ``set(t[2] for t in tokens)`` comprehension that
+        ``_compute_max_nesting`` performs per function.
+        """
+        return self._compute_max_nesting_from_lines(line_tokens.keys(), lines)
+
+    @staticmethod
+    def _compute_max_nesting_from_lines(line_numbers, lines):
+        """Shared implementation: find deepest indentation among given lines."""
+        max_nest = 0
+        for ln in line_numbers:
             if 0 < ln <= len(lines):
                 line = lines[ln - 1]
                 if line.strip():
