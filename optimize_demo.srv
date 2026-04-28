@@ -1,0 +1,36 @@
+# optimize_demo.srv — Demonstrate sauravoptimize detections
+# Run: python sauravoptimize.py optimize_demo.srv
+
+# P006: Recursive function without memoization (exponential)
+fun fib n
+  if n <= 1
+    return n
+  return fib n - 1 + fib n - 2
+
+# P003: String concatenation in loop
+result = ""
+for i in range 10
+  result = result + "x"
+
+# P004: List concatenation in loop
+nums = []
+for i in range 5
+  nums = nums + [i]
+
+# P010: Unused loop index
+for j in range 3
+  print "hello"
+
+# P007: Dead store — overwritten before use
+x = 42
+x = 99
+print x
+
+# P001: Loop-invariant computation
+data = [1, 2, 3, 4, 5]
+n = len data
+for i in range 10
+  sz = len data
+  print sz + i
+
+print "=== optimize_demo complete ==="
