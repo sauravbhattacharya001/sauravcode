@@ -214,6 +214,75 @@ class PythonToSrv(ast.NodeVisitor):
 
     # ── For ──
 
+    @staticmethod
+    def _literal_int_value(node):
+        """Return the int value of a literal AST expression, or None.
+
+        Handles plain `ast.Constant` integer literals and `ast.UnaryOp(USub, ...)`
+        wrapping a constant (i.e. negative literals like ``-1``), which is how
+        the AST represents them.
+        """
+        if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
+            return node.value
+        if (isinstance(node, ast.UnaryOp)
+                and isinstance(node.op, ast.USub)
+                and isinstance(node.operand, ast.Constant)
+                and isinstance(node.operand.value, int)
+                and not isinstance(node.operand.value, bool)):
+            return -node.operand.value
+        return None
+
+    def _emit_range_with_step(self, node, target, args):
+        """Migrate ``for target in range(start, stop, step):`` as a while-loop.
+
+        sauravcode's native ``for`` loop only takes start/stop, so a literal
+        step is emitted as the equivalent ``target = start; while ...``
+        sequence with a trailing ``target = target + step`` to advance the
+        induction variable. A non-literal step would need a runtime sign
+        decision sauravcode can't express cleanly, so it gets a hard TODO
+        comment and the body is dropped — failing loudly is safer than the
+        previous behaviour, which silently emitted a 2-arg ``for`` that ran
+        the wrong number of iterations or in the wrong direction.
+        """
+        step_value = self._literal_int_value(args[2])
+        start_expr = self._expr(args[0])
+        stop_expr = self._expr(args[1])
+        step_expr = self._expr(args[2])
+
+        if step_value is None:
+            self.warnings.add(
+                node.lineno,
+                "range() with non-literal step requires manual migration",
+            )
+            self.emit(
+                f"# TODO MANUAL MIGRATION: range({start_expr}, {stop_expr}, {step_expr}) "
+                f"— rewrite as a while-loop matching the runtime sign of step"
+            )
+            return
+
+        if step_value == 0:
+            self.warnings.add(
+                node.lineno,
+                "range() with step=0 is a ValueError in Python; skipping body",
+            )
+            self.emit(
+                f"# TODO MANUAL MIGRATION: range({start_expr}, {stop_expr}, 0) "
+                f"would raise ValueError in Python"
+            )
+            return
+
+        comparator = "<" if step_value > 0 else ">"
+        self.emit(f"{target} = {start_expr}")
+        self.emit(f"while {target} {comparator} {stop_expr}")
+        self.indent += 1
+        self._emit_body(node.body)
+        self.emit(f"{target} = {target} + {step_expr}")
+        self.indent -= 1
+        if node.orelse:
+            self.warnings.add(
+                node.lineno, "for/else not supported, else branch skipped",
+            )
+
     def visit_For(self, node):
         target = self._expr(node.target)
 
@@ -227,8 +296,13 @@ class PythonToSrv(ast.NodeVisitor):
             elif len(args) == 2:
                 self.emit(f"for {target} {self._expr(args[0])} {self._expr(args[1])}")
             elif len(args) == 3:
-                self.warnings.add(node.lineno, "range() step argument not supported, using 2-arg form")
-                self.emit(f"for {target} {self._expr(args[0])} {self._expr(args[1])}")
+                # The 3-arg form needs a fully custom emission path because the
+                # sauravcode for-loop has no step argument. _emit_range_with_step
+                # owns the entire block (header, body, induction step) and
+                # returns without falling through to the shared body-emission
+                # block below.
+                self._emit_range_with_step(node, target, args)
+                return
             else:
                 self.emit(f"for {target} in {self._expr(node.iter)}")
         else:

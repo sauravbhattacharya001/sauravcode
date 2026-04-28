@@ -77,6 +77,49 @@ class TestControlFlow:
         result = migrate_source("for i in range(1, 5):\n    print(i)")
         assert "for i 1 5" in result
 
+    def test_for_range_positive_step_emits_while_loop(self):
+        # Regression for #125: range(start, stop, step) with a positive
+        # literal step used to silently drop the step and emit a 2-arg
+        # `for` that iterated the wrong number of times. The migrator now
+        # emits an equivalent while-loop so iteration count matches Python.
+        result = migrate_source("for i in range(0, 10, 2):\n    print(i)")
+        # No "for i 0 10" — that was the buggy output.
+        assert "for i 0 10" not in result
+        # While-loop equivalent must include the start assignment, the
+        # `<` comparator (positive step), and the in-loop increment.
+        assert "i = 0" in result
+        assert "while i < 10" in result
+        assert "i = i + 2" in result
+
+    def test_for_range_negative_step_uses_greater_than(self):
+        # Negative step (countdown) needs the comparator flipped to `>`,
+        # otherwise the loop would iterate zero times or the wrong way.
+        # The migrator's expression emitter renders -1 as the binary
+        # form `0 - 1`, so checking "i = i + 0 - 1" is the literal output;
+        # functionally equivalent to `i = i + -1`.
+        result = migrate_source("for i in range(10, 0, -1):\n    print(i)")
+        assert "i = 10" in result
+        assert "while i > 0" in result
+        assert "i = i + 0 - 1" in result
+
+    def test_for_range_non_literal_step_emits_todo(self):
+        # When the step is a runtime expression we can't decide the
+        # comparator at migration time, so the migrator must fail loudly
+        # with a manual-migration TODO rather than silently produce a
+        # 2-arg `for` that runs forward.
+        src = "step = -1\nfor i in range(10, 0, step):\n    print(i)"
+        result = migrate_source(src)
+        assert "TODO MANUAL MIGRATION" in result
+        # No buggy 2-arg fallback should leak through.
+        assert "for i 10 0" not in result
+
+    def test_for_range_zero_step_emits_todo(self):
+        # range(_, _, 0) raises ValueError in Python at call time. The
+        # migrator should not silently emit a runnable loop for it.
+        result = migrate_source("for i in range(0, 10, 0):\n    print(i)")
+        assert "TODO MANUAL MIGRATION" in result
+        assert "while i" not in result
+
     def test_for_each(self):
         result = migrate_source("for x in items:\n    print(x)")
         assert "for x in items" in result
