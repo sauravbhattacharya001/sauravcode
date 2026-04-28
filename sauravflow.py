@@ -249,129 +249,79 @@ class _Builder:
             tails = self._process_stmt(stmt, tails)
         return tails
 
+    def _link_preds(self, node_id, preds):
+        """Connect all predecessor nodes to *node_id*."""
+        for p in preds:
+            self._edge(p, node_id)
+
+    def _terminal_node(self, label, shape, style, preds):
+        """Create a terminal node (no successors) linked from *preds*."""
+        n = self._node(label, shape, style)
+        self._link_preds(n, preds)
+        return []
+
+    def _simple_stmt_node(self, label, preds, shape="box", style="statement"):
+        """Create a simple statement node linked from *preds*, returning it as the new tail."""
+        n = self._node(label, shape, style)
+        self._link_preds(n, preds)
+        return [n]
+
     def _process_stmt(self, stmt, preds):
         """Process a single statement. Returns list of new tail nodes."""
         import saurav as sv
 
-        name = type(stmt).__name__
+        # -- Control flow (delegated to dedicated processors) --
+        _CONTROL_FLOW = {
+            sv.IfNode:       self._process_if,
+            sv.WhileNode:    self._process_while,
+            sv.ForNode:      self._process_for,
+            sv.ForEachNode:  self._process_foreach,
+            sv.TryCatchNode: self._process_trycatch,
+            sv.MatchNode:    self._process_match,
+        }
+        handler = _CONTROL_FLOW.get(type(stmt))
+        if handler:
+            return handler(stmt, preds)
 
-        # -- Control flow --
-        if isinstance(stmt, sv.IfNode):
-            return self._process_if(stmt, preds)
-        if isinstance(stmt, sv.WhileNode):
-            return self._process_while(stmt, preds)
-        if isinstance(stmt, sv.ForNode):
-            return self._process_for(stmt, preds)
-        if isinstance(stmt, sv.ForEachNode):
-            return self._process_foreach(stmt, preds)
-        if isinstance(stmt, sv.TryCatchNode):
-            return self._process_trycatch(stmt, preds)
-        if isinstance(stmt, sv.MatchNode):
-            return self._process_match(stmt, preds)
-
-        # -- Terminals --
+        # -- Terminals (no successors) --
         if isinstance(stmt, sv.ReturnNode):
-            expr = _expr_str(stmt.expression)
-            n = self._node(f"return {expr}", "stadium", "terminal")
-            for p in preds:
-                self._edge(p, n)
-            return []  # no successors
-
+            return self._terminal_node(f"return {_expr_str(stmt.expression)}", "stadium", "terminal", preds)
         if isinstance(stmt, sv.ThrowNode):
-            expr = _expr_str(stmt.expression)
-            n = self._node(f"throw {expr}", "hexagon", "error")
-            for p in preds:
-                self._edge(p, n)
-            return []
-
+            return self._terminal_node(f"throw {_expr_str(stmt.expression)}", "hexagon", "error", preds)
         if isinstance(stmt, sv.BreakNode):
-            n = self._node("break", "stadium", "terminal")
-            for p in preds:
-                self._edge(p, n)
-            return []
-
+            return self._terminal_node("break", "stadium", "terminal", preds)
         if isinstance(stmt, sv.ContinueNode):
-            n = self._node("continue", "stadium", "terminal")
-            for p in preds:
-                self._edge(p, n)
-            return []
+            return self._terminal_node("continue", "stadium", "terminal", preds)
 
         # -- Function definitions --
         if isinstance(stmt, sv.FunctionNode):
-            params = ", ".join(stmt.params)
-            n = self._node(f"def {stmt.name}({params})", "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
+            return self._simple_stmt_node(f"def {stmt.name}({', '.join(stmt.params)})", preds)
 
-        # -- Simple statements --
+        # -- Simple statements (all produce a single "box" node) --
         if isinstance(stmt, sv.AssignmentNode):
-            expr = _expr_str(stmt.expression)
-            n = self._node(f"{stmt.name} = {expr}", "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f"{stmt.name} = {_expr_str(stmt.expression)}", preds)
         if isinstance(stmt, sv.IndexedAssignmentNode):
-            n = self._node(f"{stmt.name}[{_expr_str(stmt.index)}] = {_expr_str(stmt.value)}", "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f"{stmt.name}[{_expr_str(stmt.index)}] = {_expr_str(stmt.value)}", preds)
         if isinstance(stmt, sv.PrintNode):
-            expr = _expr_str(stmt.expression)
-            n = self._node(f"print {expr}", "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f"print {_expr_str(stmt.expression)}", preds)
         if isinstance(stmt, sv.ImportNode):
-            n = self._node(f'import "{stmt.module_path}"', "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f'import "{stmt.module_path}"', preds)
         if isinstance(stmt, sv.AppendNode):
-            n = self._node(f"append {_expr_str(stmt.list_name)} {_expr_str(stmt.value)}", "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f"append {_expr_str(stmt.list_name)} {_expr_str(stmt.value)}", preds)
         if isinstance(stmt, sv.PopNode):
-            n = self._node(f"pop {_expr_str(stmt.list_name)}", "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f"pop {_expr_str(stmt.list_name)}", preds)
         if isinstance(stmt, sv.YieldNode):
-            expr = _expr_str(stmt.expression)
-            n = self._node(f"yield {expr}", "hexagon", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f"yield {_expr_str(stmt.expression)}", preds, shape="hexagon")
         if isinstance(stmt, sv.AssertNode):
-            expr = _expr_str(stmt.condition)
-            n = self._node(f"assert {expr}", "hexagon", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
-
+            return self._simple_stmt_node(f"assert {_expr_str(stmt.condition)}", preds, shape="hexagon")
         if isinstance(stmt, sv.EnumNode):
             variants = ", ".join(stmt.variants[:4])
             if len(stmt.variants) > 4:
                 variants += ", ..."
-            n = self._node(f"enum {stmt.name} ({variants})", "box", "statement")
-            for p in preds:
-                self._edge(p, n)
-            return [n]
+            return self._simple_stmt_node(f"enum {stmt.name} ({variants})", preds)
 
         # -- Expression statement (function call etc.) --
-        label = _expr_str(stmt)
-        n = self._node(label, "box", "statement")
-        for p in preds:
-            self._edge(p, n)
-        return [n]
+        return self._simple_stmt_node(_expr_str(stmt), preds)
 
     # -- Control flow processors --
 
@@ -379,8 +329,7 @@ class _Builder:
         import saurav as sv
         cond_str = _expr_str(node.condition)
         cond = self._node(cond_str, "diamond", "decision")
-        for p in preds:
-            self._edge(p, cond)
+        self._link_preds(cond, preds)
 
         # True branch
         tails_true = self._process_block(node.body, [cond])
@@ -429,8 +378,7 @@ class _Builder:
     def _process_while(self, node, preds):
         cond_str = _expr_str(node.condition)
         cond = self._node(f"while {cond_str}", "diamond", "loop")
-        for p in preds:
-            self._edge(p, cond)
+        self._link_preds(cond, preds)
 
         body_tails = self._process_block(node.body, [cond])
         # Label the edge to body as "yes"
@@ -449,8 +397,7 @@ class _Builder:
         start_str = _expr_str(node.start)
         end_str = _expr_str(node.end)
         header = self._node(f"for {node.var} = {start_str} to {end_str}", "diamond", "loop")
-        for p in preds:
-            self._edge(p, header)
+        self._link_preds(header, preds)
 
         body_tails = self._process_block(node.body, [header])
         for i, (tid, lbl) in enumerate(header.successors):
@@ -466,8 +413,7 @@ class _Builder:
     def _process_foreach(self, node, preds):
         iter_str = _expr_str(node.iterable)
         header = self._node(f"for {node.var} in {iter_str}", "diamond", "loop")
-        for p in preds:
-            self._edge(p, header)
+        self._link_preds(header, preds)
 
         body_tails = self._process_block(node.body, [header])
         for i, (tid, lbl) in enumerate(header.successors):
@@ -482,8 +428,7 @@ class _Builder:
 
     def _process_trycatch(self, node, preds):
         try_node = self._node("try", "hexagon", "error")
-        for p in preds:
-            self._edge(p, try_node)
+        self._link_preds(try_node, preds)
 
         try_tails = self._process_block(node.body, [try_node])
 
@@ -498,8 +443,7 @@ class _Builder:
     def _process_match(self, node, preds):
         expr_str = _expr_str(node.expression)
         match_node = self._node(f"match {expr_str}", "diamond", "decision")
-        for p in preds:
-            self._edge(p, match_node)
+        self._link_preds(match_node, preds)
 
         all_tails = []
         for case in node.cases:
