@@ -114,4 +114,5 @@ python sauravcc.py hello.srv
 - [:material-cog: Architecture Guide](architecture.md)
 - [:material-wrench: Developer Tooling](tooling.md)
 - [:material-toolbox: Advanced Tools](advanced-tools.md)
+- [:material-robot: Autonomous Analysis](autonomous-analysis.md)
 - [:material-shield-check: Security & Resource Limits](SECURITY.md)
