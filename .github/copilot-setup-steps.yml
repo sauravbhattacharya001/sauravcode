@@ -1,33 +1,58 @@
-# copilot-setup-steps.yml
-# Sets up the environment for GitHub Copilot coding agents (Claude, Codex)
-# to autonomously work on issues and PRs in this repository.
+name: "Copilot Setup Steps"
 
-steps:
-  - name: Set up Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.12"
-      cache: "pip"
+on:
+  workflow_dispatch:
 
-  - name: Install GCC
-    run: |
-      sudo apt-get update -qq
-      sudo apt-get install -y gcc
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Install dependencies
-    run: pip install -e ".[dev]" 2>/dev/null || pip install -e . || true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-  - name: Install test dependencies
-    run: pip install pytest pytest-cov
+      - name: Install GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
 
-  - name: Verify interpreter
-    run: python saurav.py test_all.srv
+      - name: Install package and dependencies
+        run: pip install -e ".[dev]" 2>/dev/null || pip install -e . || true
 
-  - name: Verify compiler
-    run: |
-      python sauravcc.py test_all.srv
-      python sauravcc.py hello.srv
-      python sauravcc.py a.srv
+      - name: Install test dependencies
+        run: pip install pytest pytest-cov
 
-  - name: Run pytest suite
-    run: pytest tests/ -v --tb=short 2>/dev/null || echo "pytest tests complete"
+      - name: Verify interpreter
+        run: python saurav.py test_all.srv
+
+      - name: Verify compiler
+        run: |
+          python sauravcc.py test_all.srv
+          python sauravcc.py hello.srv
+          python sauravcc.py a.srv
+
+      - name: Run pytest suite
+        run: pytest tests/ -v --tb=short 2>/dev/null || echo "pytest tests complete"
+
+      - name: Lint core source modules
+        run: |
+          python -m py_compile saurav.py
+          python -m py_compile sauravcc.py
+          python -m py_compile sauravlint.py
+          python -m py_compile sauravfmt.py
+          python -m py_compile sauravtest.py
+          python -m py_compile sauravtype.py
+          python -m py_compile sauravguard.py
+          python -m py_compile sauravsec.py
+          python -m py_compile sauravflow.py
+
+      - name: Run language linter on tests
+        run: python sauravlint.py test_all.srv 2>/dev/null || true
+
+      - name: Type-check demo programs
+        run: python sauravtype.py hello.srv a.srv 2>/dev/null || true
