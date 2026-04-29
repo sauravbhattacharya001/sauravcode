@@ -1,0 +1,73 @@
+# autopatch_demo.srv — Demonstrates sauravautopatch detection capabilities
+# Run: python sauravautopatch.py autopatch_demo.srv --suggest
+
+# P001: Uninitialized variable
+function compute_total(items)
+    sum = 0
+    for item in items
+        sum = sum + item.price * discount
+    return sum
+
+# P002: Dead code after return
+function get_status(code)
+    if code == 200
+        return "ok"
+        log("this never runs")
+    return "error"
+
+# P003: Infinite loop without exit
+function listen()
+    while true
+        msg = receive()
+        process(msg)
+
+# P004: Unused parameter
+function format_name(first, last, title)
+    return first + " " + last
+
+# P005: Inconsistent return
+function find_item(list, target)
+    for item in list
+        if item.id == target
+            return item
+    # Implicit None return when not found
+
+# P006: Duplicate branches
+function classify(score)
+    if score > 50
+        result = "pass"
+        log(result)
+    else
+        result = "pass"
+        log(result)
+    return result
+
+# P007: Off-by-one
+function last_element(arr)
+    i = 0
+    while i <= len(arr)
+        process(arr[i])
+        i = i + 1
+    return arr[len(arr)]
+
+# P008: Resource leak
+function read_config(path)
+    file = open(path)
+    data = file.read()
+    return data
+
+# P009: Type coercion
+function check_age(age)
+    if "18" == age
+        return true
+    return false
+
+# P010: Non-idempotent in retry
+function send_with_retry(msg, results)
+    retry_count = 3
+    while retry_count > 0
+        results.append(msg)
+        ok = send(msg)
+        if ok
+            break
+        retry_count = retry_count - 1
