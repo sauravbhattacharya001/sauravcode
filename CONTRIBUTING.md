@@ -101,6 +101,105 @@ Beyond the interpreter and compiler, sauravcode includes a rich set of developer
 
 When contributing to any tool module, look at related test files (`test_saurav*.py`) and follow existing patterns.
 
+## Development with Docker
+
+You can develop and test entirely inside Docker without installing anything locally:
+
+```bash
+# Build the image (runs tests during build)
+docker build -t sauravcode .
+
+# Run a script
+docker run --rm sauravcode interpret examples/hello.srv
+
+# Compile a script to native binary
+docker run --rm sauravcode compile examples/hello.srv -o hello
+
+# Interactive REPL
+docker run --rm -it sauravcode repl
+
+# Mount your local .srv files for testing
+docker run --rm -v $(pwd):/work sauravcode interpret /work/my_script.srv
+```
+
+For iterative development, mount the source directory:
+
+```bash
+docker run --rm -it -v $(pwd):/app -w /app python:3.12-slim bash
+pip install pytest pytest-cov
+python -m pytest tests/ -v
+```
+
+## Editor Setup
+
+### VS Code
+
+The repo includes a VS Code extension for `.srv` file support:
+
+1. Open `editors/vscode/` in VS Code
+2. Press `F5` to launch the extension in a development host
+3. Open any `.srv` file — you'll get syntax highlighting
+
+Alternatively, symlink the extension into your VS Code extensions directory:
+
+```bash
+# Linux/macOS
+ln -s $(pwd)/editors/vscode ~/.vscode/extensions/sauravcode
+
+# Windows (PowerShell, run as admin)
+New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.vscode\extensions\sauravcode" -Target "$(Get-Location)\editors\vscode"
+```
+
+If you're adding new language constructs, update the TextMate grammar in `editors/vscode/` so syntax highlighting stays correct.
+
+### GitHub Copilot / AI Coding Agents
+
+The repo includes `.github/copilot-setup-steps.yml` and `.github/copilot-instructions.md` for AI coding agents. If you're using Copilot, Claude, or Codex in a PR workflow, these files help the agent understand the project's conventions and build steps.
+
+## Architecture Deep Dive
+
+The interpreter pipeline has three stages, each with clear boundaries:
+
+```
+.srv source → Tokenizer → [Token stream] → Parser → [AST] → Interpreter → output
+                                                   ↘
+                                              CCodeGenerator → .c source → gcc → binary
+```
+
+### AST Node Types
+
+The parser produces these node types (defined in `saurav.py`). Understanding these is essential for any language feature work:
+
+| Category | Nodes | Purpose |
+|----------|-------|---------|
+| **Literals** | `NumberNode`, `StringNode`, `BooleanNode`, `NullNode`, `ListNode`, `MapNode` | Constant values |
+| **Expressions** | `BinaryOpNode`, `UnaryOpNode`, `ComparisonNode`, `LogicalNode` | Operators |
+| **Variables** | `AssignNode`, `VarAccessNode`, `IndexAccessNode`, `SliceNode` | Binding and lookup |
+| **Control Flow** | `IfNode`, `WhileNode`, `ForNode`, `ForEachNode`, `BreakNode`, `ContinueNode` | Branching and loops |
+| **Functions** | `FunctionDefNode`, `ReturnNode`, `CallNode`, `LambdaNode` | Callable definitions |
+| **Classes** | `ClassDefNode`, `MethodCallNode`, `PropertyAccessNode` | OOP support |
+| **Error Handling** | `TryCatchNode`, `ThrowNode` | Exception flow |
+| **I/O** | `PrintNode`, `InputNode`, `ImportNode` | Side effects |
+
+When adding a new node type:
+1. Define the dataclass/namedtuple in `saurav.py`
+2. Add tokenizer support if new syntax is needed
+3. Add parser production rule
+4. Add `visit_*` method to `Interpreter`
+5. Add `generate_*` method to `CCodeGenerator` in `sauravcc.py`
+6. Write tests for both interpreter and compiler paths
+
+### Adding a New Tool Module
+
+If you're adding a new `saurav*.py` tool:
+
+1. Create `sauravXYZ.py` in the project root
+2. Use the same CLI pattern as existing tools (argparse with subcommands)
+3. Add a test file `test_sauravXYZ.py` in `tests/` (or root, matching existing convention)
+4. Register CLI entry points in `pyproject.toml` under `[project.scripts]` if it should be a standalone command
+5. Update the toolchain table in this CONTRIBUTING.md
+6. Add it to the CI matrix if it has special requirements
+
 ## How to Contribute
 
 ### 1. Find Something to Work On
@@ -250,6 +349,29 @@ python sauravsec.py your_file.srv
 - **Naming**: `snake_case` for functions/variables, `PascalCase` for AST node classes
 - **Comments**: Add them for non-obvious logic, especially in the parser and code generator
 - **Keep it simple**: sauravcode values clarity — the implementation should too
+- **Linting**: CI uses [ruff](https://docs.astral.sh/ruff/). Run `ruff check .` and `ruff format --check .` locally before pushing
+- **Type hints**: Encouraged for new code, especially public APIs in tool modules
+
+## Performance Contributions
+
+The codebase includes profiling tools — use them when working on performance:
+
+```bash
+# Profile a script's execution
+python sauravprof.py my_script.srv
+
+# Measure complexity metrics
+python sauravcomplex.py saurav.py
+
+# Run benchmarks
+python sauravbench.py
+```
+
+When submitting performance improvements:
+1. Include **before/after** benchmark numbers in the PR description
+2. Explain the algorithmic change (e.g., O(n²) → O(n log n))
+3. Ensure no behavioral regressions — same inputs, same outputs
+4. Test with large inputs where the improvement matters
 
 ## Reporting Bugs
 
