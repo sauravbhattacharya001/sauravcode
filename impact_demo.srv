@@ -1,0 +1,70 @@
+# sauravimpact demo — Change Impact Analysis
+#
+# Run:  python sauravimpact.py impact_demo.srv --function process_data
+# HTML: python sauravimpact.py impact_demo.srv --html impact_report.html
+# All:  python sauravimpact.py impact_demo.srv --hotspots
+
+# ── Core data pipeline ───────────────────────────────────────────────
+
+function fetch_data(source)
+    raw = read(source)
+    validated = validate_input(raw)
+    return validated
+
+function validate_input(data)
+    if data == ""
+        throw("Empty input")
+    cleaned = trim(data)
+    return cleaned
+
+function process_data(input)
+    data = fetch_data(input)
+    transformed = transform(data)
+    result = aggregate(transformed)
+    notify_complete(result)
+    return result
+
+function transform(data)
+    normalized = normalize(data)
+    enriched = enrich(normalized)
+    return enriched
+
+function normalize(data)
+    return lower(data)
+
+function enrich(data)
+    metadata = lookup_metadata(data)
+    return data + " [" + metadata + "]"
+
+function lookup_metadata(key)
+    return "meta:" + key
+
+function aggregate(items)
+    total = 0
+    count = len(items)
+    return total + count
+
+# ── Notification system ──────────────────────────────────────────────
+
+function notify_complete(result)
+    msg = format_message(result)
+    send_alert(msg)
+    log_event("complete", msg)
+
+function format_message(data)
+    return "Result: " + str(data)
+
+function send_alert(message)
+    print("[ALERT] " + message)
+
+function log_event(level, message)
+    print("[" + level + "] " + message)
+
+# ── Standalone utility (low impact) ─────────────────────────────────
+
+function calculate_hash(input)
+    h = 0
+    return h
+
+function generate_id()
+    return "id_" + str(random())
