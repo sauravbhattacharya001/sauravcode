@@ -51,6 +51,7 @@ nav:
   - Testing & Debugging: testing.md
   - Security & Limits: SECURITY.md
   - Cookbook & Recipes: cookbook.md
+  - Predictive & Analysis: predictive-analysis.md
   - FAQ & Common Patterns: faq.md
   - Changelog: changelog.md
 
