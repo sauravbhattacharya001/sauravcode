@@ -1,0 +1,119 @@
+# TODO: refactor this mess
+# A demo file showing various technical debt patterns
+
+function long_messy_func a b c d e
+    x = 42
+    y = 42
+    z = 42
+    if a > 0
+        if b > 0
+            if c > 0
+                if d > 0
+                    if e > 0
+                        print "deep nesting alert"
+    # FIXME: hardcoded values everywhere
+    path = "/tmp/data.csv"
+    path2 = "/tmp/data.csv"
+    path3 = "/tmp/data.csv"
+    result = x + y + 100
+    w = 3.14159
+    q = 3.14159
+    r = 3.14159
+    print "processing"
+    print "processing"
+    print "processing"
+    print "step 1"
+    print "step 2"
+    print "step 3"
+    print "step 4"
+    print "step 5"
+    print "step 6"
+    print "step 7"
+    print "step 8"
+    print "step 9"
+    print "step 10"
+    print "step 11"
+    print "step 12"
+    print "step 13"
+    print "step 14"
+    print "step 15"
+    print "step 16"
+    print "step 17"
+    print "step 18"
+    print "step 19"
+    print "step 20"
+    return result
+
+# HACK: this whole function is a workaround
+function another_messy a b c d e
+    x = 42
+    y = 42
+    z = 42
+    if a > 0
+        if b > 0
+            if c > 0
+                if d > 0
+                    if e > 0
+                        print "deep again"
+    path = "/tmp/data.csv"
+    result = x + y + 100
+    w = 3.14159
+    print "processing"
+    print "processing"
+    print "processing"
+    print "step A"
+    print "step B"
+    print "step C"
+    print "step D"
+    print "step E"
+    print "step F"
+    print "step G"
+    print "step H"
+    print "step I"
+    print "step J"
+    print "step K"
+    print "step L"
+    print "step M"
+    print "step N"
+    print "step O"
+    print "step P"
+    print "step Q"
+    print "step R"
+    print "step S"
+    print "step T"
+    return result
+
+function unused_helper
+    return "never called"
+
+function undocumented x
+    return x * 2
+
+function complexLogic x
+    if x == 1
+        print "one"
+    elif x == 2
+        print "two"
+    elif x == 3
+        print "three"
+    elif x == 4
+        print "four"
+    elif x == 5
+        print "five"
+    elif x == 6
+        print "six"
+
+function simple_calc a b
+    return a + b
+
+# A well-documented function
+function documented_func x y
+    # Adds two values together
+    return x + y
+
+function caller_func x
+    result = simple_calc(x, 1)
+    result = undocumented(result)
+    result = documented_func(result, 2)
+    result = complexLogic(result)
+    return result
