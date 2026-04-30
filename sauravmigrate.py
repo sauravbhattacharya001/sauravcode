@@ -91,6 +91,20 @@ class PythonToSrv(ast.NodeVisitor):
         for stmt in stmts:
             self.visit(stmt)
 
+    def _emit_body_as_comments(self, stmts):
+        """Emit body statements as commented-out code for manual migration reference."""
+        saved_output = self.output
+        saved_indent = self.indent
+        self.output = []
+        self.indent = 0
+        for stmt in stmts:
+            self.visit(stmt)
+        body_lines = self.output
+        self.output = saved_output
+        self.indent = saved_indent
+        for line in body_lines:
+            self.emit(f"# {line}" if line.strip() else "#")
+
     # ── Comments (via source lines) ──
 
     def _emit_leading_comments(self, node):
@@ -227,8 +241,28 @@ class PythonToSrv(ast.NodeVisitor):
             elif len(args) == 2:
                 self.emit(f"for {target} {self._expr(args[0])} {self._expr(args[1])}")
             elif len(args) == 3:
-                self.warnings.add(node.lineno, "range() step argument not supported, using 2-arg form")
-                self.emit(f"for {target} {self._expr(args[0])} {self._expr(args[1])}")
+                # Step argument not supported in sauravcode for-loops.
+                # Emit a TODO requiring manual conversion instead of
+                # silently producing semantically wrong code (see #125).
+                step_expr = self._expr(args[2])
+                start_expr = self._expr(args[0])
+                end_expr = self._expr(args[1])
+                self.warnings.add(
+                    node.lineno,
+                    f"range({start_expr}, {end_expr}, {step_expr}) uses step — "
+                    "requires manual migration (emitted as TODO comment)"
+                )
+                self.emit(f"# TODO: MANUAL MIGRATION REQUIRED — range({start_expr}, {end_expr}, {step_expr}) uses step={step_expr}")
+                self.emit(f"# Sauravcode for-loops do not support a step argument.")
+                self.emit(f"# Original Python: for {target} in range({start_expr}, {end_expr}, {step_expr}):")
+                self.emit(f"# Option: rewrite as a while loop with manual increment/decrement.")
+                # Emit the loop body as commented-out code for reference
+                self.indent += 1
+                self._emit_body_as_comments(node.body)
+                self.indent -= 1
+                if node.orelse:
+                    self.warnings.add(node.lineno, "for/else not supported, else branch skipped")
+                return
             else:
                 self.emit(f"for {target} in {self._expr(node.iter)}")
         else:
