@@ -1,0 +1,46 @@
+# fossil_demo.srv — Demonstrates sauravfossil code archaeology analysis
+# Run: python sauravfossil.py fossil_demo.srv --layers --excavate
+
+# A function that IS called (should NOT be flagged)
+function greet(name)
+    result = "Hello, " + name
+    return result
+
+# A dead function (never called anywhere)
+function old_logger(msg)
+    prefix = "[LOG] "
+    output = prefix + msg
+    return output
+
+# Another dead function that calls old_logger (fossil dependency)
+function deprecated_debug(data)
+    formatted = str(data)
+    old_logger(formatted)
+    return formatted
+
+# Vestigial branch — always true
+function check_status(x)
+    if true:
+        return "active"
+    return "inactive"
+
+# Unreachable code after return
+function compute(a, b)
+    total = a + b
+    return total
+    leftover = total * 2
+    print(leftover)
+
+# Orphaned variable (assigned but never read)
+function process_data(items)
+    unused_count = 0
+    for item in items:
+        greet(item)
+    return items
+
+# Main entry point
+function main()
+    greet("World")
+    check_status(1)
+    compute(3, 4)
+    process_data(["Alice", "Bob"])
