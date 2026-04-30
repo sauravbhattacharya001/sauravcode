@@ -310,14 +310,15 @@ def _parse_file(filepath: str) -> FileAnalysis:
 
         # Recursive base case detection
         if func.calls_self:
-            for bl in func.body_lines:
+            n_body = len(func.body_lines)
+            for idx, bl in enumerate(func.body_lines):
                 stripped_bl = _strip_comment(bl).strip()
                 first = stripped_bl.split()[0] if stripped_bl.split() else ""
                 if first == "if" and RETURN_RE.match(
                         _strip_comment(func.body_lines[
-                            min(func.body_lines.index(bl) + 1,
-                                len(func.body_lines) - 1)]).strip()
-                        if func.body_lines.index(bl) + 1 < len(func.body_lines)
+                            min(idx + 1,
+                                n_body - 1)]).strip()
+                        if idx + 1 < n_body
                         else ""):
                     func.has_base_guard = True
                     break
@@ -753,10 +754,21 @@ def _format_text(analyses: List[FileAnalysis], score: int, recommendations: List
     lines.append("")
 
     if summary_only:
-        total = sum(len(a.diagnoses) for a in analyses)
-        crit = sum(1 for a in analyses for d in a.diagnoses if d.severity == Severity.CRITICAL)
-        warn = sum(1 for a in analyses for d in a.diagnoses if d.severity == Severity.WARNING)
-        info = sum(1 for a in analyses for d in a.diagnoses if d.severity == Severity.INFO)
+        # Single pass: count total and per-severity in one traversal
+        # instead of 4 separate generator passes over analyses × diagnoses
+        total = 0
+        crit = 0
+        warn = 0
+        info = 0
+        for a in analyses:
+            for d in a.diagnoses:
+                total += 1
+                if d.severity == Severity.CRITICAL:
+                    crit += 1
+                elif d.severity == Severity.WARNING:
+                    warn += 1
+                elif d.severity == Severity.INFO:
+                    info += 1
         lines.append(f"  Files analyzed: {len(analyses)}")
         lines.append(f"  Total findings: {total} ({c.red(f'{crit} critical')}, "
                      f"{c.yellow(f'{warn} warnings')}, {info} info)")
@@ -820,9 +832,17 @@ def _generate_html(analyses: List[FileAnalysis], score: int, recommendations: Li
     """Generate an interactive HTML health report."""
     grade = _health_grade(score)
     all_diags = [d for a in analyses for d in a.diagnoses]
-    crit = sum(1 for d in all_diags if d.severity == Severity.CRITICAL)
-    warn = sum(1 for d in all_diags if d.severity == Severity.WARNING)
-    info = sum(1 for d in all_diags if d.severity == Severity.INFO)
+    # Single-pass severity count instead of 3 separate passes
+    crit = 0
+    warn = 0
+    info = 0
+    for d in all_diags:
+        if d.severity == Severity.CRITICAL:
+            crit += 1
+        elif d.severity == Severity.WARNING:
+            warn += 1
+        elif d.severity == Severity.INFO:
+            info += 1
 
     # Count by code
     code_counts = Counter(d.code for d in all_diags)
