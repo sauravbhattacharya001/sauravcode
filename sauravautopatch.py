@@ -183,10 +183,11 @@ def _extract_functions(lines: List[str]) -> List[Dict[str, Any]]:
 
 # ── Detection Engine P001: Uninitialized Variable Use ─────────────────
 
-def _detect_uninitialized(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_uninitialized(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect variables used before assignment."""
     issues = []
-    functions = _extract_functions(lines)
+    if functions is None:
+        functions = _extract_functions(lines)
     for func in functions:
         assigned: Set[str] = set(func["params"])
         for i in range(func["body_start"], func["body_end"]):
@@ -233,10 +234,11 @@ def _detect_uninitialized(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P002: Dead Code Eliminator ───────────────────────
 
-def _detect_dead_code(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_dead_code(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect unreachable code after return/break statements."""
     issues = []
-    functions = _extract_functions(lines)
+    if functions is None:
+        functions = _extract_functions(lines)
     for func in functions:
         i = func["body_start"]
         while i < func["body_end"] - 1:
@@ -267,7 +269,7 @@ def _detect_dead_code(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P003: Infinite Loop Guard ────────────────────────
 
-def _detect_infinite_loops(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_infinite_loops(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect loops that may not terminate."""
     issues = []
     for i, line in enumerate(lines):
@@ -304,10 +306,11 @@ def _detect_infinite_loops(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P004: Unused Parameter Cleanup ───────────────────
 
-def _detect_unused_params(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_unused_params(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect function parameters that are never used in the body."""
     issues = []
-    functions = _extract_functions(lines)
+    if functions is None:
+        functions = _extract_functions(lines)
     for func in functions:
         if not func["params"]:
             continue
@@ -327,10 +330,11 @@ def _detect_unused_params(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P005: Missing Return Path ────────────────────────
 
-def _detect_missing_return(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_missing_return(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect functions with inconsistent return paths."""
     issues = []
-    functions = _extract_functions(lines)
+    if functions is None:
+        functions = _extract_functions(lines)
     for func in functions:
         body_lines = lines[func["body_start"]:func["body_end"]]
         has_return_value = False
@@ -371,7 +375,7 @@ def _detect_missing_return(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P006: Duplicate Branch Detector ──────────────────
 
-def _detect_duplicate_branches(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_duplicate_branches(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect if/else blocks with identical bodies."""
     issues = []
     i = 0
@@ -415,7 +419,7 @@ def _detect_duplicate_branches(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P007: Off-by-One Guard ───────────────────────────
 
-def _detect_off_by_one(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_off_by_one(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect common off-by-one patterns in loops."""
     issues = []
     for i, line in enumerate(lines):
@@ -444,10 +448,11 @@ def _detect_off_by_one(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P008: Resource Leak Patcher ──────────────────────
 
-def _detect_resource_leaks(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_resource_leaks(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect open/acquire without corresponding close/release."""
     issues = []
-    functions = _extract_functions(lines)
+    if functions is None:
+        functions = _extract_functions(lines)
     for func in functions:
         opens = []
         closes = []
@@ -470,7 +475,7 @@ def _detect_resource_leaks(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P009: Type Coercion Fixer ────────────────────────
 
-def _detect_type_coercion(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_type_coercion(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect implicit type coercion in comparisons."""
     issues = []
     for i, line in enumerate(lines):
@@ -498,7 +503,7 @@ def _detect_type_coercion(lines: List[str], filepath: str) -> List[Issue]:
 
 # ── Detection Engine P010: Idempotency Enforcer ──────────────────────
 
-def _detect_non_idempotent(lines: List[str], filepath: str) -> List[Issue]:
+def _detect_non_idempotent(lines: List[str], filepath: str, functions: Optional[List[Dict[str, Any]]] = None) -> List[Issue]:
     """Detect non-idempotent operations inside retry/loop patterns."""
     issues = []
     i = 0
@@ -692,8 +697,10 @@ def scan_file(filepath: str) -> HealReport:
         return HealReport(file=filepath)
 
     report = HealReport(file=filepath)
+    # Pre-compute function list once (used by 5 of 10 detectors)
+    functions = _extract_functions(lines)
     for detector in ALL_DETECTORS:
-        issues = detector(lines, filepath)
+        issues = detector(lines, filepath, functions=functions)
         report.issues.extend(issues)
 
     report.issues_found = len(report.issues)
