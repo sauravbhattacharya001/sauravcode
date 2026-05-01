@@ -2,6 +2,17 @@
 
 All notable changes to sauravcode will be documented in this file.
 
+## [7.9.0] - 2026-04-30
+
+### New Tools
+- **sauravclone** — Autonomous code clone detector with AST-based structural comparison, DRY scoring (0–100), Type 1/2/3 clone classification, and refactoring suggestions
+- **sauravfossil** — Code fossil record analyzer with 8 detection engines for dead functions, orphaned variables, vestigial branches, unreachable code, and evolutionary layer dating
+- **sauravautopatch** — Self-healing engine with 10 bug detectors and 4 autonomy levels (scan → suggest → heal → heal-all) for autonomous patch generation and application
+
+### Documentation
+- Added `docs/autonomous-engineering.md` — comprehensive documentation for sauravclone, sauravfossil, and sauravautopatch with usage examples, engine references, and CI integration guide
+- Updated site navigation with new Autonomous Engineering section
+
 ## [2.0.0] - 2026-02-14
 
 ### Compiler (sauravcc v2)
