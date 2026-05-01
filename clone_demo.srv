@@ -1,0 +1,54 @@
+# clone_demo.srv - Demonstrates sauravclone code clone detection
+# Run: python sauravclone.py clone_demo.srv
+
+# --- These three functions are structurally identical (renamed clones) ---
+
+function compute_tax income
+    rate = 0.3
+    result = income * rate
+    return result
+
+function compute_bonus salary
+    rate = 0.1
+    result = salary * rate
+    return result
+
+function compute_discount price
+    rate = 0.2
+    result = price * rate
+    return result
+
+# --- These are exact clones (copy-paste) ---
+
+function validate_name input
+    if input == ""
+        return false
+    if len(input) > 100
+        return false
+    return true
+
+function validate_email input
+    if input == ""
+        return false
+    if len(input) > 100
+        return false
+    return true
+
+# --- A unique function (no clone) ---
+
+function fibonacci n
+    if n <= 1
+        return n
+    a = 0
+    b = 1
+    for i in range(n - 1)
+        temp = b
+        b = a + b
+        a = temp
+    return b
+
+# Usage:
+# python sauravclone.py clone_demo.srv
+# python sauravclone.py clone_demo.srv --json
+# python sauravclone.py clone_demo.srv --html clone_report.html
+# python sauravclone.py clone_demo.srv --dry-score
