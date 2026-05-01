@@ -99,6 +99,14 @@ class ProjectForecast:
 
 # ── Code Analysis Engine ──────────────────────────────────────────────
 
+# Pre-compiled regexes — avoid per-line re.compile overhead
+_RE_FUNC = re.compile(r'^(?:func|function|fn)\s+(\w+)')
+_RE_BRANCH = re.compile(r'^(?:if|for|while|foreach|try|switch)\b')
+_RE_MAGIC = re.compile(r'(?<!["\w])(\d{2,})(?!["\w])')
+_BLOCK_END = frozenset(('}', 'end', 'endif', 'endfor', 'endwhile'))
+_MAGIC_IGNORE = frozenset(('100', '10', '0', '00', '1000'))
+_RISKY_KEYWORDS = ('open(', 'read(', 'write(', 'http', 'fetch(', 'parse(')
+
 def read_file(path: str) -> str:
     for enc in ('utf-8', 'latin-1'):
         try:
@@ -108,56 +116,63 @@ def read_file(path: str) -> str:
             continue
     return ""
 
-def analyze_complexity(source: str) -> Tuple[int, int, int, int, float]:
-    """Analyze .srv source: returns (lines, code_lines, functions, max_nesting, complexity)."""
+def _analyze_source(source: str, path: str):
+    """Single-pass analysis: returns (total, code_lines, functions, max_nesting, complexity, smells).
+
+    Combines the work of analyze_complexity + detect_smells into one iteration
+    over the source lines, eliminating 4+ redundant passes.
+    """
     lines = source.split('\n')
     total = len(lines)
+    smells: List[SmellReport] = []
+
+    # Long file smell
+    if total > 300:
+        smells.append(SmellReport("long-file", min(1.0, total / 600),
+                                  path, f"File has {total} lines (>300)"))
+
+    # Single-pass accumulators
     code_lines = 0
     functions = 0
     max_nesting = 0
     current_nesting = 0
     branch_count = 0
 
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('//') or stripped.startswith('#'):
-            continue
-        code_lines += 1
-
-        # Count functions
-        if re.match(r'^(func|function|fn)\s+\w+', stripped):
-            functions += 1
-
-        # Track nesting
-        if re.match(r'^(if|for|while|foreach|try|switch)\b', stripped):
-            current_nesting += 1
-            branch_count += 1
-            max_nesting = max(max_nesting, current_nesting)
-        if stripped in ('}', 'end', 'endif', 'endfor', 'endwhile'):
-            current_nesting = max(0, current_nesting - 1)
-
-    # Cyclomatic complexity approximation
-    complexity = 1.0 + branch_count + (max_nesting * 0.5)
-    return total, code_lines, functions, max_nesting, complexity
-
-def detect_smells(source: str, path: str) -> List[SmellReport]:
-    """Detect code smells in .srv source."""
-    smells = []
-    lines = source.split('\n')
-
-    # Long file
-    if len(lines) > 300:
-        smells.append(SmellReport("long-file", min(1.0, len(lines) / 600),
-                                  path, f"File has {len(lines)} lines (>300)"))
-
-    # Long functions
+    # Smell accumulators
     in_func = False
     func_start = 0
     func_name = ""
     func_lines = 0
+    deep_nesting_found = False
+    magic = set()
+    has_try = False
+    commented_code = 0
+
+    # Duplicate detection: use integer hashes of stripped 4-line windows
+    # to avoid storing full block strings in a Counter
+    stripped_lines = []  # collect stripped non-empty lines for block hashing
+
     for i, line in enumerate(lines):
         stripped = line.strip()
-        m = re.match(r'^(?:func|function|fn)\s+(\w+)', stripped)
+
+        # Collect for duplicate detection
+        if stripped:
+            stripped_lines.append((i, stripped))
+
+        # Skip blank/comment for code metrics
+        is_comment = stripped.startswith('//') or stripped.startswith('#')
+        if not stripped or is_comment:
+            # Check for commented-out code
+            if is_comment and any(kw in stripped for kw in ('=', '(', 'if ', 'for ', 'func ', 'var ', 'let ')):
+                commented_code += 1
+            if in_func:
+                func_lines += 1
+            continue
+
+        code_lines += 1
+
+        # Function detection
+        m = _RE_FUNC.match(stripped)
         if m:
             if in_func and func_lines > 50:
                 smells.append(SmellReport("long-function", min(1.0, func_lines / 100),
@@ -166,76 +181,107 @@ def detect_smells(source: str, path: str) -> List[SmellReport]:
             func_start = i
             func_name = m.group(1)
             func_lines = 0
+            functions += 1
         elif in_func:
             func_lines += 1
+
+        # Nesting / branching
+        if _RE_BRANCH.match(stripped):
+            current_nesting += 1
+            branch_count += 1
+            if current_nesting > max_nesting:
+                max_nesting = current_nesting
+        if stripped in _BLOCK_END:
+            current_nesting = max(0, current_nesting - 1)
+
+        # Deep nesting smell (check indentation, report once)
+        if not deep_nesting_found:
+            indent = len(line) - len(line.lstrip())
+            if indent > 24:
+                smells.append(SmellReport("deep-nesting", min(1.0, indent / 40),
+                                          f"{path}:{i+1}", f"Nesting depth {indent//4} levels"))
+                deep_nesting_found = True
+
+        # Magic numbers (only non-comment code lines)
+        for mm in _RE_MAGIC.finditer(stripped):
+            val = mm.group(1)
+            if val not in _MAGIC_IGNORE:
+                magic.add(val)
+
+        # try detection for error-handling smell
+        if not has_try and 'try' in stripped:
+            has_try = True
+
+    # Finalize trailing function
     if in_func and func_lines > 50:
         smells.append(SmellReport("long-function", min(1.0, func_lines / 100),
                                   f"{path}:{func_start+1}", f"Function '{func_name}' is {func_lines} lines"))
 
-    # Deep nesting
-    for i, line in enumerate(lines):
-        indent = len(line) - len(line.lstrip())
-        if indent > 24:  # ~6 levels
-            smells.append(SmellReport("deep-nesting", min(1.0, indent / 40),
-                                      f"{path}:{i+1}", f"Nesting depth {indent//4} levels"))
-            break  # report once
+    # Duplicate detection using integer hashes of 4-line windows
+    # Only hash non-empty stripped lines for meaningful comparison
+    n_stripped = len(stripped_lines)
+    if n_stripped >= 4:
+        block_hash_counts: Dict[int, int] = defaultdict(int)
+        # Precompute hashes of individual stripped lines
+        line_hashes = [hash(sl[1]) for sl in stripped_lines]
+        for j in range(n_stripped - 3):
+            # Combine 4 consecutive line hashes into a block hash
+            bh = line_hashes[j] ^ (line_hashes[j+1] * 31) ^ (line_hashes[j+2] * 997) ^ (line_hashes[j+3] * 7919)
+            block_hash_counts[bh] += 1
+        dupes = sum(1 for c in block_hash_counts.values() if c > 2)
+        if dupes > 3:
+            smells.append(SmellReport("duplication", min(1.0, dupes / 10),
+                                      path, f"{dupes} repeated code blocks detected"))
 
-    # Duplicate patterns (repeated blocks)
-    block_hashes = Counter()
-    for i in range(len(lines) - 3):
-        block = '\n'.join(l.strip() for l in lines[i:i+4] if l.strip())
-        if len(block) > 20:
-            block_hashes[block] += 1
-    dupes = sum(1 for c in block_hashes.values() if c > 2)
-    if dupes > 3:
-        smells.append(SmellReport("duplication", min(1.0, dupes / 10),
-                                  path, f"{dupes} repeated code blocks detected"))
-
-    # Magic numbers
-    magic = set()
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith('//') or stripped.startswith('#'):
-            continue
-        for m in re.finditer(r'(?<!["\w])(\d{2,})(?!["\w])', stripped):
-            val = m.group(1)
-            if val not in ('100', '10', '0', '00', '1000'):
-                magic.add(val)
+    # Magic numbers smell
     if len(magic) > 5:
         smells.append(SmellReport("magic-numbers", min(1.0, len(magic) / 15),
                                   path, f"{len(magic)} magic numbers found"))
 
     # Missing error handling
-    has_try = any('try' in l for l in lines)
-    has_risky = any(kw in source for kw in ['open(', 'read(', 'write(', 'http', 'fetch(', 'parse('])
-    if has_risky and not has_try:
-        smells.append(SmellReport("no-error-handling", 0.6,
-                                  path, "Risky operations without try/catch"))
+    if not has_try:
+        has_risky = any(kw in source for kw in _RISKY_KEYWORDS)
+        if has_risky:
+            smells.append(SmellReport("no-error-handling", 0.6,
+                                      path, "Risky operations without try/catch"))
 
-    # God function (single function dominates)
-    if func_lines > 0 and len(lines) > 20:
-        ratio = func_lines / len(lines)
+    # God function
+    if func_lines > 0 and total > 20:
+        ratio = func_lines / total
         if ratio > 0.6:
             smells.append(SmellReport("god-function", ratio,
                                       path, f"One function contains {ratio:.0%} of all code"))
 
-    # Commented-out code
-    commented = sum(1 for l in lines if l.strip().startswith('//') and
-                    any(kw in l for kw in ['=', '(', 'if ', 'for ', 'func ', 'var ', 'let ']))
-    if commented > 5:
-        smells.append(SmellReport("commented-code", min(1.0, commented / 15),
-                                  path, f"{commented} lines of commented-out code"))
+    # Commented-out code (already counted in single pass above)
+    if commented_code > 5:
+        smells.append(SmellReport("commented-code", min(1.0, commented_code / 15),
+                                  path, f"{commented_code} lines of commented-out code"))
 
+    complexity = 1.0 + branch_count + (max_nesting * 0.5)
+    return total, code_lines, functions, max_nesting, complexity, smells
+
+
+# Legacy wrappers kept for backward compatibility with tests
+def analyze_complexity(source: str) -> Tuple[int, int, int, int, float]:
+    """Analyze .srv source: returns (lines, code_lines, functions, max_nesting, complexity)."""
+    total, code_lines, functions, max_nesting, complexity, _ = _analyze_source(source, "")
+    return total, code_lines, functions, max_nesting, complexity
+
+def detect_smells(source: str, path: str) -> List[SmellReport]:
+    """Detect code smells in .srv source."""
+    _, _, _, _, _, smells = _analyze_source(source, path)
     return smells
 
-def analyze_coupling(source: str, all_files: List[str]) -> float:
-    """Measure how coupled a file is to others (import/reference analysis)."""
+
+def analyze_coupling(source: str, all_files: List[str], _basename_set: Optional[set] = None) -> float:
+    """Measure how coupled a file is to others (import/reference analysis).
+
+    Accepts an optional pre-built _basename_set to avoid O(F) os.path work per call.
+    """
     imports = re.findall(r'import\s+["\']([^"\']+)["\']', source)
-    refs = 0
-    for f in all_files:
-        basename = os.path.splitext(os.path.basename(f))[0]
-        if basename in source:
-            refs += 1
+    if _basename_set is None:
+        _basename_set = {os.path.splitext(os.path.basename(f))[0] for f in all_files}
+    refs = sum(1 for b in _basename_set if b in source)
     return min(1.0, (len(imports) * 0.3 + refs * 0.1))
 
 def compute_fragility(complexity: float, max_nesting: int, smell_density: float, coupling: float) -> float:
@@ -271,15 +317,18 @@ def urgency_label(risk: float) -> str:
 
 # ── Forecast Engine ───────────────────────────────────────────────────
 
-def forecast_file(path: str, all_files: List[str]) -> FileForecast:
-    """Generate maintenance forecast for a single file."""
+def forecast_file(path: str, all_files: List[str], _basename_set: Optional[set] = None) -> FileForecast:
+    """Generate maintenance forecast for a single file.
+
+    Accepts _basename_set to amortize O(F) basename extraction across project.
+    """
     source = read_file(path)
     if not source:
         return FileForecast(path=path)
 
-    total, code_lines, functions, max_nesting, complexity = analyze_complexity(source)
-    smells = detect_smells(source, path)
-    coupling = analyze_coupling(source, all_files)
+    # Single unified pass for complexity + smells
+    total, code_lines, functions, max_nesting, complexity, smells = _analyze_source(source, path)
+    coupling = analyze_coupling(source, all_files, _basename_set)
     smell_density = len(smells) / max(1, code_lines) * 100
     fragility = compute_fragility(complexity, max_nesting, smell_density, coupling)
     risk = compute_risk(fragility, smell_density, code_lines, complexity)
@@ -335,9 +384,12 @@ def forecast_project(directory: str) -> ProjectForecast:
     if not srv_files:
         srv_files = glob.glob(os.path.join(directory, '*.srv'))
 
+    # Pre-compute basename set once — avoids O(F²) path manipulation
+    basename_set = {os.path.splitext(os.path.basename(f))[0] for f in srv_files}
+
     forecasts = []
     for f in sorted(srv_files):
-        fc = forecast_file(f, srv_files)
+        fc = forecast_file(f, srv_files, basename_set)
         if fc.lines > 0:
             forecasts.append(fc)
 
