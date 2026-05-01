@@ -266,6 +266,29 @@ def _collect_all_identifiers(lines: List[str]) -> Set[str]:
     return idents
 
 
+def _collect_calls_and_idents(lines: List[str]) -> Tuple[Set[str], Set[str]]:
+    """Single-pass collection of both function calls and identifiers.
+
+    Replaces calling _collect_all_calls + _collect_all_identifiers separately,
+    which would iterate all lines twice applying regex on each.
+    """
+    calls: Set[str] = set()
+    idents: Set[str] = set()
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        is_func_def = bool(FUNC_DEF_RE.match(stripped))
+        for m in IDENT_RE.finditer(stripped):
+            idents.add(m.group(1))
+        if not is_func_def:
+            for m in CALL_RE.finditer(stripped):
+                callee = m.group(1)
+                if callee not in BUILTIN_FUNCS:
+                    calls.add(callee)
+    return calls, idents
+
+
 # ── Engine F001: Dead Function Detector ──────────────────────────────
 
 def _engine_dead_functions(all_funcs: List[FuncInfo],
@@ -481,17 +504,20 @@ def _engine_redundant_imports(file_lines: Dict[str, List[str]],
 
     for filepath, lines in file_lines.items():
         idents = all_idents.get(filepath, set())
+        # Build full text once per file for substring checks (module names
+        # that aren't valid identifiers or appear as substrings).
+        # Previously this joined all non-import lines per import — O(I×N).
+        full_text = " ".join(lines)
         for i, line in enumerate(lines):
             m = IMPORT_RE.match(line.strip())
             if m:
                 imported_path = m.group(1)
                 # Extract module name from path
                 module_name = os.path.splitext(os.path.basename(imported_path))[0]
-                # Check if any identifier from that import is used
-                # Simple heuristic: if the module name doesn't appear elsewhere
-                non_import_lines = [l for j, l in enumerate(lines) if j != i]
-                non_import_text = " ".join(non_import_lines)
-                if module_name not in non_import_text:
+                # Fast path: check pre-collected identifier set first (O(1)).
+                # Fall back to substring search in full text for non-identifier
+                # module names (rare).
+                if module_name not in idents and module_name not in full_text:
                     fossils.append(Fossil(
                         fossil_id="F005",
                         category="redundant_import",
@@ -722,8 +748,9 @@ class FossilAnalyzer:
             self.file_lines[filepath] = lines
             funcs = _parse_functions(lines, filepath)
             self.all_funcs.extend(funcs)
-            self.all_calls[filepath] = _collect_all_calls(lines)
-            self.all_idents[filepath] = _collect_all_identifiers(lines)
+            calls, idents = _collect_calls_and_idents(lines)
+            self.all_calls[filepath] = calls
+            self.all_idents[filepath] = idents
 
     def analyze(self) -> FossilReport:
         """Run all engines and produce a report."""
