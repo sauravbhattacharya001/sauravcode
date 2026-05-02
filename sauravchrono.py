@@ -16,7 +16,6 @@ Usage:
 """
 
 import argparse
-import copy
 import json
 import os
 import sys
@@ -33,11 +32,7 @@ sys.path.insert(0, _script_dir)
 
 from saurav import (
     tokenize, Parser, Interpreter,
-    FunctionNode, FunctionCallNode, AssignmentNode, PrintNode,
-    ReturnNode, IfNode, WhileNode, ForNode, ForEachNode,
-    TryCatchNode, ThrowNode, MatchNode, ImportNode, BreakNode,
-    ContinueNode, YieldNode, IndexedAssignmentNode, AppendNode,
-    PopNode, EnumNode, AssertNode, ThrowSignal,
+    FunctionCallNode, ThrowSignal,
 )
 
 

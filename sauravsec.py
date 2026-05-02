@@ -37,13 +37,12 @@ import glob
 # Import the sauravcode parser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import (
-    tokenize, Parser, ASTNode, AssignmentNode, FunctionNode,
+    tokenize, Parser, AssignmentNode, FunctionNode,
     FunctionCallNode, WhileNode, ForNode, ForEachNode, IfNode,
-    TryCatchNode, BinaryOpNode, CompareNode, IdentifierNode,
+    TryCatchNode, BinaryOpNode, IdentifierNode,
     StringNode, NumberNode, BoolNode, PrintNode, ReturnNode,
-    IndexNode, IndexedAssignmentNode, ListNode, AppendNode,
-    FStringNode, UnaryOpNode, LogicalNode, ImportNode,
-    ThrowNode, BreakNode, LambdaNode, PipeNode, MapNode,
+    ListNode, AppendNode,
+    FStringNode, BreakNode, MapNode,
 )
 
 # ── Severity levels ──────────────────────────────────────────────

@@ -26,13 +26,11 @@ import sys
 import os
 import re
 import json
-import math
 import time as _time
 import glob
 import hashlib
-from collections import defaultdict, Counter
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import List
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -84,7 +82,7 @@ class ProjectSnapshot:
 # line-counting, function-detection, nesting-tracking, complexity-scoring,
 # and lint-checking logic that was previously inlined here (~60 lines).
 try:
-    from sauravdigest import analyze_file as _digest_analyze, FileMetrics as _DigestFileMetrics
+    from sauravdigest import analyze_file as _digest_analyze
     _HAS_DIGEST = True
 except ImportError:
     _HAS_DIGEST = False

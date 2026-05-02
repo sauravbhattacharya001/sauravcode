@@ -32,13 +32,11 @@ import os
 import re
 import json as _json
 import time as _time
-import copy
 import difflib
 import hashlib
 import glob
-from collections import defaultdict, Counter
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
