@@ -51,6 +51,8 @@ sauravcode/
 
 Beyond the interpreter and compiler, sauravcode includes a rich set of developer tools. Each is a standalone Python module:
 
+#### Core Development Tools
+
 | Module | Purpose |
 |---|---|
 | `sauravlint.py` | Linter — static analysis and style checks |
@@ -58,46 +60,128 @@ Beyond the interpreter and compiler, sauravcode includes a rich set of developer
 | `sauravtest.py` | Test runner for `.srv` test files |
 | `sauravdbg.py` | Interactive debugger |
 | `sauravprof.py` | Profiler — execution timing |
-| `sauravdoc.py` | Documentation generator |
-| `sauravsec.py` | Security scanner |
-| `sauravfuzz.py` | Fuzzer — random program generation + testing |
 | `sauravrepl.py` | Interactive REPL |
 | `sauravplay.py` | Playground / sandbox |
-| `sauravast.py` | AST visualizer |
-| `sauravapi.py` | REST API server |
-| `sauravhl.py` | Syntax highlighter |
-| `sauravflow.py` | Control flow analyzer |
-| `sauravtype.py` | Type checker |
-| `sauravrefactor.py` | Automated refactoring |
-| `sauravquery.py` | Code search / query tool |
 | `sauravwatch.py` | File watcher — auto-run on save |
-| `sauravbench.py` | Benchmarking suite |
-| `sauravcov.py` | Coverage analysis |
+| `sauravtype.py` | Type checker |
+| `sauravpipe.py` | Pipeline runner — chain `.srv` scripts |
+
+#### Code Intelligence & Analysis
+
+| Module | Purpose |
+|---|---|
+| `sauravast.py` | AST visualizer |
+| `sauravflow.py` | Control flow analyzer |
+| `sauravcomplex.py` | Complexity analysis |
 | `sauravmetrics.py` | Code metrics (complexity, etc.) |
 | `sauravdeps.py` | Dependency analyzer |
-| `sauravdiff.py` | AST-level diff tool |
-| `sauravsnap.py` | Snapshot testing |
-| `sauravsnippet.py` | Snippet manager |
 | `sauravstats.py` | Codebase statistics |
+| `sauravquery.py` | Code search / query tool |
+| `sauravdiff.py` | AST-level diff tool |
 | `sauravtodo.py` | TODO/FIXME tracker |
 | `sauravtrace.py` | Execution tracer |
-| `sauravmigrate.py` | Version migration tool |
+| `sauravmap.py` | Autonomous codebase cartographer — structural visualization |
+| `sauravimpact.py` | Autonomous change impact analyzer |
+| `sauravintent.py` | Autonomous intent inference engine — infers purpose from code |
+| `sauravclone.py` | Autonomous code clone detector — DRY score + refactoring suggestions |
+| `sauravdebt.py` | Autonomous technical debt tracker |
+| `sauravdigest.py` | Autonomous codebase health digest — project-wide metrics snapshot |
+| `sauravforecast.py` | Autonomous maintenance forecaster — predicts which files need work |
+| `sauravsentinel.py` | Autonomous project health sentinel — historical trend monitoring |
+
+#### Code Transformation & Optimization
+
+| Module | Purpose |
+|---|---|
+| `sauravrefactor.py` | Automated refactoring |
 | `sauravmin.py` | Minifier |
 | `sauravobf.py` | Obfuscator |
-| `sauravver.py` | Version manager |
 | `sauravgen.py` | Code generator |
+| `sauravtranspile.py` | Transpiler to other languages |
+| `sauravoptimize.py` | Autonomous code optimizer |
+| `sauravadapt.py` | Autonomous adaptive optimizer — dead code elimination, constant folding |
+| `sauravalchemy.py` | Code transmutation engine — cross-paradigm transformation |
+| `sauravagent.py` | Autonomous code transformation agent — NL goal → code edits |
+| `sauravevolve.py` | Genetic programming engine — evolve `.srv` programs |
+
+#### Testing & Quality
+
+| Module | Purpose |
+|---|---|
+| `sauravfuzz.py` | Fuzzer — random program generation + testing |
+| `sauravsnap.py` | Snapshot testing |
+| `sauravcov.py` | Coverage analysis |
+| `sauravmutant.py` | Autonomous mutation testing engine |
+| `sauravprophet.py` | Autonomous test case generator |
+| `sauravoracle.py` | Autonomous test oracle — property-based spec inference |
+| `sauravcontract.py` | Design-by-contract verifier |
+| `sauravbench.py` | Benchmarking suite |
+
+#### Security & Reliability
+
+| Module | Purpose |
+|---|---|
+| `sauravsec.py` | Security scanner |
+| `sauravguard.py` | Autonomous runtime guardian |
+| `sauravheal.py` | Autonomous self-healing runtime |
+| `sauravautopatch.py` | Autonomous self-healing engine — detect + patch issues |
+| `sauravdiagnose.py` | Autonomous runtime error diagnosis engine |
+| `sauravdoctor.py` | Autonomous code health diagnostic tool |
+| `sauravbounty.py` | Autonomous bug bounty hunter |
+
+#### Documentation & Sharing
+
+| Module | Purpose |
+|---|---|
+| `sauravdoc.py` | Documentation generator |
+| `sauravhl.py` | Syntax highlighter |
 | `sauravexplain.py` | Code explainer (educational) |
+| `sauravsnippet.py` | Snippet manager |
+| `sauravshare.py` | Export `.srv` as shareable self-contained HTML pages |
+| `sauravtext.py` | Shared text-processing utilities for tooling |
+
+#### Learning & Challenges
+
+| Module | Purpose |
+|---|---|
 | `sauravlearn.py` | Interactive tutorials |
+| `sauravtutorial.py` | Step-by-step interactive tutorial |
+| `sauravchallenge.py` | Coding challenges |
+| `sauravkata.py` | Coding kata exercises |
+| `sauravquest.py` | RPG-style coding quest system |
+| `sauravgolf.py` | Code golf challenges |
+| `sauravduel.py` | Competitive code duel arena |
+| `sauravmentor.py` | Autonomous code review mentor |
+
+#### Infrastructure & Packaging
+
+| Module | Purpose |
+|---|---|
+| `sauravapi.py` | REST API server |
 | `sauravci.py` | CI helper utilities |
 | `sauravdb.py` | Database integration |
 | `sauravembed.py` | Embedding / integration tools |
-| `sauravcomplex.py` | Complexity analysis |
 | `sauravscaffold.py` | Project scaffolding |
 | `sauravpkg.py` | Package manager |
 | `sauravbundle.py` | Bundler |
-| `sauravchallenge.py` | Coding challenges |
 | `sauravnb.py` | Notebook support (`.srvnb`) |
-| `sauravtranspile.py` | Transpiler to other languages |
+| `sauravmigrate.py` | Version migration tool |
+| `sauravver.py` | Version manager |
+
+#### Specialized Tools
+
+| Module | Purpose |
+|---|---|
+| `sauravregex.py` | Interactive regex tester & debugger |
+| `sauravmatrix.py` | Interactive matrix calculator & linear algebra toolkit |
+| `sauravcipher.py` | Interactive cipher workbench |
+| `sauravautomata.py` | Interactive cellular automata simulator |
+| `sauravcanvas.py` | Turtle graphics for sauravcode |
+| `sauravplot.py` | ASCII data plotting |
+| `sauravchrono.py` | Time-travel execution recorder & anomaly detector |
+| `sauravfossil.py` | Autonomous code fossil record analyzer |
+| `sauravcheat.py` | Terminal cheat sheet for the sauravcode language |
+| `sauravreflex.py` | Autonomous reactive programming engine |
 
 When contributing to any tool module, look at related test files (`test_saurav*.py`) and follow existing patterns.
 
