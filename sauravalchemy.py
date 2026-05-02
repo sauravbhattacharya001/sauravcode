@@ -982,7 +982,7 @@ def watch_loop(target, html_path, interval=2.0):
         try:
             if os.path.isfile(target):
                 with open(target, 'rb') as f:
-                    current_hash = hashlib.md5(f.read()).hexdigest()
+                    current_hash = hashlib.sha256(f.read()).hexdigest()
                 if current_hash != last_hash:
                     last_hash = current_hash
                     result = analyze_file(target)
@@ -995,7 +995,7 @@ def watch_loop(target, html_path, interval=2.0):
                     open(os.path.join(target, f), 'rb').read().hex()
                     for f in os.listdir(target) if f.endswith('.srv')
                 )
-                current_hash = hashlib.md5(content.encode()).hexdigest()
+                current_hash = hashlib.sha256(content.encode()).hexdigest()
                 if current_hash != last_hash:
                     last_hash = current_hash
                     summary = aggregate_results(results)

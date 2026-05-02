@@ -102,15 +102,36 @@ class ConstantFoldPass:
     _CONST_CHAIN = re.compile(
         r'\blet\s+(\w+)\s*=\s*(-?\d+(?:\.\d+)?(?:\s*[+\-*/]\s*-?\d+(?:\.\d+)?)+)\s*$')
 
+    # Maximum allowed magnitude for constant-folded results; prevents
+    # DoS via expressions like 9**9**9 that produce enormous integers.
+    _MAX_MAGNITUDE = 1e15
+
     def _safe_eval(self, expr):
-        """Evaluate a simple arithmetic expression safely."""
+        """Evaluate a simple arithmetic expression safely.
+
+        Uses ``ast.literal_eval`` for single literals and a restricted
+        ``compile`` / ``eval`` with an empty namespace for compound
+        expressions.  The regex guard rejects alphabetic characters and
+        the ``**`` (exponentiation) operator to prevent CPU-bound
+        computation.  Results exceeding ``_MAX_MAGNITUDE`` are discarded.
+        """
+        import ast
         try:
-            # Only allow digits, operators, dots, spaces, parens
-            if re.match(r'^[\d\s+\-*/.()]+$', expr):
-                result = eval(expr)  # safe: validated input
-                if isinstance(result, float) and result == int(result):
-                    return str(int(result))
-                return str(result)
+            # Only allow digits, basic operators (+,-,*,/), dots, spaces, parens.
+            # Reject '**' (exponentiation) to prevent DoS via huge powers.
+            if not re.match(r'^[\d\s+\-*/.()]+$', expr):
+                return None
+            if '**' in expr:
+                return None
+            # Compile with restricted builtins — no access to names/modules.
+            code = compile(expr, '<const-fold>', 'eval')
+            result = eval(code, {"__builtins__": {}}, {})
+            # Guard against very large results that could exhaust memory.
+            if isinstance(result, (int, float)) and abs(result) > self._MAX_MAGNITUDE:
+                return None
+            if isinstance(result, float) and result == int(result):
+                return str(int(result))
+            return str(result)
         except Exception:
             pass
         return None
@@ -678,7 +699,7 @@ def main():
         try:
             while True:
                 with open(args.file, 'rb') as fh:
-                    h = hashlib.md5(fh.read()).hexdigest()
+                    h = hashlib.sha256(fh.read()).hexdigest()
                 if h != last_hash:
                     last_hash = h
                     os.system('cls' if os.name == 'nt' else 'clear')
