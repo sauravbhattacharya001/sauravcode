@@ -1,0 +1,67 @@
+# Pulse Demo — showcase different health patterns
+
+# A well-documented, well-guarded function
+function healthy_function x y
+    # Well-documented function with error handling
+    if x < 0
+        throw "x must be non-negative"
+    end
+    result = x + y
+    return result
+end
+
+# A deeply nested complexity beast
+function complex_beast a b c d e
+    if a > 0
+        if b > 0
+            if c > 0
+                for i in range(d)
+                    if e > i
+                        val = compute(a, b, c)
+                    end
+                end
+            end
+        end
+    end
+end
+
+# Risky operations without error handling
+function untested_helper
+    data = read_file("config.txt")
+    parsed = parse_json(data)
+    return parsed
+end
+
+# Well-guarded with input validation
+function well_guarded input
+    assert input != null
+    if len(input) == 0
+        throw "empty input"
+    end
+    if len(input) > 1000
+        throw "input too large"
+    end
+    return process(input)
+end
+
+# Risky but with error handling
+function safe_reader path
+    assert path != null
+    try
+        data = read_file(path)
+    catch err
+        println "Read failed: " + err
+        return null
+    end
+    return data
+end
+
+# Tiny utility — good rhythm
+function double x
+    return x * 2
+end
+
+# Another small utility
+function triple x
+    return x * 3
+end
