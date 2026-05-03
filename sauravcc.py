@@ -2526,7 +2526,18 @@ def main():
     if args.verbose:
         print(f"[sauravcc] Running: {' '.join(compile_cmd)}")
 
-    result = subprocess.run(compile_cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(compile_cmd, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        print("Compilation timed out (60s limit). The source may be too complex.")
+        sys.exit(124)
+    finally:
+        if not args.keep_c:
+            try:
+                os.remove(c_file)
+            except OSError:
+                pass
+
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         sys.exit(1)
@@ -2534,13 +2545,14 @@ def main():
     if args.verbose:
         print(f"[sauravcc] Built {out_name}")
 
-    if not args.keep_c:
-        os.remove(c_file)
-
     if args.verbose:
         print(f"[sauravcc] Running {out_name}...\n")
 
-    run_result = subprocess.run([os.path.abspath(out_name)], capture_output=False)
+    try:
+        run_result = subprocess.run([os.path.abspath(out_name)], capture_output=False, timeout=300)
+    except subprocess.TimeoutExpired:
+        print("Execution timed out (300s limit). Possible infinite loop.")
+        sys.exit(124)
     sys.exit(run_result.returncode)
 
 
