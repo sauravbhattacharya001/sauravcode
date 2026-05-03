@@ -63,6 +63,11 @@ IDENT_RE = re.compile(r"\b([a-zA-Z_]\w*)\b")
 
 @dataclass
 class FunctionInfo:
+    """Metadata for a single function parsed from a .srv module.
+
+    Tracks variable reads/writes and outgoing calls for cohesion analysis.
+    """
+
     name: str
     start_line: int
     end_line: int
@@ -72,6 +77,8 @@ class FunctionInfo:
 
 @dataclass
 class ModuleInfo:
+    """Aggregated info for one .srv module — imports, functions, and line counts."""
+
     path: str
     name: str
     imports: List[str] = field(default_factory=list)
@@ -81,6 +88,12 @@ class ModuleInfo:
 
 @dataclass
 class CouplingResult:
+    """Afferent/efferent coupling and instability metric for a module.
+
+    Instability = Ce / (Ca + Ce); ranges from 0 (maximally stable) to
+    1 (maximally unstable).
+    """
+
     module: str
     afferent: int = 0   # incoming dependencies (Ca)
     efferent: int = 0   # outgoing dependencies (Ce)
@@ -88,6 +101,12 @@ class CouplingResult:
 
 @dataclass
 class CohesionResult:
+    """LCOM4-style cohesion result for a module.
+
+    ``connected_components`` counts disjoint groups of functions sharing
+    variables; ``score`` inverts LCOM4 to a 0–100 readability scale.
+    """
+
     module: str
     functions: int = 0
     connected_components: int = 0
@@ -96,12 +115,16 @@ class CohesionResult:
 
 @dataclass
 class LayerAssignment:
+    """Inferred architectural layer (util/core/app/demo) for a module."""
+
     module: str
     layer: str  # util, core, app, demo
     confidence: float = 0.0
 
 @dataclass
 class AntiPattern:
+    """A detected architectural anti-pattern with severity and remediation advice."""
+
     code: str
     name: str
     severity: str  # critical, warning, info
@@ -111,6 +134,8 @@ class AntiPattern:
 
 @dataclass
 class ArchitectureReport:
+    """Top-level report aggregating all architecture analysis results."""
+
     timestamp: str = ""
     directory: str = ""
     total_modules: int = 0

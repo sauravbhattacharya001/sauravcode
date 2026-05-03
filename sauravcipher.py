@@ -65,30 +65,38 @@ def _map_alpha_keyed(text, key_upper, fn):
 
 
 def caesar_encrypt(text, shift):
+    """Encrypt *text* with a Caesar cipher using the given integer *shift* (0–25)."""
     return _map_alpha(text, lambda idx, _upper: idx + shift)
 
 def caesar_decrypt(text, shift):
+    """Decrypt *text* by reversing a Caesar cipher with the given *shift*."""
     return caesar_encrypt(text, -shift)
 
 def rot13(text):
+    """Apply ROT-13 (Caesar shift of 13, self-inverse) to *text*."""
     return caesar_encrypt(text, 13)
 
 def atbash(text):
+    """Apply the Atbash cipher (A↔Z, B↔Y, …) to *text*.  Self-inverse."""
     return _map_alpha(text, lambda idx, _upper: 25 - idx)
 
 def vigenere_encrypt(text, key):
+    """Encrypt *text* with a Vigenère cipher using the alphabetic *key*."""
     return _map_alpha_keyed(text, key.upper(), lambda idx, shift: idx + shift)
 
 def vigenere_decrypt(text, key):
+    """Decrypt *text* encrypted with a Vigenère cipher using the same *key*."""
     return _map_alpha_keyed(text, key.upper(), lambda idx, shift: idx - shift)
 
 def xor_cipher(text, key):
+    """XOR each character of *text* with cycling *key* chars; return hex string."""
     result = []
     for i, ch in enumerate(text):
         result.append(format(ord(ch) ^ ord(key[i % len(key)]), '02x'))
     return ''.join(result)
 
 def xor_decipher(hex_text, key):
+    """Reverse :func:`xor_cipher` — decode a hex string back to plaintext using *key*."""
     result = []
     for i in range(0, len(hex_text), 2):
         byte = int(hex_text[i:i+2], 16)
@@ -96,6 +104,7 @@ def xor_decipher(hex_text, key):
     return ''.join(result)
 
 def railfence_encrypt(text, rails):
+    """Encrypt *text* with a rail-fence (zigzag) cipher of *rails* rows."""
     if rails < 2:
         return text
     fence = [[] for _ in range(rails)]
@@ -110,6 +119,7 @@ def railfence_encrypt(text, rails):
     return ''.join(''.join(row) for row in fence)
 
 def railfence_decrypt(text, rails):
+    """Decrypt *text* that was encrypted with a *rails*-row rail-fence cipher."""
     if rails < 2:
         return text
     n = len(text)
@@ -140,12 +150,15 @@ MORSE_MAP = {
 MORSE_REV = {v: k for k, v in MORSE_MAP.items()}
 
 def morse_encode(text):
+    """Encode *text* into International Morse Code (space-separated dots/dashes)."""
     return ' '.join(MORSE_MAP.get(ch.upper(), ch) for ch in text)
 
 def morse_decode(text):
+    """Decode a space-separated Morse string back to alphanumeric text."""
     return ''.join(MORSE_REV.get(tok, tok) for tok in text.split(' '))
 
 def substitution_encrypt(text, key_map):
+    """Encrypt *text* using a character-to-character substitution *key_map* dict."""
     return ''.join(key_map.get(ch, ch) for ch in text)
 
 def make_substitution_key(keyword):
@@ -290,6 +303,7 @@ def chain_ciphers(text, steps):
 # -- Display helpers -----------------------------------------------------
 
 def print_frequency_table(text):
+    """Print a formatted letter-frequency table with English comparison and cipher guesses."""
     freq, total = frequency_analysis(text)
     ic = index_of_coincidence(text)
     print(f"\n{'='*60}")
@@ -310,6 +324,7 @@ def print_frequency_table(text):
     print()
 
 def print_crack_results(text, top=5):
+    """Brute-force all 26 Caesar shifts and print the *top* candidates by chi-squared score."""
     results = crack_caesar(text)
     print(f"\n{'='*60}")
     print(f"  Caesar Brute-Force (top {top} candidates)")
@@ -323,6 +338,7 @@ def print_crack_results(text, top=5):
     print()
 
 def print_compare(text):
+    """Encrypt *text* with every registered cipher and print results side by side."""
     print(f"\n{'='*60}")
     print(f"  Cipher Comparison: \"{text}\"")
     print(f"{'='*60}")
@@ -391,6 +407,7 @@ def parse_repl_args(line):
     return args
 
 def repl():
+    """Launch the interactive cipher workbench REPL (read-eval-print loop)."""
     print(REPL_HELP)
     history = []
     while True:
@@ -465,6 +482,7 @@ def repl():
 # -- CLI entry point -----------------------------------------------------
 
 def main():
+    """CLI entry point — parse arguments or fall through to the interactive REPL."""
     parser = argparse.ArgumentParser(
         description='Cipher Workbench — encrypt, decrypt, analyze, crack',
         formatter_class=argparse.RawDescriptionHelpFormatter,
