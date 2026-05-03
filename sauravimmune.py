@@ -98,6 +98,8 @@ MAGIC_NUMBER = re.compile(r'(?<!\w)(\d+\.?\d*)(?!\w)')
 BRANCH_KEYWORDS = {'if', 'elif', 'while', 'for', 'foreach', 'catch', 'and', 'or'}
 RISKY_OPS = {'open', 'read', 'write', 'delete', 'remove', 'http', 'fetch',
              'connect', 'exec', 'eval', 'send', 'recv'}
+RISKY_OPS_RE = re.compile(r'\b(?:' + '|'.join(RISKY_OPS) + r')\b', re.IGNORECASE)
+ASSIGN_RE = re.compile(r'^([a-zA-Z_]\w*)\s*=')
 LOOP_VARS = {'i', 'j', 'k', 'x', 'y', 'n', '_'}
 BUILTINS = {'print', 'len', 'str', 'int', 'float', 'input', 'range', 'type',
             'list', 'dict', 'set', 'abs', 'min', 'max', 'sum', 'append',
@@ -298,7 +300,10 @@ def _scan_pathogens(funcs: List[FuncInfo], all_call_targets: Set[str]) -> List[P
 
         # magic_number: literals other than 0, 1, 2, 10, 100
         safe_numbers = {'0', '1', '2', '10', '100', '0.0', '1.0'}
+        magic_found = False
         for line in fn.body_lines:
+            if magic_found:
+                break
             for m in MAGIC_NUMBER.finditer(line):
                 num_str = m.group(1)
                 if num_str not in safe_numbers and not line.lstrip().startswith('#'):
@@ -308,6 +313,7 @@ def _scan_pathogens(funcs: List[FuncInfo], all_call_targets: Set[str]) -> List[P
                         description=f"Magic number {num_str} in function body",
                         evidence=line.strip()
                     ))
+                    magic_found = True
                     break  # one per function is enough
 
         # deep_nesting: max_depth > 5
@@ -322,8 +328,7 @@ def _scan_pathogens(funcs: List[FuncInfo], all_call_targets: Set[str]) -> List[P
         # missing_error_handling: risky ops without try/catch
         if not fn.has_try_catch:
             for line in fn.body_lines:
-                words = set(re.findall(r'\b\w+\b', line.lower()))
-                if words & RISKY_OPS:
+                if RISKY_OPS_RE.search(line):
                     pathogens.append(Pathogen(
                         id=_next_pathogen_id(), category="missing_error_handling",
                         severity="high", location=fn.fqn,
@@ -343,7 +348,7 @@ def _scan_pathogens(funcs: List[FuncInfo], all_call_targets: Set[str]) -> List[P
 
         # naming_violation: single-char non-loop variable assignments
         for line in fn.body_lines:
-            assign_m = re.match(r'^([a-zA-Z_]\w*)\s*=', line)
+            assign_m = ASSIGN_RE.match(line)
             if assign_m:
                 var_name = assign_m.group(1)
                 if len(var_name) == 1 and var_name not in LOOP_VARS:
@@ -570,8 +575,6 @@ def _detect_autoimmune(funcs: List[FuncInfo]) -> List[AutoimmuneIssue]:
     issues = []
 
     for fn in funcs:
-        body_text = " ".join(fn.body_lines)
-
         # Over-validation: checking same condition multiple times
         conditions = []
         for line in fn.body_lines:
