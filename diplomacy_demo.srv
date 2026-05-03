@@ -1,0 +1,56 @@
+# diplomacy_demo.srv — Demonstrate sauravdiplomacy analysis
+# Run: python sauravdiplomacy.py diplomacy_demo.srv
+
+# This file shows various diplomatic patterns:
+# sovereignty, alliances, treaties, and conflicts
+
+# ── Nation Alpha: A self-contained superpower ────────────────────
+
+function alpha_init()
+  status = "ready"
+  return status
+
+function alpha_compute(x)
+  result = x * 2 + 1
+  return result
+
+function alpha_validate(data)
+  if data
+    return true
+  return false
+
+# ── Nation Beta: Depends on alpha (one-sided treaty) ─────────────
+
+import "import_utils.srv"
+
+function beta_process(input)
+  valid = alpha_validate(input)
+  if valid
+    result = alpha_compute(input)
+    return result
+  return null
+
+function beta_format(value)
+  text = "Result: " + value
+  return text
+
+# ── Nation Gamma: Has naming conflict with alpha ─────────────────
+
+function alpha_validate(x)
+  # Competing implementation with different logic!
+  if x > 0
+    return true
+  return false
+
+function gamma_transform(data)
+  checked = alpha_validate(data)
+  result = data + 1
+  return result
+
+# ── Usage notes ──────────────────────────────────────────────────
+# This demo shows:
+# - Alpha is a superpower (no imports, many functions)
+# - Beta has a one-sided treaty with alpha (imports but isn't imported)
+# - Gamma has a naming conflict (alpha_validate defined in both)
+# - Run: python sauravdiplomacy.py .
+# - Or:  python sauravdiplomacy.py . --html diplomacy_report.html
