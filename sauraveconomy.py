@@ -691,6 +691,217 @@ def score_efficiency(modules: List[ModuleInfo]) -> EfficiencyReport:
 
 # ── E007: Insight Generator ──────────────────────────────────────────
 
+
+@dataclass
+class _InsightContext:
+    """Pre-computed derived values for insight rule evaluation."""
+    top_overworked: str = ""
+    worst_deficit: str = ""
+    top_bottlenecks: str = ""
+    num_modules: int = 0
+
+
+def _build_insight_context(
+    labor: "LaborReport",
+    trade: "TradeReport",
+    supply_chain: "SupplyChainReport",
+    modules: List["ModuleInfo"],
+) -> _InsightContext:
+    """Pre-compute formatted strings needed by insight rules."""
+    ctx = _InsightContext(num_modules=len(modules))
+
+    if labor.overworked:
+        top = sorted(labor.overworked, key=lambda x: x["call_count"], reverse=True)[:3]
+        ctx.top_overworked = ", ".join(
+            f"{o['name']} ({o['call_count']} calls)" for o in top
+        )
+
+    if trade.deficit_modules:
+        worst = sorted(trade.deficit_modules, key=lambda x: x["balance"])[:2]
+        ctx.worst_deficit = ", ".join(
+            f"{w['module']} (balance: {w['balance']:+d})" for w in worst
+        )
+
+    if supply_chain.bottlenecks:
+        top_bn = supply_chain.bottlenecks[:3]
+        ctx.top_bottlenecks = ", ".join(
+            f"{b['variable']} ({b['consumers']} consumers)" for b in top_bn
+        )
+
+    return ctx
+
+
+# Each rule: (condition_fn, type, engine, title, description_fn, policy)
+# condition_fn(gdp, labor, trade, inflation, supply_chain, efficiency, ctx) -> bool
+# description_fn(gdp, labor, trade, inflation, supply_chain, efficiency, ctx) -> str
+_INSIGHT_RULES: List[Tuple] = [
+    # ── E001: GDP ──
+    (
+        lambda g, l, t, i, s, e, c: g.output_input_ratio < 0.3,
+        "warning", "E001", "Low Productive Output",
+        lambda g, l, t, i, s, e, c: (
+            f"Only {g.output_input_ratio:.0%} of functions produce return values. "
+            "Consider refactoring side-effect-heavy functions into pure, "
+            "composable units for better code reuse."
+        ),
+        "Stimulus Package",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: g.gdp_per_capita < 2.0 and g.total_modules > 1,
+        "recommendation", "E001", "Low GDP Per Capita",
+        lambda g, l, t, i, s, e, c: (
+            f"Average {g.gdp_per_capita:.1f} functions per module — "
+            "modules may be too granular.  Consider consolidating "
+            "related modules to boost per-module productivity."
+        ),
+        "Economic Consolidation",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: g.score >= 80,
+        "positive", "E001", "Strong Productive Economy",
+        lambda g, l, t, i, s, e, c: (
+            f"GDP score {g.score:.0f}/100 — the codebase has healthy "
+            "productive output with good function density."
+        ),
+        "Maintain Course",
+    ),
+    # ── E002: Labor Market ──
+    (
+        lambda g, l, t, i, s, e, c: l.unemployment_rate > 0.3,
+        "critical", "E002", "High Unemployment",
+        lambda g, l, t, i, s, e, c: (
+            f"{l.unemployment_rate:.0%} of functions are never called. "
+            f"{l.unemployed} unemployed workers represent dead weight. "
+            "Remove or integrate these functions."
+        ),
+        "Labor Reform",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: l.gini_coefficient > 0.6,
+        "warning", "E002", "Severe Workload Inequality",
+        lambda g, l, t, i, s, e, c: (
+            f"Gini coefficient {l.gini_coefficient:.2f} — a few functions "
+            "handle most of the work while others sit idle.  Redistribute "
+            "responsibilities for better maintainability."
+        ),
+        "Wealth Redistribution",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: bool(l.overworked),
+        "warning", "E002", "Overworked Functions Detected",
+        lambda g, l, t, i, s, e, c: (
+            f"These functions are called excessively: {c.top_overworked}. "
+            "Consider caching results or splitting responsibilities."
+        ),
+        "Worker Protection",
+    ),
+    # ── E003: Trade Balance ──
+    (
+        lambda g, l, t, i, s, e, c: (
+            bool(t.autarkic_modules) and len(t.autarkic_modules) > c.num_modules * 0.7
+        ),
+        "warning", "E003", "Excessive Economic Isolation",
+        lambda g, l, t, i, s, e, c: (
+            f"{len(t.autarkic_modules)} of {c.num_modules} modules have "
+            "zero trade (no imports or exports). This suggests missed "
+            "opportunities for code reuse."
+        ),
+        "Trade Agreement",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: bool(t.deficit_modules),
+        "info", "E003", "Trade Deficit Modules",
+        lambda g, l, t, i, s, e, c: (
+            f"Modules with import deficit: {c.worst_deficit}. "
+            "These consume more than they produce — consider "
+            "extracting reusable utilities."
+        ),
+        "Export Incentive",
+    ),
+    # ── E004: Inflation (mutually exclusive tiers) ──
+    (
+        lambda g, l, t, i, s, e, c: i.cpi > 60,
+        "critical", "E004", "Hyperinflation Warning",
+        lambda g, l, t, i, s, e, c: (
+            f"Code Price Index at {i.cpi:.0f}/100 — complexity is "
+            "spiraling. Function lengths, parameter counts, and nesting "
+            "depth are all above healthy thresholds."
+        ),
+        "Austerity Measures",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: 30 < i.cpi <= 60,
+        "warning", "E004", "Rising Inflation",
+        lambda g, l, t, i, s, e, c: (
+            f"CPI at {i.cpi:.0f}/100 — moderate complexity creep. "
+            "Watch function lengths and nesting depth."
+        ),
+        "Inflation Monitoring",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: i.cpi <= 30,
+        "positive", "E004", "Stable Prices",
+        lambda g, l, t, i, s, e, c: (
+            f"CPI at {i.cpi:.0f}/100 — complexity is well-controlled. "
+            "Functions are lean and parameters are minimal."
+        ),
+        "Price Stability",
+    ),
+    # ── E005: Supply Chain ──
+    (
+        lambda g, l, t, i, s, e, c: bool(s.bottlenecks),
+        "warning", "E005", "Supply Chain Bottlenecks",
+        lambda g, l, t, i, s, e, c: (
+            f"Critical bottleneck variables: {c.top_bottlenecks}. "
+            "If these definitions break, many modules are affected. "
+            "Consider redundant sources or dependency injection."
+        ),
+        "Supply Chain Hardening",
+    ),
+    # ── E006: Market Efficiency ──
+    (
+        lambda g, l, t, i, s, e, c: e.dead_code_count > 5,
+        "warning", "E006", "Market Waste: Dead Code",
+        lambda g, l, t, i, s, e, c: (
+            f"{e.dead_code_count} unused functions detected — "
+            "stranded assets consuming maintenance attention. "
+            "Remove or archive them."
+        ),
+        "Waste Reduction",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: e.score >= 85,
+        "positive", "E006", "Efficient Market",
+        lambda g, l, t, i, s, e, c: (
+            f"Efficiency score {e.score:.0f}/100 — "
+            "minimal waste, good resource utilization."
+        ),
+        "Market Confidence",
+    ),
+    # ── Cross-engine ──
+    (
+        lambda g, l, t, i, s, e, c: l.unemployment_rate > 0.2 and e.dead_code_count > 3,
+        "recommendation", "CROSS", "Structural Unemployment + Market Waste",
+        lambda g, l, t, i, s, e, c: (
+            "Both high unemployment and dead code suggest the codebase "
+            "has accumulated unused infrastructure. A targeted cleanup "
+            "sprint would improve both labor metrics and efficiency."
+        ),
+        "Economic Restructuring",
+    ),
+    (
+        lambda g, l, t, i, s, e, c: i.cpi > 40 and bool(l.overworked),
+        "recommendation", "CROSS", "Stagflation Risk",
+        lambda g, l, t, i, s, e, c: (
+            "Rising complexity (inflation) combined with overworked functions "
+            "signals stagflation — the codebase grows heavier while key "
+            "workers burn out.  Prioritize decomposition and delegation."
+        ),
+        "Anti-Stagflation Program",
+    ),
+]
+
+
 def generate_insights(
     gdp: GDPReport,
     labor: LaborReport,
@@ -702,224 +913,24 @@ def generate_insights(
 ) -> List[Dict[str, Any]]:
     """Generate autonomous policy recommendations based on all engines.
 
-    Produces stimulus packages, austerity measures, trade agreements,
-    labor reform, and supply chain hardening recommendations.
+    Evaluates declarative insight rules against current metrics and returns
+    triggered recommendations.  Each rule specifies a condition, severity,
+    engine tag, title, description formatter, and suggested policy.
     """
+    ctx = _build_insight_context(labor, trade, supply_chain, modules)
     insights: List[Dict[str, Any]] = []
 
-    # GDP insights
-    if gdp.output_input_ratio < 0.3:
-        insights.append({
-            "type": "warning",
-            "engine": "E001",
-            "title": "Low Productive Output",
-            "description": (
-                f"Only {gdp.output_input_ratio:.0%} of functions produce return values. "
-                "Consider refactoring side-effect-heavy functions into pure, "
-                "composable units for better code reuse."
-            ),
-            "policy": "Stimulus Package",
-        })
-
-    if gdp.gdp_per_capita < 2.0 and gdp.total_modules > 1:
-        insights.append({
-            "type": "recommendation",
-            "engine": "E001",
-            "title": "Low GDP Per Capita",
-            "description": (
-                f"Average {gdp.gdp_per_capita:.1f} functions per module — "
-                "modules may be too granular.  Consider consolidating "
-                "related modules to boost per-module productivity."
-            ),
-            "policy": "Economic Consolidation",
-        })
-
-    if gdp.score >= 80:
-        insights.append({
-            "type": "positive",
-            "engine": "E001",
-            "title": "Strong Productive Economy",
-            "description": (
-                f"GDP score {gdp.score:.0f}/100 — the codebase has healthy "
-                "productive output with good function density."
-            ),
-            "policy": "Maintain Course",
-        })
-
-    # Labor insights
-    if labor.unemployment_rate > 0.3:
-        insights.append({
-            "type": "critical",
-            "engine": "E002",
-            "title": "High Unemployment",
-            "description": (
-                f"{labor.unemployment_rate:.0%} of functions are never called. "
-                f"{labor.unemployed} unemployed workers represent dead weight. "
-                "Remove or integrate these functions."
-            ),
-            "policy": "Labor Reform",
-        })
-
-    if labor.gini_coefficient > 0.6:
-        insights.append({
-            "type": "warning",
-            "engine": "E002",
-            "title": "Severe Workload Inequality",
-            "description": (
-                f"Gini coefficient {labor.gini_coefficient:.2f} — a few functions "
-                "handle most of the work while others sit idle.  Redistribute "
-                "responsibilities for better maintainability."
-            ),
-            "policy": "Wealth Redistribution",
-        })
-
-    if labor.overworked:
-        top = sorted(labor.overworked, key=lambda x: x["call_count"], reverse=True)[:3]
-        names = ", ".join(f"{o['name']} ({o['call_count']} calls)" for o in top)
-        insights.append({
-            "type": "warning",
-            "engine": "E002",
-            "title": "Overworked Functions Detected",
-            "description": (
-                f"These functions are called excessively: {names}. "
-                "Consider caching results or splitting responsibilities."
-            ),
-            "policy": "Worker Protection",
-        })
-
-    # Trade insights
-    if trade.autarkic_modules and len(trade.autarkic_modules) > len(modules) * 0.7:
-        insights.append({
-            "type": "warning",
-            "engine": "E003",
-            "title": "Excessive Economic Isolation",
-            "description": (
-                f"{len(trade.autarkic_modules)} of {len(modules)} modules have "
-                "zero trade (no imports or exports). This suggests missed "
-                "opportunities for code reuse."
-            ),
-            "policy": "Trade Agreement",
-        })
-
-    if trade.deficit_modules:
-        worst = sorted(trade.deficit_modules, key=lambda x: x["balance"])[:2]
-        names = ", ".join(f"{w['module']} (balance: {w['balance']:+d})" for w in worst)
-        insights.append({
-            "type": "info",
-            "engine": "E003",
-            "title": "Trade Deficit Modules",
-            "description": (
-                f"Modules with import deficit: {names}. "
-                "These consume more than they produce — consider "
-                "extracting reusable utilities."
-            ),
-            "policy": "Export Incentive",
-        })
-
-    # Inflation insights
-    if inflation.cpi > 60:
-        insights.append({
-            "type": "critical",
-            "engine": "E004",
-            "title": "Hyperinflation Warning",
-            "description": (
-                f"Code Price Index at {inflation.cpi:.0f}/100 — complexity is "
-                "spiraling. Function lengths, parameter counts, and nesting "
-                "depth are all above healthy thresholds."
-            ),
-            "policy": "Austerity Measures",
-        })
-    elif inflation.cpi > 30:
-        insights.append({
-            "type": "warning",
-            "engine": "E004",
-            "title": "Rising Inflation",
-            "description": (
-                f"CPI at {inflation.cpi:.0f}/100 — moderate complexity creep. "
-                "Watch function lengths and nesting depth."
-            ),
-            "policy": "Inflation Monitoring",
-        })
-    else:
-        insights.append({
-            "type": "positive",
-            "engine": "E004",
-            "title": "Stable Prices",
-            "description": (
-                f"CPI at {inflation.cpi:.0f}/100 — complexity is well-controlled. "
-                "Functions are lean and parameters are minimal."
-            ),
-            "policy": "Price Stability",
-        })
-
-    # Supply chain insights
-    if supply_chain.bottlenecks:
-        top = supply_chain.bottlenecks[:3]
-        names = ", ".join(f"{b['variable']} ({b['consumers']} consumers)" for b in top)
-        insights.append({
-            "type": "warning",
-            "engine": "E005",
-            "title": "Supply Chain Bottlenecks",
-            "description": (
-                f"Critical bottleneck variables: {names}. "
-                "If these definitions break, many modules are affected. "
-                "Consider redundant sources or dependency injection."
-            ),
-            "policy": "Supply Chain Hardening",
-        })
-
-    # Efficiency insights
-    if efficiency.dead_code_count > 5:
-        insights.append({
-            "type": "warning",
-            "engine": "E006",
-            "title": "Market Waste: Dead Code",
-            "description": (
-                f"{efficiency.dead_code_count} unused functions detected — "
-                "stranded assets consuming maintenance attention. "
-                "Remove or archive them."
-            ),
-            "policy": "Waste Reduction",
-        })
-
-    if efficiency.score >= 85:
-        insights.append({
-            "type": "positive",
-            "engine": "E006",
-            "title": "Efficient Market",
-            "description": (
-                f"Efficiency score {efficiency.score:.0f}/100 — "
-                "minimal waste, good resource utilization."
-            ),
-            "policy": "Market Confidence",
-        })
-
-    # Cross-engine insights
-    if labor.unemployment_rate > 0.2 and efficiency.dead_code_count > 3:
-        insights.append({
-            "type": "recommendation",
-            "engine": "CROSS",
-            "title": "Structural Unemployment + Market Waste",
-            "description": (
-                "Both high unemployment and dead code suggest the codebase "
-                "has accumulated unused infrastructure. A targeted cleanup "
-                "sprint would improve both labor metrics and efficiency."
-            ),
-            "policy": "Economic Restructuring",
-        })
-
-    if inflation.cpi > 40 and labor.overworked:
-        insights.append({
-            "type": "recommendation",
-            "engine": "CROSS",
-            "title": "Stagflation Risk",
-            "description": (
-                "Rising complexity (inflation) combined with overworked functions "
-                "signals stagflation — the codebase grows heavier while key "
-                "workers burn out.  Prioritize decomposition and delegation."
-            ),
-            "policy": "Anti-Stagflation Program",
-        })
+    for condition_fn, itype, engine, title, desc_fn, policy in _INSIGHT_RULES:
+        if condition_fn(gdp, labor, trade, inflation, supply_chain, efficiency, ctx):
+            insights.append({
+                "type": itype,
+                "engine": engine,
+                "title": title,
+                "description": desc_fn(
+                    gdp, labor, trade, inflation, supply_chain, efficiency, ctx
+                ),
+                "policy": policy,
+            })
 
     return insights
 
