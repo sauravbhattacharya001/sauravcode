@@ -3,3 +3,6 @@ contact_links:
   - name: Discussions
     url: https://github.com/sauravbhattacharya001/sauravcode/discussions
     about: Ask questions and share ideas
+  - name: Security Advisories (Private)
+    url: https://github.com/sauravbhattacharya001/sauravcode/security/advisories/new
+    about: Report critical security vulnerabilities privately

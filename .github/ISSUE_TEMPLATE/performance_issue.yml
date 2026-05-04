@@ -1,0 +1,100 @@
+name: Performance Issue
+description: Report slow execution, high memory usage, or compiler/interpreter performance problems
+title: "[Perf] "
+labels: ["performance", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Performance Issue Report
+        Help us identify and fix performance bottlenecks in the interpreter, compiler, or runtime.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of sauravcode is slow or resource-intensive?
+      options:
+        - Interpreter (REPL)
+        - Interpreter (file execution)
+        - Compiler (sauravcode-compile)
+        - Compiled binary
+        - Parser / Lexer
+        - Standard library built-in
+        - Autonomous tool (Code Pulse, Terrain Mapper, etc.)
+        - Debugger
+        - Formatter
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Performance Problem
+      description: Describe what is slow, how slow it is, and what you expected.
+      placeholder: |
+        Example: Running a loop with 10,000 iterations takes 45 seconds in the interpreter,
+        but an equivalent Python loop completes in 0.3 seconds.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal Reproduction
+      description: Provide the smallest `.srv` code or command that demonstrates the issue.
+      render: text
+      placeholder: |
+        # Save as slow.srv and run: sauravcode slow.srv
+        set i to 0
+        while i < 10000
+          set i to i + 1
+        end
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Timing / Resource Measurements
+      description: Include wall-clock time, memory usage, or CPU profiling data if available.
+      render: text
+      placeholder: |
+        $ time sauravcode slow.srv
+        real    0m45.123s
+        user    0m44.890s
+        sys     0m0.201s
+        Peak memory: ~150 MB
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, OS, sauravcode version, install method.
+      render: text
+      placeholder: |
+        sauravcode version: 2.2.0
+        Python: 3.12.3
+        OS: Ubuntu 24.04 / Windows 11 / macOS 15
+        Install: pip install sauravcode
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Performance
+      description: What performance level would you consider acceptable? Include comparison benchmarks if possible.
+      placeholder: |
+        Expected this to complete in under 1 second based on equivalent Python/Lua performance
+        for similar loop constructs.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: Have you found any workaround that improves performance?
+      placeholder: |
+        Using the compiler (sauravcode-compile) produces a binary that runs this in 0.5s,
+        but the interpreter should be faster for development iteration.
