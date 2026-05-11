@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for sauravmigrate.py — Python-to-sauravcode transpiler."""
+"""Tests for sauravmigrate.py, Python-to-sauravcode transpiler."""
 
 import sys
 import os
@@ -83,7 +83,7 @@ class TestControlFlow:
         # `for` that iterated the wrong number of times. The migrator now
         # emits an equivalent while-loop so iteration count matches Python.
         result = migrate_source("for i in range(0, 10, 2):\n    print(i)")
-        # No "for i 0 10" — that was the buggy output.
+        # No "for i 0 10", that was the buggy output.
         assert "for i 0 10" not in result
         # While-loop equivalent must include the start assignment, the
         # `<` comparator (positive step), and the in-loop increment.

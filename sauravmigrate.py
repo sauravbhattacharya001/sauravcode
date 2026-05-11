@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sauravmigrate.py — Migrate Python scripts to sauravcode (.srv).
+"""sauravmigrate.py, Migrate Python scripts to sauravcode (.srv).
 
 Converts simple Python code into idiomatic sauravcode by parsing
 the Python AST and emitting equivalent .srv syntax.
@@ -28,7 +28,7 @@ Supported Python constructs:
     - List comprehensions (simple cases)
 
 Unsupported (skipped with warnings):
-    - Classes (partial — no inheritance)
+    - Classes (partial, no inheritance)
     - Decorators
     - With statements
     - Async/await
@@ -116,7 +116,7 @@ class PythonToSrv(ast.NodeVisitor):
         self.emit(f"{target} = {target} {op} {value}")
 
     def visit_AnnAssign(self, node):
-        # Type annotations — ignore annotation, keep assignment
+        # Type annotations, ignore annotation, keep assignment
         if node.value is not None:
             target = self._expr(node.target)
             value = self._expr(node.value)
@@ -125,7 +125,7 @@ class PythonToSrv(ast.NodeVisitor):
     # ── Expressions as statements ──
 
     def visit_Expr(self, node):
-        # Check for standalone string (docstring) — emit as comment
+        # Check for standalone string (docstring), emit as comment
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             for line in node.value.value.strip().split("\n"):
                 self.emit(f"# {line}")
@@ -240,7 +240,7 @@ class PythonToSrv(ast.NodeVisitor):
         sequence with a trailing ``target = target + step`` to advance the
         induction variable. A non-literal step would need a runtime sign
         decision sauravcode can't express cleanly, so it gets a hard TODO
-        comment and the body is dropped — failing loudly is safer than the
+        comment and the body is dropped, failing loudly is safer than the
         previous behaviour, which silently emitted a 2-arg ``for`` that ran
         the wrong number of iterations or in the wrong direction.
         """
@@ -256,7 +256,7 @@ class PythonToSrv(ast.NodeVisitor):
             )
             self.emit(
                 f"# TODO MANUAL MIGRATION: range({start_expr}, {stop_expr}, {step_expr}) "
-                f"— rewrite as a while-loop matching the runtime sign of step"
+                f", rewrite as a while-loop matching the runtime sign of step"
             )
             return
 
@@ -380,16 +380,16 @@ class PythonToSrv(ast.NodeVisitor):
 
     def visit_Import(self, node):
         names = ", ".join(a.name for a in node.names)
-        self.warnings.add(node.lineno, f"import {names} — no equivalent, skipped")
+        self.warnings.add(node.lineno, f"import {names}, no equivalent, skipped")
 
     def visit_ImportFrom(self, node):
         names = ", ".join(a.name for a in node.names)
-        self.warnings.add(node.lineno, f"from {node.module} import {names} — skipped")
+        self.warnings.add(node.lineno, f"from {node.module} import {names}, skipped")
 
     # ── Class (partial) ──
 
     def visit_ClassDef(self, node):
-        self.warnings.add(node.lineno, f"class '{node.name}' — classes have limited support")
+        self.warnings.add(node.lineno, f"class '{node.name}', classes have limited support")
         self.emit(f"class {node.name}")
         self.indent += 1
         self._emit_body(node.body)
@@ -470,7 +470,7 @@ class PythonToSrv(ast.NodeVisitor):
         if isinstance(node, ast.JoinedStr):
             return self._fstring(node)
         if isinstance(node, ast.IfExp):
-            # Ternary — sauravcode doesn't have ternary, use inline
+            # Ternary, sauravcode doesn't have ternary, use inline
             # We'll emit it as a comment with a warning
             body = self._expr(node.body)
             test = self._expr(node.test)
@@ -616,7 +616,7 @@ class PythonToSrv(ast.NodeVisitor):
                 return f"[{elt} for {target} in {iter_expr}]"
             cond = self._expr(gen.ifs[0])
             return f"[{elt} for {target} in {iter_expr} if {cond}]"
-        # Nested — warn and do best effort
+        # Nested, warn and do best effort
         return f"/* complex comprehension */"
 
 
