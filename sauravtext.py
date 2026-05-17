@@ -31,27 +31,58 @@ def find_comment_offset(line: str) -> Optional[int]:
 
     This is the single source of truth for "where does the comment start?"
     used by both :func:`strip_comment` and :func:`split_trailing_comment`.
+
+    Performance notes
+    -----------------
+    This helper is called once per source line by sauravfmt, sauravlint,
+    sauravmin, sauravmetrics, and friends — i.e. millions of times in a
+    full project lint.  Two fast paths cover the overwhelmingly common
+    cases without entering the per-character state machine:
+
+    1. **No ``#`` anywhere** → nothing to do (one C-level substring scan).
+    2. **First ``#`` precedes every quote character** → it is the comment
+       start; no string can contain it (one ``index`` + two ``find`` calls,
+       all at C speed).
+
+    Only when a ``#`` appears *after* a quote do we fall back to the
+    careful escape-aware scanner, because in that case the ``#`` might
+    live inside a string literal.
     """
+    hash_pos = line.find('#')
+    if hash_pos == -1:
+        return None
+
+    # Fast path: no quote of either flavour appears before the first '#'.
+    # Then the '#' cannot be inside a string and is the comment start.
+    dq_pos = line.find('"')
+    sq_pos = line.find("'")
+    first_quote = dq_pos if dq_pos != -1 else sq_pos
+    if sq_pos != -1 and (first_quote == -1 or sq_pos < first_quote):
+        first_quote = sq_pos
+    if first_quote == -1 or hash_pos < first_quote:
+        return hash_pos
+
+    # Slow path: must walk the line tracking string state.
     in_string = False
     quote_char = None
     i = 0
-    while i < len(line):
+    n = len(line)
+    while i < n:
         ch = line[i]
-        if ch in ('"', "'") and not in_string:
-            in_string = True
-            quote_char = ch
+        if not in_string:
+            if ch == '#':
+                return i
+            if ch == '"' or ch == "'":
+                in_string = True
+                quote_char = ch
             i += 1
             continue
-        if in_string:
-            if ch == '\\' and i + 1 < len(line):
-                i += 2          # skip escaped character
-                continue
-            if ch == quote_char:
-                in_string = False
-            i += 1
+        # inside a string literal
+        if ch == '\\' and i + 1 < n:
+            i += 2              # skip escaped character
             continue
-        if ch == '#':
-            return i
+        if ch == quote_char:
+            in_string = False
         i += 1
     return None
 
