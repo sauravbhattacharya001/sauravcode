@@ -1,0 +1,60 @@
+# OpenSSF Scorecard
+# Runs the OpenSSF Scorecard supply-chain security checks weekly and on every
+# push to the default branch. Results are uploaded to the GitHub Security tab
+# as code-scanning alerts AND published to the public Scorecard registry so
+# the README badge can read them.
+#
+# Docs: https://github.com/ossf/scorecard-action
+# Badge: https://api.scorecard.dev/projects/github.com/<owner>/<repo>/badge
+
+name: Scorecard supply-chain security
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: '37 8 * * 1'   # Mondays 08:37 UTC
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload SARIF
+      id-token: write          # publish results (keyless OIDC)
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publish results so the badge and registry stay fresh.
+          publish_results: true
+
+      - name: Upload SARIF to code-scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 30

@@ -1,11 +1,22 @@
-# Docker Build & Push — sauravcode
+# Docker Build & Push - sauravcode
 # Builds multi-platform Docker images and pushes to GitHub Container Registry.
-# Triggers on pushes to main (Dockerfile or source changes) and releases.
+# Triggers on pushes to main (Dockerfile or source changes), releases, and PRs
+# (PRs build-only validation, no push).
 
 name: Docker
 
 on:
   push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'saurav.py'
+      - 'sauravcc.py'
+      - 'sauravcode/**'
+      - 'pyproject.toml'
+      - '.github/workflows/docker.yml'
+  pull_request:
     branches: [main]
     paths:
       - 'Dockerfile'
@@ -23,10 +34,17 @@ permissions:
   contents: read
   packages: write
   security-events: write
+  id-token: write        # cosign keyless signing + attestations
+  attestations: write    # build-provenance attestation
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+
+# Cancel superseded runs on the same ref to save runner minutes
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   docker:
@@ -41,6 +59,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -54,25 +73,65 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
+            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
-          sbom: true
-          provenance: mode=max
+          # PR builds: amd64 only (faster, just validates Dockerfile).
+          # Push/release builds: full multi-arch.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
+
+      # Cosign keyless signing — anchors the image digest to this workflow
+      # run via Sigstore Fulcio/Rekor. No long-lived keys required.
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign published images
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          set -euo pipefail
+          if [ -z "${DIGEST}" ]; then
+            echo "::warning::No digest from build; skipping cosign sign"
+            exit 0
+          fi
+          echo "${TAGS}" | tr ',' '\n' | while read -r tag; do
+            [ -z "${tag}" ] && continue
+            # Sign the image by digest so the signature pins exactly what was pushed
+            image_ref="$(echo "${tag}" | cut -d: -f1)@${DIGEST}"
+            echo "Signing ${image_ref}"
+            cosign sign --yes "${image_ref}"
+          done
+
+      - name: Generate build provenance attestation
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Run Trivy vulnerability scanner
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -80,10 +139,9 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
-        if: github.event_name != 'pull_request'
 
       - name: Upload Trivy scan results to GitHub Security tab
+        if: github.event_name != 'pull_request' && always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
-        if: github.event_name != 'pull_request' && always()

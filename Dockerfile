@@ -75,6 +75,12 @@ RUN useradd --create-home --shell /bin/bash sauravcode
 USER sauravcode
 WORKDIR /home/sauravcode
 
+# Healthcheck: ensure the CLI entrypoint is on PATH and runnable.
+# Useful for orchestrators (Docker Swarm, Kubernetes liveness probes, etc.)
+# to detect a broken image even though sauravcode is a CLI rather than a server.
+HEALTHCHECK --interval=5m --timeout=10s --start-period=10s --retries=3 \
+  CMD sauravcode --help > /dev/null 2>&1 || exit 1
+
 # Default entrypoint: run sauravcode CLI
 # Usage: docker run sauravcode interpret script.srv
 #        docker run sauravcode compile script.srv -o output

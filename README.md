@@ -11,6 +11,12 @@
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/docker.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/docker.yml/badge.svg" alt="Docker"></a>
     <a href="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml"><img src="https://github.com/sauravbhattacharya001/sauravcode/actions/workflows/pages.yml/badge.svg" alt="Pages"></a>
+    <a href="https://scorecard.dev/viewer/?uri=github.com/sauravbhattacharya001/sauravcode"><img src="https://api.scorecard.dev/projects/github.com/sauravbhattacharya001/sauravcode/badge" alt="OpenSSF Scorecard"></a>
+  </p>
+  <!-- Supply chain / provenance -->
+  <p align="center">
+    <a href="https://github.com/sauravbhattacharya001/sauravcode/attestations"><img src="https://img.shields.io/badge/SLSA-provenance-3e8acc?logo=githubactions&logoColor=white" alt="SLSA Build Provenance"></a>
+    <a href="https://docs.sigstore.dev/cosign/verifying/verify/"><img src="https://img.shields.io/badge/cosign-signed-005571?logo=sigstore&logoColor=white" alt="Cosign signed images"></a>
   </p>
   <!-- Package & Version -->
   <p align="center">
