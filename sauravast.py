@@ -23,18 +23,50 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import tokenize, Parser, ASTNode
 
 
-# ── Node → dict conversion ──────────────────────────────────────────
+# == Encoding helpers ================================================
+
+def _stdout_supports(sample: str) -> bool:
+    """Return True if *sample* can be encoded in the current stdout encoding.
+
+    Falls back to UTF-8 when ``sys.stdout.encoding`` is unset (e.g. when
+    stdout has been redirected). Centralising this avoids the silent
+    drift between ``_box_chars()`` and the stats bar character that the
+    old code had.
+    """
+    encoding = sys.stdout.encoding or "utf-8"
+    try:
+        sample.encode(encoding)
+        return True
+    except (UnicodeEncodeError, LookupError):
+        return False
+
+
+# == Node -> child iteration =========================================
 
 def _node_children(node):
-    """Return a list of (label, child_or_value) pairs for an AST node."""
+    """Return a list of (label, child_or_value) pairs for an AST node.
+
+    Hidden attributes (``_*``) and the bookkeeping ``line_num`` field are
+    skipped so that downstream consumers see only the structural slots.
+    """
     pairs = []
     for attr in sorted(vars(node)):
         if attr.startswith('_') or attr == 'line_num':
             continue
-        val = getattr(node, attr)
-        pairs.append((attr, val))
+        pairs.append((attr, getattr(node, attr)))
     return pairs
 
+
+def _has_nested_node(value) -> bool:
+    """Return True if *value* contains an ``ASTNode`` anywhere worth recursing into."""
+    if isinstance(value, ASTNode):
+        return True
+    if isinstance(value, (list, tuple)):
+        return any(isinstance(v, ASTNode) for v in value)
+    return False
+
+
+# == Node -> dict conversion ========================================
 
 def node_to_dict(node, depth=None, _cur=0):
     """Recursively convert an ASTNode to a JSON-serialisable dict."""
@@ -46,24 +78,19 @@ def node_to_dict(node, depth=None, _cur=0):
         for label, val in _node_children(node):
             d[label] = node_to_dict(val, depth, _cur + 1)
         return d
-    elif isinstance(node, list):
+    if isinstance(node, (list, tuple)):
         return [node_to_dict(item, depth, _cur) for item in node]
-    elif isinstance(node, tuple):
-        return [node_to_dict(item, depth, _cur) for item in node]
-    else:
-        return node
+    return node
 
 
-# ── Pretty tree printer ─────────────────────────────────────────────
+# == Pretty tree printer =============================================
 
 def _box_chars():
-    """Return tree-drawing characters, falling back to ASCII if the
-    console encoding cannot handle Unicode box-drawing glyphs."""
-    try:
-        "│├└".encode(sys.stdout.encoding or "utf-8")
-        return ("│   ", "├── ", "└── ", "    ")
-    except (UnicodeEncodeError, LookupError):
-        return ("|   ", "|-- ", "`-- ", "    ")
+    """Return tree-drawing characters, falling back to ASCII when stdout
+    cannot encode the Unicode box-drawing glyphs."""
+    if _stdout_supports("\u2502\u2500"):
+        return ("\u2502   ", "\u251c\u2500\u2500 ", "\u2514\u2500\u2500 ", "    ")
+    return ("|   ", "|-- ", "`-- ", "    ")
 
 _PIPE, _TEE, _BEND, _BLANK = _box_chars()
 
@@ -81,36 +108,37 @@ def _tree_lines(node, depth=None, _cur=0):
         yield f"{type(node).__name__} ..."
         return
 
-    if isinstance(node, ASTNode):
-        children = _node_children(node)
-        yield type(node).__name__
-        for i, (label, val) in enumerate(children):
-            is_last = i == len(children) - 1
-            connector = _BEND if is_last else _TEE
-            continuation = _BLANK if is_last else _PIPE
-
-            if isinstance(val, ASTNode):
-                sub = list(_tree_lines(val, depth, _cur + 1))
-                yield f"{connector}{label}: {sub[0]}"
-                for line in sub[1:]:
-                    yield f"{continuation}{line}"
-            elif isinstance(val, list) and val and any(isinstance(v, ASTNode) for v in val):
-                yield f"{connector}{label}: [{len(val)} items]"
-                for j, item in enumerate(val):
-                    item_last = j == len(val) - 1
-                    ic = _BEND if item_last else _TEE
-                    ic2 = _BLANK if item_last else _PIPE
-                    if isinstance(item, ASTNode):
-                        sub = list(_tree_lines(item, depth, _cur + 1))
-                        yield f"{continuation}{ic}[{j}]: {sub[0]}"
-                        for line in sub[1:]:
-                            yield f"{continuation}{ic2}{line}"
-                    else:
-                        yield f"{continuation}{ic}[{j}]: {_format_leaf(item)}"
-            else:
-                yield f"{connector}{label}: {_format_leaf(val)}"
-    else:
+    if not isinstance(node, ASTNode):
         yield _format_leaf(node)
+        return
+
+    children = _node_children(node)
+    yield type(node).__name__
+    for i, (label, val) in enumerate(children):
+        is_last = i == len(children) - 1
+        connector = _BEND if is_last else _TEE
+        continuation = _BLANK if is_last else _PIPE
+
+        if isinstance(val, ASTNode):
+            sub = list(_tree_lines(val, depth, _cur + 1))
+            yield f"{connector}{label}: {sub[0]}"
+            for line in sub[1:]:
+                yield f"{continuation}{line}"
+        elif isinstance(val, list) and val and any(isinstance(v, ASTNode) for v in val):
+            yield f"{connector}{label}: [{len(val)} items]"
+            for j, item in enumerate(val):
+                item_last = j == len(val) - 1
+                ic = _BEND if item_last else _TEE
+                ic2 = _BLANK if item_last else _PIPE
+                if isinstance(item, ASTNode):
+                    sub = list(_tree_lines(item, depth, _cur + 1))
+                    yield f"{continuation}{ic}[{j}]: {sub[0]}"
+                    for line in sub[1:]:
+                        yield f"{continuation}{ic2}{line}"
+                else:
+                    yield f"{continuation}{ic}[{j}]: {_format_leaf(item)}"
+        else:
+            yield f"{connector}{label}: {_format_leaf(val)}"
 
 
 def print_tree(nodes, depth=None):
@@ -126,16 +154,22 @@ def print_tree(nodes, depth=None):
             print(f"{continuation}{line}")
 
 
-# ── Statistics ───────────────────────────────────────────────────────
+# == Statistics =====================================================
 
 def collect_stats(nodes):
-    """Walk the AST and return node type counts and max depth."""
-    counts = Counter()
-    max_depth = [0]
+    """Walk the AST and return node type counts and max depth.
+
+    The traversal mirrors :func:`node_to_dict` (only descends through
+    ``_node_children`` and through plain lists/tuples) so the counts
+    reflect the same logical tree the other views display.
+    """
+    counts: Counter = Counter()
+    max_depth = 0
 
     def walk(node, d):
-        if d > max_depth[0]:
-            max_depth[0] = d
+        nonlocal max_depth
+        if d > max_depth:
+            max_depth = d
         if isinstance(node, ASTNode):
             counts[type(node).__name__] += 1
             for _, val in _node_children(node):
@@ -149,12 +183,12 @@ def collect_stats(nodes):
 
     return {
         "total_nodes": sum(counts.values()),
-        "max_depth": max_depth[0],
+        "max_depth": max_depth,
         "node_types": dict(counts.most_common()),
     }
 
 
-# ── Graphviz DOT output ─────────────────────────────────────────────
+# == Graphviz DOT output ============================================
 
 def _dot_lines(nodes):
     """Yield lines for a Graphviz DOT digraph."""
@@ -164,20 +198,20 @@ def _dot_lines(nodes):
 
     counter = [0]
 
-    def _id():
+    def next_id() -> str:
         counter[0] += 1
         return f"n{counter[0]}"
 
     def walk(node, parent_id=None, edge_label=None):
         if isinstance(node, ASTNode):
-            nid = _id()
+            nid = next_id()
             name = type(node).__name__.replace("Node", "")
-            # Add leaf values inline
+            # Partition children: ones that need their own DOT node vs leaves
+            # that we can inline in the label.
             leaf_parts = []
-            children = _node_children(node)
             child_items = []
-            for label, val in children:
-                if isinstance(val, ASTNode) or (isinstance(val, list) and any(isinstance(v, ASTNode) for v in val)):
+            for label, val in _node_children(node):
+                if _has_nested_node(val):
                     child_items.append((label, val))
                 else:
                     disp = repr(val) if isinstance(val, str) else str(val)
@@ -196,9 +230,10 @@ def _dot_lines(nodes):
                 yield from walk(cval, nid, clabel)
         elif isinstance(node, (list, tuple)):
             for i, item in enumerate(node):
-                yield from walk(item, parent_id, f"{edge_label}[{i}]" if edge_label else f"[{i}]")
+                child_label = f"{edge_label}[{i}]" if edge_label else f"[{i}]"
+                yield from walk(item, parent_id, child_label)
 
-    root = _id()
+    root = next_id()
     yield f'  {root} [label="Program", shape=ellipse];'
     for i, n in enumerate(nodes):
         yield from walk(n, root, f"stmt[{i}]" if len(nodes) > 1 else None)
@@ -211,7 +246,18 @@ def print_dot(nodes):
         print(line)
 
 
-# ── Main ─────────────────────────────────────────────────────────────
+# == Main ===========================================================
+
+def _print_stats(stats):
+    """Render the stats dict produced by :func:`collect_stats`."""
+    print(f"Total AST nodes : {stats['total_nodes']}")
+    print(f"Max tree depth  : {stats['max_depth']}")
+    print("\nNode type breakdown:")
+    bar_char = "\u2588" if _stdout_supports("\u2588") else "#"
+    for name, count in stats["node_types"].items():
+        bar = bar_char * min(count, 40)
+        print(f"  {name:<30} {count:>4}  {bar}")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -233,7 +279,7 @@ def main():
         print(f"Error: File '{filename}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    with open(filename, "r") as f:
+    with open(filename, "r", encoding="utf-8") as f:
         code = f.read()
 
     tokens = list(tokenize(code))
@@ -246,18 +292,7 @@ def main():
     elif args.dot:
         print_dot(ast_nodes)
     elif args.stats:
-        stats = collect_stats(ast_nodes)
-        print(f"Total AST nodes : {stats['total_nodes']}")
-        print(f"Max tree depth  : {stats['max_depth']}")
-        print(f"\nNode type breakdown:")
-        for name, count in stats["node_types"].items():
-            try:
-                "█".encode(sys.stdout.encoding or "utf-8")
-                ch = "█"
-            except (UnicodeEncodeError, LookupError):
-                ch = "#"
-            bar = ch * min(count, 40)
-            print(f"  {name:<30} {count:>4}  {bar}")
+        _print_stats(collect_stats(ast_nodes))
     else:
         print_tree(ast_nodes, args.depth)
 
