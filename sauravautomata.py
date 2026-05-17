@@ -27,7 +27,6 @@ Options:
 import sys
 import math
 import random
-import os
 import io
 
 # Fix Windows console encoding

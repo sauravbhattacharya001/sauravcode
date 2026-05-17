@@ -19,7 +19,6 @@ Supported ciphers: caesar, rot13, vigenere, atbash, xor, morse,
                    railfence, substitution
 """
 
-import os
 import argparse
 import string
 from collections import Counter

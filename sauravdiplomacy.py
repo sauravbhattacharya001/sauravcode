@@ -32,7 +32,6 @@ import sys
 import os
 import re
 import json
-import math
 import argparse
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict

@@ -20,7 +20,6 @@ Usage:
 import re
 import os
 import sys
-import math
 import time
 import argparse
 import hashlib

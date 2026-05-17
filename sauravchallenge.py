@@ -30,7 +30,6 @@ import os
 import json
 import csv
 import io
-import re
 import argparse
 import random as _random
 import tempfile
