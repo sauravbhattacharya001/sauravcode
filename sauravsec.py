@@ -661,16 +661,16 @@ def _format_summary(results):
             by_severity[f.severity] = by_severity.get(f.severity, 0) + 1
 
     lines = [
-        f"╔══════════════════════════════════════╗",
-        f"║     sauravsec Security Summary       ║",
-        f"╠══════════════════════════════════════╣",
+        "╔══════════════════════════════════════╗",
+        "║     sauravsec Security Summary       ║",
+        "╠══════════════════════════════════════╣",
         f"║  Files scanned:  {files_total:<19}║",
         f"║  Files clean:    {files_clean:<19}║",
         f"║  Total findings: {total:<19}║",
         f"║  🔴 High:        {by_severity[HIGH]:<19}║",
         f"║  🟡 Medium:      {by_severity[MEDIUM]:<19}║",
         f"║  🔵 Low:         {by_severity[LOW]:<19}║",
-        f"╚══════════════════════════════════════╝",
+        "╚══════════════════════════════════════╝",
     ]
 
     if by_rule:
@@ -686,7 +686,7 @@ def _format_summary(results):
 def scan_file(filepath, disabled=None):
     """Parse and scan a single .srv file. Returns list of Findings."""
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             source = f.read()
     except (OSError, UnicodeDecodeError) as e:
         return [Finding("SEC000", HIGH, f"Cannot read file: {e}", context=filepath)]

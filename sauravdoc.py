@@ -487,8 +487,8 @@ class MarkdownGenerator:
         """Render code statistics."""
         stats = self.parser.get_stats()
         lines = ['## Statistics\n']
-        lines.append(f'| Metric | Value |')
-        lines.append(f'| ------ | ----- |')
+        lines.append('| Metric | Value |')
+        lines.append('| ------ | ----- |')
         lines.append(f'| Total lines | {stats["total_lines"]} |')
         lines.append(f'| Code lines | {stats["code_lines"]} |')
         lines.append(f'| Comment lines | {stats["comment_lines"]} ({stats["comment_ratio"]}%) |')

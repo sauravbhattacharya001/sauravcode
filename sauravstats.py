@@ -126,7 +126,7 @@ def analyze_file(filepath, base_dir=None):
     rel = os.path.relpath(filepath, base_dir) if base_dir else filepath
     fm = FileMetrics(filepath, rel)
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:
             lines = f.readlines()
     except (OSError, UnicodeDecodeError):
         return fm
@@ -398,7 +398,7 @@ def load_previous(path):
     """Load the most recent saved snapshot, or ``None`` if unavailable."""
     hist_path = os.path.join(path if os.path.isdir(path) else os.path.dirname(path) or '.', _HISTORY_FILE)
     try:
-        with open(hist_path, 'r', encoding='utf-8') as f:
+        with open(hist_path, encoding='utf-8') as f:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return None

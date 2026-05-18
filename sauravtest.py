@@ -193,7 +193,7 @@ def discover_test_functions(interpreter):
 
 def _load_file(filepath):
     """Parse a ``.srv`` file and return (interpreter, ast_nodes)."""
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         source = f.read()
 
     tokens = list(sv.tokenize(source))

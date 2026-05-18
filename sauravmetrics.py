@@ -147,7 +147,7 @@ class FileMetrics:
 def analyze_file(filepath):
     """Analyze a single .srv file and return FileMetrics."""
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+        with open(filepath, encoding='utf-8', errors='replace') as f:
             lines = f.readlines()
     except OSError as e:
         print(f"Error reading {filepath}: {e}", file=sys.stderr)

@@ -325,7 +325,7 @@ def format_summary(summary, color=True):
     """Format execution summary."""
     lines = []
     if color:
-        lines.append(f'\033[1m-- Execution Summary --\033[0m')
+        lines.append('\033[1m-- Execution Summary --\033[0m')
     else:
         lines.append('-- Execution Summary --')
     lines.append(f'  Total steps:      {summary["total_steps"]}')
@@ -441,7 +441,7 @@ def main():
         if output.strip():
             parts.append('')
             if color:
-                parts.append(f'\033[1m-- Program Output --\033[0m')
+                parts.append('\033[1m-- Program Output --\033[0m')
             else:
                 parts.append('-- Program Output --')
             parts.append(output.rstrip())

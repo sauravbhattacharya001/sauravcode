@@ -201,7 +201,7 @@ def print_table(stats, show_percentiles=False):
 
     if stats['cv_percent'] > 20:
         print(f"  WARNING: High variance (CV={stats['cv_percent']:.1f}%) -- results may be noisy.")
-        print(f"    Try more iterations (-n) or check for I/O in your program.")
+        print("    Try more iterations (-n) or check for I/O in your program.")
 
 
 def print_comparison(stats_a, stats_b):
@@ -265,7 +265,7 @@ def load_baselines():
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
         return {}
@@ -355,7 +355,7 @@ def print_histogram(stats, width=40):
 
     max_count = max(buckets)
 
-    print(f"\n  Distribution:")
+    print("\n  Distribution:")
     for i, count in enumerate(buckets):
         edge = lo + i * bucket_width
         bar_len = int(count / max_count * width) if max_count > 0 else 0
@@ -373,7 +373,7 @@ def load_file(filename):
     if not os.path.isfile(filename):
         print(f"Error: File '{filename}' not found.")
         sys.exit(1)
-    with open(filename, 'r', encoding='utf-8') as f:
+    with open(filename, encoding='utf-8') as f:
         return f.read()
 
 

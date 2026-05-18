@@ -315,7 +315,7 @@ def _find_srv_files(path):
 
 def _format_file(filepath, indent_width, write, check, show_diff):
     """Format a single file.  Returns True if changes were made."""
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         original = f.read()
 
     formatted = format_code(original, indent_width)

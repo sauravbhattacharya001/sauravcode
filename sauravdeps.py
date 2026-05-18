@@ -41,7 +41,7 @@ def extract_imports(filepath):
     Returns a list of module path strings (without .srv extension).
     """
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             content = f.read()
     except (OSError, UnicodeDecodeError):
         return []

@@ -111,12 +111,12 @@ class SnapshotStore:
         if not os.path.exists(snap):
             return None, None
 
-        with open(snap, 'r', encoding='utf-8') as f:
+        with open(snap, encoding='utf-8') as f:
             stdout = f.read()
 
         metadata = {}
         if os.path.exists(meta):
-            with open(meta, 'r', encoding='utf-8') as f:
+            with open(meta, encoding='utf-8') as f:
                 metadata = json.load(f)
 
         return stdout, metadata
@@ -360,7 +360,7 @@ def cmd_test(files, store, runner, verbose=False, update_on_fail=False, as_json=
 
             if update_on_fail:
                 store.save(f, stdout, stderr, exit_code, duration)
-                print(f"    → snapshot updated")
+                print("    → snapshot updated")
 
     # Summary
     total = passed + failed + missing + errors
@@ -395,7 +395,7 @@ def cmd_review(store, runner):
         meta_path = os.path.join(store.snap_dir, f"{name}.snap.meta")
         if not os.path.exists(meta_path):
             continue
-        with open(meta_path, 'r') as f:
+        with open(meta_path) as f:
             meta = json.load(f)
 
         src_file = meta.get("file", "")
@@ -424,7 +424,7 @@ def cmd_review(store, runner):
             print(f"  {basename} — source changed but output is identical")
             # Auto-update metadata hash
             store.save(src_file, stdout, stderr, exit_code, duration)
-            print(f"    → metadata updated")
+            print("    → metadata updated")
             continue
 
         print(f"  {basename} — output changed:")
@@ -439,12 +439,12 @@ def cmd_review(store, runner):
 
         if answer == 'y':
             store.save(src_file, stdout, stderr, exit_code, duration)
-            print(f"    → snapshot updated\n")
+            print("    → snapshot updated\n")
         elif answer == 'q':
             print("  Review cancelled.")
             return 0
         else:
-            print(f"    → kept existing snapshot\n")
+            print("    → kept existing snapshot\n")
 
     return 0
 
@@ -464,12 +464,12 @@ def cmd_list(store):
 
         size = os.path.getsize(snap_path)
         lines = 0
-        with open(snap_path, 'r', encoding='utf-8') as f:
+        with open(snap_path, encoding='utf-8') as f:
             lines = len(f.readlines())
 
         meta_info = ""
         if os.path.exists(meta_path):
-            with open(meta_path, 'r') as f:
+            with open(meta_path) as f:
                 meta = json.load(f)
             captured = meta.get("captured_at", "?")[:10]
             dur = meta.get("duration_ms", 0)
@@ -494,7 +494,7 @@ def cmd_clean(store):
 
         src_file = None
         if os.path.exists(meta_path):
-            with open(meta_path, 'r') as f:
+            with open(meta_path) as f:
                 meta = json.load(f)
             src_file = meta.get("file")
 
@@ -530,7 +530,7 @@ def cmd_diff(srv_file, store, runner):
         current_hash = store._hash_file(srv_file)
         saved_hash = metadata.get("source_hash", "") if metadata else ""
         if current_hash != saved_hash:
-            print(f"  ℹ Source file has changed (but output is identical)")
+            print("  ℹ Source file has changed (but output is identical)")
         return 0
 
     print(f"  Diff for {os.path.basename(srv_file)}:\n")
@@ -582,7 +582,7 @@ Examples:
     store = SnapshotStore(args.snap_dir)
     runner = SrvRunner(timeout=args.timeout)
 
-    print(f"\n  sauravsnap — snapshot testing for sauravcode\n")
+    print("\n  sauravsnap — snapshot testing for sauravcode\n")
 
     if args.command == 'update':
         files = resolve_files(args.files, args.pattern)
