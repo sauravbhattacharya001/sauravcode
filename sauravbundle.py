@@ -178,8 +178,13 @@ def build_dependency_tree(entry_path, search_dirs, exclude=None, prefix="", visi
             subtree = build_dependency_tree(
                 child_path, search_dirs, exclude,
                 prefix + extension, visited.copy())
-            # Replace first line's prefix
-            subtree[0] = f"{prefix}{connector}" + os.path.basename(child_path)
+            # Replace first line's prefix, preserving any trailing annotation
+            # (e.g. " (circular)") that visit() added in the recursive call.
+            first = subtree[0]
+            base = os.path.basename(child_path)
+            idx = first.find(base)
+            suffix = first[idx + len(base):] if idx != -1 else ""
+            subtree[0] = f"{prefix}{connector}{base}{suffix}"
             lines.extend(subtree)
 
     return lines
