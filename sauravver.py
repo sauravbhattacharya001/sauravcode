@@ -47,6 +47,16 @@ SEMVER_RE = re.compile(
 
 @dataclass
 class SemVer:
+    """Parsed semantic-version value object.
+
+    Holds the five SemVer 2.0.0 components (``major``, ``minor``, ``patch``,
+    optional ``pre`` and ``build``) and provides comparison + bump helpers.
+
+    Pre-release versions are ordered *below* the same MAJOR.MINOR.PATCH without
+    a pre-release, per SemVer §11. The ``build`` metadata field is preserved
+    in string form but ignored for ordering (per SemVer §10).
+    """
+
     major: int
     minor: int
     patch: int
@@ -55,6 +65,18 @@ class SemVer:
 
     @classmethod
     def parse(cls, s: str) -> 'SemVer':
+        """Parse a SemVer string (with optional leading ``v``) into a :class:`SemVer`.
+
+        Args:
+            s: Version string, e.g. ``"1.2.3"``, ``"v2.0.0-beta.1"``,
+               ``"1.0.0+build.42"``. Leading/trailing whitespace is stripped.
+
+        Returns:
+            A new :class:`SemVer` instance.
+
+        Raises:
+            ValueError: If ``s`` does not match the SemVer 2.0.0 grammar.
+        """
         m = SEMVER_RE.match(s.strip())
         if not m:
             raise ValueError(f"Invalid semver: {s}")
@@ -67,6 +89,7 @@ class SemVer:
         )
 
     def __str__(self):
+        """Render the canonical SemVer string (no leading ``v``)."""
         s = f"{self.major}.{self.minor}.{self.patch}"
         if self.pre:
             s += f"-{self.pre}"
@@ -75,9 +98,21 @@ class SemVer:
         return s
 
     def tuple(self):
+        """Return ``(major, minor, patch, pre)`` for ad-hoc tuple comparisons.
+
+        Note:
+            This helper is **not** SemVer-correct for ordering pre-releases vs
+            releases — use the rich-comparison operators for that. It is kept
+            for callers that just need a hashable key.
+        """
         return (self.major, self.minor, self.patch, self.pre or "")
 
     def __lt__(self, other):
+        """SemVer §11 less-than comparison.
+
+        A version *with* a pre-release is considered lower than the same
+        MAJOR.MINOR.PATCH *without* a pre-release.
+        """
         # Pre-release has lower precedence than release
         a = (self.major, self.minor, self.patch, 0 if self.pre is None else 1, self.pre or "")
         b = (other.major, other.minor, other.patch, 0 if other.pre is None else 1, other.pre or "")
@@ -87,18 +122,40 @@ class SemVer:
         return a_key < b_key
 
     def __eq__(self, other):
+        """Equality ignoring ``build`` metadata (per SemVer §10)."""
         return (self.major, self.minor, self.patch, self.pre) == (other.major, other.minor, other.patch, other.pre)
 
     def __le__(self, other):
+        """``<=`` defined in terms of :meth:`__eq__` and :meth:`__lt__`."""
         return self == other or self < other
 
     def __gt__(self, other):
+        """``>`` is the negation of :meth:`__le__`."""
         return not self <= other
 
     def __ge__(self, other):
+        """``>=`` is the negation of :meth:`__lt__`."""
         return not self < other
 
     def bump(self, kind: str, pre_tag: str = "alpha") -> 'SemVer':
+        """Return a new :class:`SemVer` advanced by ``kind``.
+
+        Args:
+            kind: One of ``"major"``, ``"minor"``, ``"patch"`` (resets lower
+                components to ``0`` and drops any pre-release/build), or
+                ``"prerelease"`` (increments the trailing numeric segment of
+                the existing pre-release, or starts ``<patch+1>-<pre_tag>.0``
+                on a release version).
+            pre_tag: Identifier used when promoting a release into its first
+                pre-release. Ignored when an existing pre-release is being
+                incremented.
+
+        Returns:
+            A brand-new :class:`SemVer`; ``self`` is never mutated.
+
+        Raises:
+            ValueError: If ``kind`` is not one of the recognised values.
+        """
         if kind == "major":
             return SemVer(self.major + 1, 0, 0)
         elif kind == "minor":
@@ -147,6 +204,13 @@ COMMIT_CATEGORIES = {
 
 @dataclass
 class Commit:
+    """A parsed git commit, classified by Conventional Commits 1.0.0.
+
+    Commits whose subject does not match the Conventional Commits grammar
+    are still represented here with ``type == "other"`` so they can be shown
+    in a generic "Other" changelog section rather than dropped silently.
+    """
+
     hash: str
     short_hash: str
     type: str
@@ -160,6 +224,20 @@ class Commit:
 
     @classmethod
     def from_git_line(cls, hash: str, message: str, author: str = "", date: str = "") -> 'Commit':
+        """Build a :class:`Commit` from raw ``git log`` fields.
+
+        Args:
+            hash: Full commit SHA. May be empty for synthetic commits.
+            message: First (subject) line of the commit message.
+            author: Author name (``%an``); optional, defaults to empty.
+            date: Author date in ISO-8601 (``%aI``); optional.
+
+        Returns:
+            A populated :class:`Commit`. If ``message`` does not match the
+            Conventional Commits subject grammar, ``type`` is set to
+            ``"other"`` and the original message is kept verbatim as the
+            description.
+        """
         short = hash[:7] if hash else ""
         m = CONVENTIONAL_RE.match(message.strip())
         if m:
@@ -184,6 +262,21 @@ class Commit:
 # ─── Git helpers ──────────────────────────────────────────────────
 
 def run_git(args: List[str], cwd: Optional[str] = None) -> Tuple[int, str]:
+    """Run ``git <args>`` and return ``(returncode, stdout_stripped)``.
+
+    Captures stdout/stderr, uses a 30-second timeout, and converts
+    ``FileNotFoundError`` / ``TimeoutExpired`` into a non-zero return code so
+    callers can stay on the happy path with a simple ``rc != 0`` guard.
+
+    Args:
+        args: Arguments after ``git`` (e.g. ``["tag", "--sort=-v:refname"]``).
+        cwd: Optional working directory; ``None`` uses the current directory.
+
+    Returns:
+        ``(returncode, stdout)`` — ``stdout`` is stripped of surrounding
+        whitespace. ``returncode`` is ``1`` (and ``stdout`` is empty) when
+        git is missing or the call timed out.
+    """
     try:
         r = subprocess.run(
             ["git"] + args, capture_output=True, text=True,
@@ -195,6 +288,15 @@ def run_git(args: List[str], cwd: Optional[str] = None) -> Tuple[int, str]:
 
 
 def get_git_tags(cwd=None) -> List[str]:
+    """Return all git tags in descending SemVer order.
+
+    Args:
+        cwd: Repository directory; ``None`` uses the current directory.
+
+    Returns:
+        Tag names (newest first by ``v:refname`` sort), or an empty list if
+        the repo has no tags or git is unavailable.
+    """
     rc, out = run_git(["tag", "--sort=-v:refname"], cwd)
     if rc != 0 or not out:
         return []
@@ -202,6 +304,18 @@ def get_git_tags(cwd=None) -> List[str]:
 
 
 def get_commits(from_ref=None, to_ref="HEAD", cwd=None) -> List[Commit]:
+    """Return :class:`Commit` objects for ``from_ref..to_ref`` (merges excluded).
+
+    Args:
+        from_ref: Inclusive-exclusive lower bound (any git rev). ``None``
+            means "all reachable commits up to ``to_ref``".
+        to_ref: Upper bound, defaults to ``HEAD``.
+        cwd: Repository directory; ``None`` uses the current directory.
+
+    Returns:
+        Newest-first list of parsed commits. Returns ``[]`` if the range is
+        empty, the refs are unknown, or git is unavailable.
+    """
     fmt = "%H|%s|%an|%aI"
     if from_ref:
         range_spec = f"{from_ref}..{to_ref}"
@@ -257,6 +371,17 @@ def find_version_file(project_dir: str, explicit: Optional[str] = None) -> Optio
 
 
 def update_version_file(filepath: str, old_ver: str, new_ver: str):
+    """Rewrite ``filepath`` replacing the first occurrence of ``old_ver`` with ``new_ver``.
+
+    Intentionally narrow: only the first textual match is rewritten so that
+    appearances of the version string in unrelated context (e.g. URLs or
+    code samples in the same file) are not mutated.
+
+    Args:
+        filepath: Path to a version-bearing file (e.g. ``pyproject.toml``).
+        old_ver: Current version string to replace.
+        new_ver: New version string to substitute.
+    """
     content = open(filepath).read()
     content = content.replace(old_ver, new_ver, 1)
     with open(filepath, 'w') as f:
@@ -267,6 +392,21 @@ def update_version_file(filepath: str, old_ver: str, new_ver: str):
 
 def generate_changelog_md(commits: List[Commit], version: str = "Unreleased",
                           date: str = None) -> str:
+    """Render a Markdown changelog grouped by Conventional Commits type.
+
+    Sections appear in a stable order (Features, Bug Fixes, …) regardless of
+    commit ordering. Commits marked with ``!`` are *additionally* surfaced in
+    a top-level "💥 Breaking Changes" block. Anything that did not parse as a
+    Conventional Commit lands in a final "📋 Other" section.
+
+    Args:
+        commits: Commits to summarise, newest-first.
+        version: Heading version string (e.g. ``"v1.2.0"`` or ``"Unreleased"``).
+        date: ISO date string for the heading; defaults to today (UTC).
+
+    Returns:
+        A Markdown document (no trailing newline).
+    """
     if not date:
         date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -309,6 +449,17 @@ def generate_changelog_md(commits: List[Commit], version: str = "Unreleased",
 
 def generate_changelog_json(commits: List[Commit], version: str = "Unreleased",
                             date: str = None) -> str:
+    """Render a JSON-encoded changelog with per-commit fields and aggregate stats.
+
+    Args:
+        commits: Commits to encode.
+        version: Version label included in the payload.
+        date: ISO date; defaults to today (UTC).
+
+    Returns:
+        Indented JSON string with shape
+        ``{"version", "date", "commits": [...], "stats": {"total", "breaking", "by_type"}}``.
+    """
     if not date:
         date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -341,6 +492,16 @@ def generate_changelog_json(commits: List[Commit], version: str = "Unreleased",
 
 def generate_changelog_text(commits: List[Commit], version: str = "Unreleased",
                             date: str = None) -> str:
+    """Render a plain-text changelog suitable for terminals and release notes.
+
+    Args:
+        commits: Commits to summarise.
+        version: Version label shown in the title line.
+        date: ISO date; defaults to today (UTC).
+
+    Returns:
+        A multi-line string ending with a ``Total: N commits`` footer.
+    """
     if not date:
         date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     lines = [f"{version} ({date})", "=" * (len(version) + len(date) + 3), ""]
@@ -356,6 +517,23 @@ def generate_changelog_text(commits: List[Commit], version: str = "Unreleased",
 # ─── Suggest next version ────────────────────────────────────────
 
 def suggest_next(current: SemVer, commits: List[Commit]) -> Tuple[SemVer, str]:
+    """Recommend the next :class:`SemVer` based on Conventional Commit traffic.
+
+    Decision rules (highest precedence first):
+
+    * any ``!`` breaking change → **major** bump
+    * any ``feat:`` commit → **minor** bump
+    * any ``fix:`` or other non-empty change → **patch** bump
+    * otherwise → no bump
+
+    Args:
+        current: Current released version.
+        commits: Commits to weigh (typically since the last tag).
+
+    Returns:
+        ``(next_version, human_reason)`` — ``next_version`` equals ``current``
+        when no bump is warranted.
+    """
     has_breaking = any(c.breaking for c in commits)
     has_feat = any(c.type == "feat" for c in commits)
     has_fix = any(c.type == "fix" for c in commits)
@@ -373,6 +551,18 @@ def suggest_next(current: SemVer, commits: List[Commit]) -> Tuple[SemVer, str]:
 # ─── Version history from tags ────────────────────────────────────
 
 def get_version_history(cwd=None) -> List[Dict]:
+    """Return release history derived from git tags that parse as SemVer.
+
+    Tags that fail :meth:`SemVer.parse` are silently skipped so non-release
+    tags (``"backup-2024"``, ``"old"``, …) don't pollute the output.
+
+    Args:
+        cwd: Repository directory; ``None`` uses the current directory.
+
+    Returns:
+        Newest-first list of ``{"tag", "version", "date", "author"}`` dicts.
+        ``date``/``author`` fall back to ``"unknown"`` if git can't resolve them.
+    """
     tags = get_git_tags(cwd)
     history = []
     for tag in tags:
@@ -394,6 +584,21 @@ def get_version_history(cwd=None) -> List[Dict]:
 # ─── Compare versions ────────────────────────────────────────────
 
 def compare_versions(a: str, b: str) -> Dict:
+    """Compare two SemVer strings and describe the relationship.
+
+    Args:
+        a: First version string.
+        b: Second version string.
+
+    Returns:
+        A dict with keys ``a``, ``b`` (canonicalised), ``relationship``
+        (human sentence), ``diff`` (per-component ``b - a``), and
+        ``compatible`` (``True`` when both share the same MAJOR — i.e. they
+        are SemVer API-compatible).
+
+    Raises:
+        ValueError: If either input fails :meth:`SemVer.parse`.
+    """
     va = SemVer.parse(a)
     vb = SemVer.parse(b)
     if va < vb:
@@ -420,6 +625,11 @@ def compare_versions(a: str, b: str) -> Dict:
 # ─── CLI ──────────────────────────────────────────────────────────
 
 def build_parser():
+    """Construct the top-level :class:`argparse.ArgumentParser`.
+
+    Split out from :func:`main` so the parser can be reused by tests and by
+    documentation tooling (e.g. ``sphinx-argparse``) without invoking the CLI.
+    """
     p = argparse.ArgumentParser(
         prog="sauravver",
         description="Version & release management for sauravcode projects",
@@ -477,6 +687,15 @@ def build_parser():
 
 
 def main(argv=None):
+    """CLI entry point.
+
+    Args:
+        argv: Optional argument list; ``None`` uses ``sys.argv[1:]``.
+
+    Returns:
+        Process exit code — ``0`` on success, ``1`` on user/data errors,
+        ``2`` for unparseable arguments (raised by :mod:`argparse`).
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
 
