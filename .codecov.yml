@@ -1,5 +1,7 @@
 codecov:
   require_ci_to_pass: true
+  notify:
+    wait_for_ci: true
 
 coverage:
   precision: 2
@@ -10,17 +12,96 @@ coverage:
     project:
       default:
         target: 70%
-        threshold: 5%
+        threshold: 1%
+        informational: false
+      interpreter:
+        target: 65%
+        threshold: 2%
+        paths:
+          - "saurav.py"
+          - "sauravast.py"
+      compiler:
+        target: 60%
+        threshold: 2%
+        paths:
+          - "sauravcc.py"
+      tools:
+        target: auto
+        threshold: 2%
+        paths:
+          - "sauravadapt.py"
+          - "sauravagent.py"
+          - "sauravalchemy.py"
+          - "sauravarchitect.py"
+          - "saurav[a-z]*.py"
     patch:
       default:
         target: 60%
+        threshold: 5%
+
+# Group source files into logical components for the dashboard.
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        branches:
+          - "!main"
+          - "!master"
+  individual_components:
+    - component_id: interpreter
+      name: Interpreter
+      paths:
+        - "saurav.py"
+        - "sauravast.py"
+    - component_id: compiler
+      name: Compiler
+      paths:
+        - "sauravcc.py"
+    - component_id: cli_package
+      name: CLI Package
+      paths:
+        - "sauravcode/**"
+    - component_id: tooling
+      name: Tooling (saurav* scripts)
+      paths:
+        - "saurav[a-z]*.py"
+        - "!saurav.py"
+        - "!sauravcc.py"
+        - "!sauravast.py"
+
+# Flag-based reporting (driven by `pytest --cov` invocations).
+flags:
+  unit:
+    paths:
+      - tests/
+      - sauravcode/
+      - "saurav.py"
+      - "sauravcc.py"
+    carryforward: false
+
+flag_management:
+  default_rules:
+    carryforward: false
+    statuses:
+      - type: project
+        target: 70%
+        threshold: 1%
 
 comment:
-  layout: "header, diff, flags, components"
+  layout: "header, diff, components, flags, files, footer"
   behavior: default
   require_changes: false
   require_base: false
   require_head: true
+  show_carryforward_flags: false
+
+github_checks:
+  annotations: true
+
+parsers:
+  v1:
+    include_full_missed_files: false
 
 ignore:
   - "docs/**"
@@ -29,3 +110,5 @@ ignore:
   - "editors/**"
   - "*.srv"
   - "test_*.py"
+  - "setup.py"
+  - ".github/**"

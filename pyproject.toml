@@ -71,7 +71,11 @@ addopts = [
 ]
 
 [tool.coverage.run]
+branch = true
+parallel = true
 source = ["sauravcode", "."]
+data_file = ".coverage"
+relative_files = true
 omit = [
     "tests/*",
     "docs/*",
@@ -79,20 +83,46 @@ omit = [
     "editors/*",
     "setup.py",
     "test_*.py",
+    "*/__main__.py",
+]
+
+[tool.coverage.paths]
+# Normalize paths so coverage merges runs from different OSes / venvs.
+source = [
+    ".",
+    "/home/runner/work/sauravcode/sauravcode",
+    "D:\\a\\sauravcode\\sauravcode",
 ]
 
 [tool.coverage.report]
 show_missing = true
+skip_covered = false
+skip_empty = true
+precision = 2
 fail_under = 70
 exclude_lines = [
     "pragma: no cover",
     "if __name__",
     "def __repr__",
+    "def __str__",
     "raise NotImplementedError",
+    "raise AssertionError",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+    "\\.\\.\\.\\s*$",
+    "pass\\s*$",
 ]
 
 [tool.coverage.html]
 directory = "htmlcov"
+show_contexts = true
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.coverage.json]
+output = "coverage.json"
+pretty_print = true
 
 [tool.ruff]
 target-version = "py39"
