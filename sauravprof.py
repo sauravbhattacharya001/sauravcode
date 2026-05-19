@@ -19,11 +19,45 @@ import json as _json
 import sys
 import os
 import argparse
+from contextlib import nullcontext as _nullcontext
 from collections import defaultdict
+from contextlib import contextmanager
 
 # Import the sauravcode interpreter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from saurav import tokenize, Parser, Interpreter
+
+# Sentinel name used for the synthetic root frame so it can be excluded
+# from reports and counted out of function_count. Centralising the
+# literal avoids drift between Profiler and get_sorted_stats.
+_ROOT_NAME = '<top-level>'
+
+# Sort-key lookup table used by get_sorted_stats. Hoisted to module
+# scope so we don't allocate it on every call (and so the supported
+# keys are easy to discover in one place).
+_SORT_KEYS = {
+    'total_time': lambda s: s.total_time,
+    'self_time': lambda s: s.self_time,
+    'call_count': lambda s: s.call_count,
+    'avg_time': lambda s: s.avg_time,
+    'max_time': lambda s: s.max_time,
+}
+
+
+@contextmanager
+def _suppressed_stdout():
+    """Redirect ``sys.stdout`` to an in-memory buffer for the duration
+    of the ``with`` block, restoring the original stream on exit even
+    if the body raises. Replaces the ad-hoc swap/restore dance in
+    ``main`` which leaked the original stdout on early errors.
+    """
+    import io
+    old = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = old
 
 
 class ProfileStats:
@@ -88,7 +122,7 @@ class Profiler:
 
     def on_call_enter(self, name):
         self.total_calls += 1
-        caller = self.call_stack[-1].name if self.call_stack else '<top-level>'
+        caller = self.call_stack[-1].name if self.call_stack else _ROOT_NAME
 
         stats = self._get_stats(name)
         stats.call_count += 1
@@ -149,7 +183,9 @@ class Profiler:
         if hasattr(interpreter, '_evaluate_dispatch'):
             interpreter._evaluate_dispatch[FunctionCallNode] = profiled_execute
         if hasattr(interpreter, '_interpret_dispatch'):
-            interpreter._interpret_dispatch[FunctionCallNode] = lambda node: profiled_execute(node)
+            # ``profiled_execute`` already accepts a single positional
+            # node argument, so the wrapping lambda was redundant.
+            interpreter._interpret_dispatch[FunctionCallNode] = profiled_execute
 
         # Also wrap builtin calls if the method exists
         if hasattr(interpreter, '_call_builtin'):
@@ -187,22 +223,24 @@ class Profiler:
     def wall_time(self):
         return self.end_time - self.start_time
 
+    @property
+    def function_count(self):
+        """Number of profiled functions, excluding the synthetic root.
+
+        Clamped to ``>= 0`` so callers that hit ``to_json`` or
+        ``format_report`` before any instrumentation has run don't
+        observe a nonsensical ``-1``.
+        """
+        return max(0, len(self.stats) - (1 if _ROOT_NAME in self.stats else 0))
+
     def get_sorted_stats(self, sort_by='total_time', top_n=None, threshold_ms=0):
-        entries = list(self.stats.values())
         entries = [
-            e for e in entries
-            if e.name != '<top-level>'
+            e for e in self.stats.values()
+            if e.name != _ROOT_NAME
             and e.total_time * 1000 >= threshold_ms
         ]
 
-        key_map = {
-            'total_time': lambda s: s.total_time,
-            'self_time': lambda s: s.self_time,
-            'call_count': lambda s: s.call_count,
-            'avg_time': lambda s: s.avg_time,
-            'max_time': lambda s: s.max_time,
-        }
-        key_fn = key_map.get(sort_by, key_map['total_time'])
+        key_fn = _SORT_KEYS.get(sort_by, _SORT_KEYS['total_time'])
         entries.sort(key=key_fn, reverse=True)
 
         if top_n:
@@ -224,7 +262,7 @@ class Profiler:
         lines.append('')
         lines.append('  Wall time:    {:.2f} ms'.format(self.wall_time * 1000))
         lines.append('  Total calls:  {}'.format(self.total_calls))
-        lines.append('  Functions:    {}'.format(len(self.stats) - 1))
+        lines.append('  Functions:    {}'.format(self.function_count))
         lines.append('')
 
         entries = self.get_sorted_stats(sort_by, top_n, threshold_ms)
@@ -353,7 +391,7 @@ class Profiler:
         return _json.dumps({
             'wall_time_ms': round(self.wall_time * 1000, 4),
             'total_calls': self.total_calls,
-            'function_count': len(self.stats) - 1,
+            'function_count': self.function_count,
             'functions': [e.to_dict() for e in entries],
         }, indent=2)
 
@@ -387,22 +425,17 @@ def main():
 
     source_dir = os.path.dirname(os.path.abspath(args.file))
 
-    if args.quiet:
-        import io
-        old_stdout = sys.stdout
-        sys.stdout = io.StringIO()
-
     profiler = Profiler()
+    quiet_ctx = _suppressed_stdout() if args.quiet else _nullcontext()
     try:
-        profiler.run_program(code, source_dir)
+        with quiet_ctx:
+            profiler.run_program(code, source_dir)
     except Exception as e:
-        if args.quiet:
-            sys.stdout = old_stdout
+        # ``_suppressed_stdout`` has already restored stdout on the way
+        # out of the ``with`` block, so this print always reaches the
+        # real stderr regardless of ``--quiet``.
         print('Error during execution: ' + str(e), file=sys.stderr)
         sys.exit(1)
-
-    if args.quiet:
-        sys.stdout = old_stdout
 
     if args.json:
         print(profiler.to_json(args.sort, args.top, args.threshold))
