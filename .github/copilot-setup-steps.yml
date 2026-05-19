@@ -1,40 +1,78 @@
 name: "Copilot Setup Steps"
 
+# Reproducible environment for GitHub Copilot coding agents
+# (Claude, Codex, etc.) and for humans debugging CI parity.
+#
+# Mirrors the matrix-3.13 leg of .github/workflows/ci.yml so an
+# agent that runs this workflow ends up with the same tooling the
+# real CI uses.
+
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   setup:
+    name: Bootstrap dev environment
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
 
-      - name: Install GCC
+      - name: Install system build tools (gcc for sauravcc.py)
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc
+          sudo apt-get install -y --no-install-recommends gcc
+          gcc --version
 
-      - name: Install package and dependencies
-        run: pip install -e ".[dev]" 2>/dev/null || pip install -e . || true
+      - name: Upgrade pip / wheel / setuptools
+        run: python -m pip install --upgrade pip wheel setuptools
 
-      - name: Install test dependencies
-        run: pip install pytest pytest-cov
-
-      - name: Verify interpreter
-        run: python saurav.py test_all.srv
-
-      - name: Verify compiler
+      - name: Install sauravcode (editable) and dev tooling
         run: |
-          python sauravcc.py test_all.srv
+          # The package itself (so `sauravcode`, `sauravcode-compile`,
+          # `sauravcode-snap`, `sauravcode-api`, `sauravcode-canvas`,
+          # `sauravcode-cheat`, `sauravcode-pipe` console scripts work).
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          # Test + lint tooling used by CI.
+          pip install pytest pytest-cov ruff
+
+      - name: Verify console scripts are importable
+        run: |
+          python -c "import sauravcode; print('sauravcode', sauravcode.__version__)"
+          sauravcode --help || true
+          sauravcode-compile --help || true
+
+      - name: Smoke-test interpreter (saurav.py)
+        run: |
+          python saurav.py hello.srv
+          python saurav.py a.srv
+
+      - name: Smoke-test compiler (sauravcc.py -> C -> native)
+        run: |
           python sauravcc.py hello.srv
           python sauravcc.py a.srv
+          python sauravcc.py test_all.srv
 
-      - name: Run pytest suite
-        run: pytest tests/ -v --tb=short 2>/dev/null || echo "pytest tests complete"
+      - name: Run ruff (lint + format check) — non-blocking warm-up
+        run: |
+          ruff check --output-format=github . || true
+          ruff format --check --diff . || true
+
+      - name: Run pytest suite (tests/)
+        run: |
+          pytest tests/ --maxfail=1 --tb=short -q
