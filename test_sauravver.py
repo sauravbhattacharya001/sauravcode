@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sauravver import SemVer, Commit, CONVENTIONAL_RE, main, compare_versions, suggest_next, \
-    find_version_file, generate_changelog_md, generate_changelog_json, generate_changelog_text
+    find_version_file, update_version_file, generate_changelog_md, generate_changelog_json, generate_changelog_text
 
 
 class TestSemVerParse(unittest.TestCase):
@@ -306,6 +306,159 @@ class TestCLI(unittest.TestCase):
     def test_set_invalid(self):
         rc = main(["set", "nope"])
         self.assertEqual(rc, 1)
+
+
+class TestUpdateVersionFileSurgical(unittest.TestCase):
+    """Regression tests for issue #129.
+
+    The original update_version_file used str.replace(old, new, 1),
+    which silently corrupted unrelated content (URLs, badges, changelog
+    refs) that happened to contain the same numeric triple earlier in
+    the file. These tests pin the new contract: only the matched
+    version-field substring is rewritten.
+    """
+
+    def test_pyproject_does_not_touch_unrelated_url(self):
+        # The exact repro from the issue body.
+        body = (
+            '[project]\n'
+            'name = "demo"\n'
+            'description = "see https://example.com/releases/1.2.3/notes"\n'
+            'version = "1.2.3"\n'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "pyproject.toml")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(body)
+            update_version_file(fp, "1.2.3", "1.2.4")
+            with open(fp, "r", encoding="utf-8") as f:
+                got = f.read()
+            # URL is untouched.
+            self.assertIn("/releases/1.2.3/notes", got)
+            # Version is actually bumped.
+            self.assertIn('version = "1.2.4"', got)
+            # And there's exactly one '1.2.4' in the file (we didn't
+            # double-bump or accidentally rewrite the URL too).
+            self.assertEqual(got.count("1.2.4"), 1)
+
+    def test_pyproject_preserves_surrounding_lines(self):
+        body = (
+            '[project]\n'
+            'name = "demo"\n'
+            'authors = [{name = "A B", email = "a@b"}]\n'
+            'version = "0.9.0"\n'
+            'requires-python = ">=3.10"\n'
+            '\n'
+            '[tool.demo]\n'
+            'changelog_url = "https://example.com/v0.9.0"\n'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "pyproject.toml")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(body)
+            update_version_file(fp, "0.9.0", "0.10.0")
+            with open(fp, "r", encoding="utf-8") as f:
+                got = f.read()
+            self.assertIn('version = "0.10.0"', got)
+            # Unrelated 0.9.0 in a tool config URL must survive.
+            self.assertIn("https://example.com/v0.9.0", got)
+            # Authors/requires-python lines unchanged.
+            self.assertIn('authors = [{name = "A B", email = "a@b"}]', got)
+            self.assertIn('requires-python = ">=3.10"', got)
+
+    def test_package_json_does_not_touch_dependency_versions(self):
+        body = (
+            '{\n'
+            '  "name": "demo",\n'
+            '  "dependencies": {\n'
+            '    "left-pad": "1.0.0",\n'
+            '    "some-other": "^2.3.4"\n'
+            '  },\n'
+            '  "version": "1.0.0"\n'
+            '}\n'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "package.json")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(body)
+            update_version_file(fp, "1.0.0", "1.0.1")
+            with open(fp, "r", encoding="utf-8") as f:
+                got = f.read()
+            # Top-level version bumped…
+            self.assertIn('"version": "1.0.1"', got)
+            # …but the left-pad dependency pin survives.
+            self.assertIn('"left-pad": "1.0.0"', got)
+            self.assertNotIn('"left-pad": "1.0.1"', got)
+
+    def test_setup_py_only_touches_version_kwarg(self):
+        body = (
+            'from setuptools import setup\n'
+            '\n'
+            '# Note: previous release was 2.1.0 — see /releases/2.1.0\n'
+            'setup(\n'
+            '    name="demo",\n'
+            '    version="2.1.0",\n'
+            ')\n'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "setup.py")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(body)
+            update_version_file(fp, "2.1.0", "2.2.0")
+            with open(fp, "r", encoding="utf-8") as f:
+                got = f.read()
+            self.assertIn('version="2.2.0"', got)
+            # Comment still references the old release URL.
+            self.assertIn("/releases/2.1.0", got)
+
+    def test_bump_e2e_does_not_corrupt_unrelated_content(self):
+        """End-to-end: `sauravver bump patch` must bump the version
+        field and leave unrelated lines untouched.
+        """
+        body = (
+            '[project]\n'
+            'name = "demo"\n'
+            'description = "docs at https://example.com/releases/3.4.5/"\n'
+            'version = "3.4.5"\n'
+        )
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "pyproject.toml")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(body)
+            rc = main(["--dir", d, "bump", "patch"])
+            self.assertEqual(rc, 0)
+            with open(fp, "r", encoding="utf-8") as f:
+                got = f.read()
+            self.assertIn('version = "3.4.6"', got)
+            self.assertIn("https://example.com/releases/3.4.5/", got)
+
+    def test_raises_when_version_field_missing(self):
+        """If the version field literally isn't in the file we surface
+        a ValueError instead of silently no-oping or corrupting a
+        matching URL.
+        """
+        body = '[project]\nname = "demo"\n'
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "pyproject.toml")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(body)
+            with self.assertRaises(ValueError):
+                update_version_file(fp, "1.2.3", "1.2.4")
+
+    def test_preserves_lf_line_endings_on_windows(self):
+        """newline="" prevents Python from rewriting LF -> CRLF on
+        Windows; matters for repos that pin `*.toml text eol=lf`.
+        """
+        body = b'[project]\nname = "demo"\nversion = "1.0.0"\n'
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "pyproject.toml")
+            with open(fp, "wb") as f:
+                f.write(body)
+            update_version_file(fp, "1.0.0", "1.0.1")
+            with open(fp, "rb") as f:
+                got = f.read()
+            self.assertNotIn(b"\r\n", got)
+            self.assertIn(b'version = "1.0.1"', got)
 
 
 if __name__ == "__main__":

@@ -371,21 +371,59 @@ def find_version_file(project_dir: str, explicit: Optional[str] = None) -> Optio
 
 
 def update_version_file(filepath: str, old_ver: str, new_ver: str):
-    """Rewrite ``filepath`` replacing the first occurrence of ``old_ver`` with ``new_ver``.
+    """Rewrite the version field in ``filepath`` from ``old_ver`` to ``new_ver``.
 
-    Intentionally narrow: only the first textual match is rewritten so that
-    appearances of the version string in unrelated context (e.g. URLs or
-    code samples in the same file) are not mutated.
+    Format-aware: looks up the file's regex from :data:`VERSION_FILE_PATTERNS`
+    and rewrites *only* inside the matched version-field substring instead of
+    blindly replacing the first textual occurrence of the version literal
+    anywhere in the file.
 
-    Args:
-        filepath: Path to a version-bearing file (e.g. ``pyproject.toml``).
-        old_ver: Current version string to replace.
-        new_ver: New version string to substitute.
+    The old implementation used ``content.replace(old_ver, new_ver, 1)``,
+    which corrupted unrelated content whenever the same numeric triple
+    appeared earlier in the file (release-notes URLs, changelog refs,
+    badges, etc.). See issue #129 for the full repro: a ``pyproject.toml``
+    with ``description = "... /releases/1.2.3/notes"`` ahead of
+    ``version = "1.2.3"`` would silently mutate the URL and leave the
+    real version untouched.
+
+    Also opens with explicit ``encoding="utf-8"`` (the previous default
+    locale encoding was mojibake-prone on non-UTF-8 hosts) and preserves
+    existing line endings via ``newline=""`` so repos that pin LF don't
+    get silently rewritten to CRLF on Windows.
+
+    Raises:
+        ValueError: if the file's basename isn't in ``VERSION_FILE_PATTERNS``
+            or the version field can't be located in the file.
     """
-    content = open(filepath).read()
-    content = content.replace(old_ver, new_ver, 1)
-    with open(filepath, 'w') as f:
-        f.write(content)
+    fname = os.path.basename(filepath)
+    pattern: Optional[str] = None
+    for f, p, _t in VERSION_FILE_PATTERNS:
+        if f.lower() == fname.lower():
+            pattern = p
+            break
+    if pattern is None:
+        # Fall back to a permissive single-line match (mirrors the
+        # explicit-file branch of find_version_file).
+        pattern = r'^(.+)$'
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    def _swap(match: "re.Match[str]") -> str:
+        # Replace only inside the matched substring (the version field),
+        # and only the first occurrence within it — group(1) is always
+        # the version literal for the patterns we ship, so this is a
+        # surgical edit.
+        return match.group(0).replace(old_ver, new_ver, 1)
+
+    new_content, n = re.subn(pattern, _swap, content, count=1, flags=re.MULTILINE)
+    if n == 0:
+        raise ValueError(
+            f"version field not found in {filepath!r} (looked for old_ver={old_ver!r})"
+        )
+
+    with open(filepath, "w", encoding="utf-8", newline="") as f:
+        f.write(new_content)
 
 
 # ─── Changelog generation ────────────────────────────────────────
@@ -696,6 +734,18 @@ def main(argv=None):
         Process exit code — ``0`` on success, ``1`` on user/data errors,
         ``2`` for unparseable arguments (raised by :mod:`argparse`).
     """
+    # Issue #129: the default Windows console is cp1252 and would raise
+    # UnicodeEncodeError on the '→'/emoji output below — before the
+    # version bump was written. Promote stdout/stderr to utf-8 with a
+    # replacement fallback so non-ASCII output never crashes the bump.
+    for _stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(_stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                # Best-effort; never let console encoding kill a bump.
+                pass
     parser = build_parser()
     args = parser.parse_args(argv)
 
