@@ -65,18 +65,35 @@ BUILTINS = {
 RESERVED = KEYWORDS | BUILTINS
 
 
+def _bijective_base26(n):
+    """Convert ``n`` (>=0) to its bijective base-26 representation.
+
+    Maps 0->'a', 1->'b', ..., 25->'z', 26->'aa', 27->'ab', ... so that
+    every positive integer produces a unique non-empty lowercase string
+    (this is the same scheme Excel uses for column labels, 0-indexed).
+    """
+    if n < 0:
+        raise ValueError("n must be non-negative")
+    chars = []
+    val = n
+    while True:
+        chars.append(string.ascii_lowercase[val % 26])
+        val = val // 26 - 1
+        if val < 0:
+            break
+    return ''.join(reversed(chars))
+
+
 def _id_generator():
-    """Generate short identifiers: _a, _b, ..., _z, _aa, _ab, ..."""
+    """Yield short identifiers ``_a, _b, ..., _z, _aa, _ab, ...``
+
+    Identifiers that collide with a language keyword or builtin are
+    skipped, so callers can always trust the yielded name is safe to
+    use as a fresh variable name.
+    """
     n = 0
     while True:
-        name = ""
-        val = n
-        while True:
-            name = string.ascii_lowercase[val % 26] + name
-            val = val // 26 - 1
-            if val < 0:
-                break
-        candidate = f"_{name}"
+        candidate = f"_{_bijective_base26(n)}"
         if candidate not in RESERVED:
             yield candidate
         n += 1
@@ -119,9 +136,28 @@ def _apply_renames(source, rename_map):
 def _strip_comments(line):
     """Remove comments from a line, preserving strings.
 
-    Delegates to sauravtext.strip_comment for consistent behaviour.
+    Delegates to sauravtext.strip_comment for consistent behaviour and
+    rstrips the result so callers don't need to do it again.
     """
     return strip_comment(line).rstrip()
+
+
+def _collapse_consecutive_blank_lines(lines):
+    """Collapse runs of blank lines down to a single blank line.
+
+    A line is considered blank if it contains nothing but whitespace.
+    The first blank in a run is preserved; subsequent blanks are dropped.
+    Non-blank lines are always preserved verbatim.
+    """
+    out = []
+    prev_blank = False
+    for line in lines:
+        is_blank = not line.strip()
+        if is_blank and prev_blank:
+            continue
+        out.append(line)
+        prev_blank = is_blank
+    return out
 
 
 def minify(source, level=2):
@@ -134,25 +170,15 @@ def minify(source, level=2):
     rename_map = {}
     lines = source.split('\n')
 
-    processed = []
-    for line in lines:
-        stripped = _strip_comments(line)
-        stripped = stripped.rstrip()
-        processed.append(stripped)
+    # _strip_comments() already rstrip()'s its result, so the trailing
+    # rstrip() that used to live here was redundant.
+    processed = [_strip_comments(line) for line in lines]
 
     if level >= 1:
-        collapsed = []
-        prev_blank = False
-        for line in processed:
-            is_blank = (line.strip() == '')
-            if is_blank and prev_blank:
-                continue
-            collapsed.append(line)
-            prev_blank = is_blank
-        processed = collapsed
+        processed = _collapse_consecutive_blank_lines(processed)
 
     if level >= 2:
-        processed = [line for line in processed if line.strip() != '']
+        processed = [line for line in processed if line.strip()]
 
     result = '\n'.join(processed)
     if result and not result.endswith('\n'):

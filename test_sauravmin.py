@@ -17,6 +17,8 @@ from sauravmin import (
     _collect_identifiers,
     _build_rename_map,
     _apply_renames,
+    _bijective_base26,
+    _collapse_consecutive_blank_lines,
     RESERVED,
 )
 
@@ -271,6 +273,108 @@ class TestMinifyDirectory(unittest.TestCase):
             stats_deep = minify_directory(src_dir, recursive=True, dry_run=True)
             self.assertEqual(len(stats_flat), 1)
             self.assertEqual(len(stats_deep), 2)
+
+
+class TestBijectiveBase26(unittest.TestCase):
+    """Verify the helper used to mint short identifier suffixes."""
+
+    def test_first_26_are_single_letters(self):
+        self.assertEqual(_bijective_base26(0), "a")
+        self.assertEqual(_bijective_base26(1), "b")
+        self.assertEqual(_bijective_base26(25), "z")
+
+    def test_wraps_to_two_letters(self):
+        # 26 must be 'aa' (bijective base-26, no zero digit)
+        self.assertEqual(_bijective_base26(26), "aa")
+        self.assertEqual(_bijective_base26(27), "ab")
+        self.assertEqual(_bijective_base26(51), "az")
+        self.assertEqual(_bijective_base26(52), "ba")
+
+    def test_three_letter_boundary(self):
+        # 26 + 26*26 = 702 is the first three-letter ('aaa')
+        self.assertEqual(_bijective_base26(26 + 26 * 26), "aaa")
+
+    def test_uniqueness_over_first_1000(self):
+        names = [_bijective_base26(i) for i in range(1000)]
+        self.assertEqual(len(set(names)), 1000)
+        # all non-empty, all lowercase a-z
+        for n in names:
+            self.assertTrue(n)
+            self.assertTrue(all(c in "abcdefghijklmnopqrstuvwxyz" for c in n))
+
+    def test_negative_raises(self):
+        with self.assertRaises(ValueError):
+            _bijective_base26(-1)
+
+
+class TestIdGenerator(unittest.TestCase):
+    """Sanity checks for the public identifier generator."""
+
+    def test_starts_with_underscore_a(self):
+        gen = _id_generator()
+        self.assertEqual(next(gen), "_a")
+        self.assertEqual(next(gen), "_b")
+
+    def test_yields_unique_values(self):
+        gen = _id_generator()
+        seen = [next(gen) for _ in range(500)]
+        self.assertEqual(len(set(seen)), 500)
+
+    def test_skips_reserved_words(self):
+        # 'if', 'in', 'or' etc. are reserved -- but our names start with '_',
+        # so collisions only happen if RESERVED gains a name starting with '_'.
+        # Inject a known reserved name with the same shape and verify it's
+        # skipped.
+        import sauravmin as sm
+        sm.RESERVED.add("_a")
+        try:
+            gen = sm._id_generator()
+            first = next(gen)
+            self.assertNotEqual(first, "_a")
+            self.assertEqual(first, "_b")
+        finally:
+            sm.RESERVED.discard("_a")
+
+
+class TestCollapseConsecutiveBlankLines(unittest.TestCase):
+    """Verify the extracted blank-line-collapsing helper."""
+
+    def test_no_blanks_unchanged(self):
+        lines = ["a", "b", "c"]
+        self.assertEqual(_collapse_consecutive_blank_lines(lines), lines)
+
+    def test_single_blank_preserved(self):
+        self.assertEqual(
+            _collapse_consecutive_blank_lines(["a", "", "b"]),
+            ["a", "", "b"],
+        )
+
+    def test_run_of_blanks_collapsed(self):
+        self.assertEqual(
+            _collapse_consecutive_blank_lines(["a", "", "", "", "b"]),
+            ["a", "", "b"],
+        )
+
+    def test_whitespace_only_counts_as_blank(self):
+        self.assertEqual(
+            _collapse_consecutive_blank_lines(["a", "   ", "\t", "b"]),
+            ["a", "   ", "b"],
+        )
+
+    def test_leading_and_trailing_blanks(self):
+        self.assertEqual(
+            _collapse_consecutive_blank_lines(["", "", "a", "", ""]),
+            ["", "a", ""],
+        )
+
+    def test_empty_input(self):
+        self.assertEqual(_collapse_consecutive_blank_lines([]), [])
+
+    def test_all_blank(self):
+        self.assertEqual(
+            _collapse_consecutive_blank_lines(["", "", ""]),
+            [""],
+        )
 
 
 if __name__ == "__main__":
