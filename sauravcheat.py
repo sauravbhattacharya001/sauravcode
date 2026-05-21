@@ -20,15 +20,31 @@ import os
 _NO_COLOR = os.environ.get("NO_COLOR") is not None or "--no-color" in sys.argv
 
 def _c(code, text):
+    """Wrap ``text`` in an ANSI SGR escape using ``code`` (e.g. ``"1;36"``).
+
+    Returns ``text`` unchanged when colored output is disabled via the
+    ``NO_COLOR`` env var or the ``--no-color`` CLI flag, so callers can
+    use ``_c`` unconditionally.
+    """
     if _NO_COLOR:
         return text
     return "\033[{}m{}\033[0m".format(code, text)
 
-def _h(t):    return _c("1;36", t)   # heading: bold cyan
-def _k(t):    return _c("33", t)     # keyword: yellow
-def _s(t):    return _c("32", t)     # string/value: green
-def _d(t):    return _c("2", t)      # dim
-def _b(t):    return _c("1", t)      # bold
+def _h(t):
+    """Format ``t`` as a section heading (bold cyan)."""
+    return _c("1;36", t)
+def _k(t):
+    """Format ``t`` as a language keyword (yellow)."""
+    return _c("33", t)
+def _s(t):
+    """Format ``t`` as a string/value literal (green)."""
+    return _c("32", t)
+def _d(t):
+    """Format ``t`` as dim/muted text."""
+    return _c("2", t)
+def _b(t):
+    """Format ``t`` as bold."""
+    return _c("1", t)
 
 # ── Cheat sheet content ──────────────────────────────────────────
 
@@ -196,6 +212,7 @@ def _print_section(key, title, entries, compact=False):
 
 
 def _print_header():
+    """Print the decorative cheat-sheet banner."""
     print()
     print("  " + _h("+==========================================+"))
     print("  " + _h("|") + _b("    sauravcode -- Language Cheat Sheet    ") + _h("|"))
@@ -204,6 +221,7 @@ def _print_header():
 
 
 def _print_footer():
+    """Print docs/source links shown at the end of the full cheat sheet."""
     print()
     print("  " + _d("Docs: https://sauravbhattacharya001.github.io/sauravcode/"))
     print("  " + _d("Source: https://github.com/sauravbhattacharya001/sauravcode"))
@@ -211,6 +229,16 @@ def _print_footer():
 
 
 def main():
+    """CLI entry point: parse argv, dispatch to list/help/section views.
+
+    Recognises:
+        ``--list``     -- print all section keys.
+        ``--help`` / ``-h`` -- print module docstring.
+        ``--compact``  -- terse one-liner format.
+        ``--no-color`` -- disable ANSI colors (also via ``NO_COLOR`` env).
+        positional args -- one or more section name prefixes.
+    With no positional arg, prints the full cheat sheet.
+    """
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     compact = "--compact" in sys.argv
 

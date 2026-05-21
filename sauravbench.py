@@ -378,6 +378,16 @@ def load_file(filename):
 
 
 def main():
+    """CLI entry point: parse args, run benchmarks, emit table/JSON output.
+
+    Supports single-file timing, two-file ``--compare`` mode, baseline
+    save/check (``--save`` / ``--check``) with a configurable regression
+    ``--threshold``, percentile reporting, and an ASCII histogram.
+
+    Exit status:
+        0 on success or improvement vs baseline.
+        1 on regression (``--check`` failed) or invalid usage.
+    """
     parser = argparse.ArgumentParser(
         prog="sauravbench",
         description="Benchmark runner for sauravcode (.srv) programs.",

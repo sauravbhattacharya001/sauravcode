@@ -47,9 +47,38 @@ import argparse
 
 
 class TurtleState:
-    """Track the turtle's position, heading, pen state, and drawn paths."""
+    """Track the turtle's position, heading, pen state, and drawn paths.
+
+    Internally accumulates draw operations as SVG fragments. Polylines
+    are batched into ``_current_path`` and committed by ``_flush_path``
+    whenever the rendering state changes (color/width/pen up/teleport)
+    so that consecutive ``forward`` moves emit a single ``<polyline>``
+    instead of N ``<line>`` elements.
+
+    Coordinate system mirrors a classic Logo turtle: the origin is the
+    canvas center, positive X points right, and positive Y points down
+    (SVG convention). ``heading`` is in degrees with 0 = east and
+    -90 = north (initial heading), so ``forward`` initially moves up
+    in screen space.
+
+    Attributes:
+        x, y: Current pen position in pixels.
+        heading: Current heading in degrees (-90 = up).
+        pen_down: When True, ``forward``/``goto`` extend the current path.
+        color: Stroke color (CSS name or hex) for subsequent drawing.
+        width: Stroke width in pixels (>= 0.1).
+        fill: Fill color used when drawing closed shapes (e.g. circles).
+        canvas_w, canvas_h: Canvas dimensions in pixels.
+        canvas_bg: Background fill color.
+        elements: Committed SVG element strings, in draw order.
+        pos_stack: Stack of (x, y, heading) snapshots for save/restore.
+    """
 
     def __init__(self):
+        """Initialize the turtle at the center of an 800x600 white canvas.
+
+        The pen starts down, with a 2-pixel black stroke and no fill.
+        """
         self.x = 400.0
         self.y = 300.0
         self.heading = -90.0  # degrees, 0 = right, -90 = up
@@ -65,6 +94,13 @@ class TurtleState:
         self._current_path = []  # points for current polyline
 
     def _flush_path(self):
+        """Commit any in-progress polyline to ``self.elements`` and reset.
+
+        Called whenever the next operation cannot extend the current
+        polyline (e.g. color change, pen lift, jump). A path with fewer
+        than two points is silently discarded, since SVG ``<polyline>``
+        needs at least two coordinates to render.
+        """
         if len(self._current_path) >= 2:
             pts = " ".join(f"{x:.2f},{y:.2f}" for x, y in self._current_path)
             self.elements.append(
@@ -75,6 +111,12 @@ class TurtleState:
         self._current_path = []
 
     def forward(self, dist):
+        """Move the turtle ``dist`` pixels along its current heading.
+
+        Extends the active polyline when the pen is down; otherwise
+        flushes any pending path and teleports without drawing. Negative
+        distances move backward.
+        """
         rad = math.radians(self.heading)
         nx = self.x + dist * math.cos(rad)
         ny = self.y + dist * math.sin(rad)
@@ -87,35 +129,59 @@ class TurtleState:
         self.x, self.y = nx, ny
 
     def back(self, dist):
+        """Move backward ``dist`` pixels (equivalent to ``forward(-dist)``)."""
         self.forward(-dist)
 
     def right(self, deg):
+        """Rotate the heading clockwise by ``deg`` degrees.
+
+        Flushes any in-progress polyline first so the rotation appears
+        as a sharp corner rather than a smoothed join.
+        """
         self._flush_path()
         self.heading = (self.heading + deg) % 360
 
     def left(self, deg):
+        """Rotate the heading counter-clockwise by ``deg`` degrees."""
         self._flush_path()
         self.heading = (self.heading - deg) % 360
 
     def set_pen_up(self):
+        """Lift the pen so subsequent moves do not draw.
+
+        Any in-progress polyline is flushed to the SVG element list.
+        """
         self._flush_path()
         self.pen_down = False
 
     def set_pen_down(self):
+        """Lower the pen so subsequent moves resume drawing."""
         self.pen_down = True
 
     def set_color(self, c):
+        """Set the stroke color. Flushes the current polyline first.
+
+        ``c`` may be any CSS-recognised color (named, ``#rgb``, ``#rrggbb``).
+        """
         self._flush_path()
         self.color = str(c)
 
     def set_width(self, w):
+        """Set the stroke width in pixels (clamped to a 0.1 minimum)."""
         self._flush_path()
         self.width = max(0.1, float(w))
 
     def set_fill(self, c):
+        """Set the fill color used for closed shapes such as circles."""
         self.fill = str(c)
 
     def goto(self, x, y):
+        """Move the pen to absolute canvas coordinates ``(x, y)``.
+
+        When the pen is down, draws a straight line from the current
+        position to ``(x, y)``; otherwise flushes any active path and
+        teleports without drawing.
+        """
         if self.pen_down:
             if not self._current_path:
                 self._current_path.append((self.x, self.y))
@@ -125,6 +191,11 @@ class TurtleState:
         self.x, self.y = float(x), float(y)
 
     def draw_circle(self, r):
+        """Draw a circle of radius ``|r|`` centered at the current position.
+
+        Uses the current stroke (``color``/``width``) and ``fill``. The
+        turtle's position, heading, and pen state are unchanged.
+        """
         self._flush_path()
         self.elements.append(
             f'<circle cx="{self.x:.2f}" cy="{self.y:.2f}" r="{abs(float(r)):.2f}" '
@@ -132,14 +203,32 @@ class TurtleState:
         )
 
     def save(self):
+        """Push the current ``(x, y, heading)`` onto the position stack.
+
+        Pen state and styling are intentionally not saved; they persist
+        across save/restore so the caller can change colors mid-branch
+        in fractal recursion without surprises.
+        """
         self.pos_stack.append((self.x, self.y, self.heading))
 
     def restore(self):
+        """Pop the position stack and teleport back to that snapshot.
+
+        No-op when the stack is empty. Always flushes the current path
+        first so the popped position starts a fresh polyline.
+        """
         if self.pos_stack:
             self._flush_path()
             self.x, self.y, self.heading = self.pos_stack.pop()
 
     def to_svg(self):
+        """Render the accumulated drawing as a complete SVG document.
+
+        Flushes any pending polyline, then emits a root ``<svg>`` element
+        sized to the canvas with a background ``<rect>`` and one child
+        per draw operation. Calling this method does NOT clear state, so
+        it is safe to call multiple times (e.g. for snapshots).
+        """
         self._flush_path()
         lines = [
             f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -243,7 +332,19 @@ def print_gallery():
 # ---------------------------------------------------------------------------
 
 def inject_canvas_builtins(interpreter, turtle):
-    """Add turtle graphics built-in functions to a sauravcode interpreter."""
+    """Register turtle-graphics builtins on a sauravcode ``Interpreter``.
+
+    Each helper closes over the supplied ``turtle`` so multiple
+    interpreters can run in parallel with independent turtle state.
+    All builtins return ``0`` because the sauravcode parser expects a
+    numeric value from builtin calls; their effect is the side-effect
+    on the turtle.
+
+    Args:
+        interpreter: A ``saurav.Interpreter`` instance whose ``builtins``
+            dict will be augmented in-place.
+        turtle: A :class:`TurtleState` to receive the drawing commands.
+    """
 
     def _forward(args):
         turtle.forward(float(args[0]))
@@ -330,7 +431,13 @@ def inject_canvas_builtins(interpreter, turtle):
 
 
 def wrap_html(svg_str, title="sauravcanvas"):
-    """Wrap SVG in a minimal HTML viewer with zoom controls."""
+    """Wrap a raw ``<svg>`` string in a self-contained HTML viewer.
+
+    The viewer adds a dark theme, simple zoom in/out/reset controls and
+    a one-click "Download SVG" button. It has no external dependencies,
+    so the resulting file can be opened directly from disk or served
+    statically.
+    """
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -389,6 +496,12 @@ function downloadSVG() {{
 # ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point: parse args, run the .srv file, write SVG/HTML.
+
+    Exit status:
+        0 on success.
+        1 on missing/invalid input file or sauravcode runtime error.
+    """
     parser = argparse.ArgumentParser(
         description="Turtle graphics for sauravcode — generate SVG from .srv drawing programs"
     )
