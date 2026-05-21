@@ -335,11 +335,21 @@ class Smoker:
             if p.is_file():
                 yield p
 
+    # ---- weight resolution (shared by scan & recommend) ------------
+
+    def _resolved_weights(self) -> dict[str, int]:
+        """Catalogue defaults overlaid with any per-instance overrides."""
+        return {
+            **{fid: w for fid, (w, _) in FEATURE_CATALOGUE.items()},
+            **self.feature_weights,
+        }
+
+    # ---- scan --------------------------------------------------------
+
     def scan(self) -> list[SmokeCandidate]:
         """Discover and score every ``.srv`` file under ``root``."""
         cands: list[SmokeCandidate] = []
-        weights = {**{fid: w for fid, (w, _) in FEATURE_CATALOGUE.items()},
-                   **self.feature_weights}
+        weights = self._resolved_weights()
         root = Path(self.root)
         for path in self._iter_srv_files():
             try:
@@ -376,29 +386,48 @@ class Smoker:
            coverage per second* until coverage saturates or budget is hit.
         3. Tag the rest as P3 "duplicate coverage" - they're still listed if
            ``top`` allows, but only run if budget remains.
+
+        The three phases are factored out into ``_seed_p0_tests``,
+        ``_greedy_pick`` and ``_fill_p3_tail`` so each phase is
+        individually testable and the overall flow stays readable.
         """
         cands = self.scan()
-        weights = {**{fid: w for fid, (w, _) in FEATURE_CATALOGUE.items()},
-                   **self.feature_weights}
+        weights = self._resolved_weights()
         total_weight = sum(weights.get(f, 1) for f in FEATURE_CATALOGUE)
 
-        covered: set[str] = set()
-        picks: list[SmokePick] = []
-        used: set[str] = set()
-        spent = 0.0
+        state = _SlateState()
 
-        # ---- P0: tests first ---------------------------------------
-        tests = [c for c in cands if c.is_test]
-        tests.sort(key=lambda c: c.path)
-        for c in tests:
-            new = sorted(set(c.feature_ids) - covered)
-            covered.update(c.feature_ids)
-            spent += c.cost_seconds
-            picks.append(SmokePick(
+        self._seed_p0_tests(cands, state)
+        self._greedy_pick(cands, state, weights, budget_seconds, top)
+        self._fill_p3_tail(cands, state, budget_seconds, top)
+
+        covered_weight = sum(weights.get(f, 1) for f in state.covered)
+        return SmokeSlate(
+            root=str(self.root),
+            total_candidates=len(cands),
+            total_features_available=len(FEATURE_CATALOGUE),
+            picks=state.picks,
+            covered_features=sorted(state.covered),
+            uncovered_features=sorted(set(FEATURE_CATALOGUE) - state.covered),
+            estimated_seconds=round(state.spent, 2),
+            budget_seconds=budget_seconds,
+            coverage_score=(covered_weight / total_weight) if total_weight else 0.0,
+        )
+
+    # ---- recommend phases -------------------------------------------
+
+    @staticmethod
+    def _seed_p0_tests(
+        cands: list[SmokeCandidate], state: "_SlateState"
+    ) -> None:
+        """Phase 1: include every ``test_*.srv`` candidate as a P0 pick."""
+        for c in sorted((c for c in cands if c.is_test), key=lambda c: c.path):
+            new = sorted(set(c.feature_ids) - state.covered)
+            state.add(c, SmokePick(
                 path=c.path,
                 tier="P0",
                 new_features=new,
-                cumulative_features=len(covered),
+                cumulative_features=len(state.covered) + len(new),
                 cost_seconds=c.cost_seconds,
                 rationale=(
                     f"test file ({c.line_count} lines); "
@@ -406,48 +435,60 @@ class Smoker:
                        else "no new features but tests must run")
                 ),
             ))
-            used.add(c.path)
 
-        # ---- P1/P2: greedy weighted coverage ----------------------
-        remaining = [c for c in cands if c.path not in used]
+    @staticmethod
+    def _greedy_pick(
+        cands: list[SmokeCandidate],
+        state: "_SlateState",
+        weights: dict[str, int],
+        budget_seconds: float | None,
+        top: int | None,
+    ) -> None:
+        """Phase 2: greedily add the highest value-per-second pick.
 
-        def value(c: SmokeCandidate) -> float:
-            new = set(c.feature_ids) - covered
-            if not new:
-                return 0.0
-            w = sum(weights.get(f, 1) for f in new)
-            # Density: prefer small + high-coverage files
-            return w / max(c.cost_seconds, 0.1)
-
+        Value is *weighted new coverage* divided by cost (clamped so a
+        zero-cost file can't divide by zero). On the very first greedy
+        pick we accept a budget overshoot so an empty slate isn't left
+        with zero coverage; subsequent picks must fit the budget or look
+        for a cheaper alternative.
+        """
+        remaining = [c for c in cands if c.path not in state.used]
         first_greedy_pick = True
+
         while remaining:
-            # Stop early if we hit budget
-            if budget_seconds is not None and spent >= budget_seconds:
+            if budget_seconds is not None and state.spent >= budget_seconds:
                 break
-            # Sort by value, then by cost (ascending), then path (stable)
-            remaining.sort(key=lambda c: (-value(c), c.cost_seconds, c.path))
+            remaining.sort(
+                key=lambda c: (-_value(c, state.covered, weights),
+                               c.cost_seconds, c.path)
+            )
             best = remaining[0]
-            v = value(best)
-            if v <= 0:
-                break  # nothing left adds any new coverage
-            if budget_seconds is not None and \
-                    spent + best.cost_seconds > budget_seconds and not first_greedy_pick:
-                # Skip files that would blow the budget, try to find a cheaper one
-                cheaper = [c for c in remaining if value(c) > 0 and
-                           spent + c.cost_seconds <= budget_seconds]
+            if _value(best, state.covered, weights) <= 0:
+                break  # no remaining candidate adds new coverage
+
+            if (budget_seconds is not None
+                    and state.spent + best.cost_seconds > budget_seconds
+                    and not first_greedy_pick):
+                cheaper = [
+                    c for c in remaining
+                    if _value(c, state.covered, weights) > 0
+                    and state.spent + c.cost_seconds <= budget_seconds
+                ]
                 if not cheaper:
                     break
-                cheaper.sort(key=lambda c: (-value(c), c.cost_seconds, c.path))
+                cheaper.sort(
+                    key=lambda c: (-_value(c, state.covered, weights),
+                                   c.cost_seconds, c.path)
+                )
                 best = cheaper[0]
-            new = sorted(set(best.feature_ids) - covered)
-            covered.update(best.feature_ids)
-            spent += best.cost_seconds
+
+            new = sorted(set(best.feature_ids) - state.covered)
             tier = "P1" if len(new) >= 3 else "P2"
-            picks.append(SmokePick(
+            state.add(best, SmokePick(
                 path=best.path,
                 tier=tier,
                 new_features=new,
-                cumulative_features=len(covered),
+                cumulative_features=len(state.covered) + len(new),
                 cost_seconds=best.cost_seconds,
                 rationale=(
                     f"adds {len(new)} new feature(s): "
@@ -455,46 +496,78 @@ class Smoker:
                     + (" ..." if len(new) > 5 else "")
                 ),
             ))
-            used.add(best.path)
             remaining.remove(best)
             first_greedy_pick = False
 
-            if top is not None and len(picks) >= top:
+            if top is not None and len(state.picks) >= top:
                 break
 
-        # ---- P3: duplicate-coverage tail (only if top asks for more)
-        if top is not None and len(picks) < top:
-            tail = [c for c in cands if c.path not in used]
-            # Smallest first - they cost least to "fill" the slate
-            tail.sort(key=lambda c: (c.cost_seconds, c.path))
-            for c in tail:
-                if len(picks) >= top:
-                    break
-                if budget_seconds is not None and spent + c.cost_seconds > budget_seconds:
-                    continue
-                spent += c.cost_seconds
-                picks.append(SmokePick(
-                    path=c.path,
-                    tier="P3",
-                    new_features=[],
-                    cumulative_features=len(covered),
-                    cost_seconds=c.cost_seconds,
-                    rationale="duplicate coverage; runs only if budget allows",
-                ))
+    @staticmethod
+    def _fill_p3_tail(
+        cands: list[SmokeCandidate],
+        state: "_SlateState",
+        budget_seconds: float | None,
+        top: int | None,
+    ) -> None:
+        """Phase 3: pad the slate with duplicate-coverage P3 picks.
 
-        uncovered = sorted(set(FEATURE_CATALOGUE) - covered)
-        covered_weight = sum(weights.get(f, 1) for f in covered)
-        return SmokeSlate(
-            root=str(self.root),
-            total_candidates=len(cands),
-            total_features_available=len(FEATURE_CATALOGUE),
-            picks=picks,
-            covered_features=sorted(covered),
-            uncovered_features=uncovered,
-            estimated_seconds=round(spent, 2),
-            budget_seconds=budget_seconds,
-            coverage_score=(covered_weight / total_weight) if total_weight else 0.0,
+        Only triggered when the caller asked for a specific ``top`` count
+        and the useful coverage greedy phase didn't fill it.
+        """
+        if top is None or len(state.picks) >= top:
+            return
+        tail = sorted(
+            (c for c in cands if c.path not in state.used),
+            key=lambda c: (c.cost_seconds, c.path),
         )
+        for c in tail:
+            if len(state.picks) >= top:
+                break
+            if (budget_seconds is not None
+                    and state.spent + c.cost_seconds > budget_seconds):
+                continue
+            state.add(c, SmokePick(
+                path=c.path,
+                tier="P3",
+                new_features=[],
+                cumulative_features=len(state.covered),
+                cost_seconds=c.cost_seconds,
+                rationale="duplicate coverage; runs only if budget allows",
+            ))
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers for the recommend() algorithm
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _SlateState:
+    """Mutable bookkeeping shared across recommend()'s three phases."""
+
+    covered: set[str] = field(default_factory=set)
+    used: set[str] = field(default_factory=set)
+    picks: list[SmokePick] = field(default_factory=list)
+    spent: float = 0.0
+
+    def add(self, candidate: SmokeCandidate, pick: SmokePick) -> None:
+        self.covered.update(candidate.feature_ids)
+        self.used.add(candidate.path)
+        self.spent += candidate.cost_seconds
+        self.picks.append(pick)
+
+
+def _value(
+    candidate: SmokeCandidate,
+    covered: set[str],
+    weights: dict[str, int],
+) -> float:
+    """Weighted new-coverage density (per second) for the greedy phase."""
+    new = set(candidate.feature_ids) - covered
+    if not new:
+        return 0.0
+    w = sum(weights.get(f, 1) for f in new)
+    return w / max(candidate.cost_seconds, 0.1)
 
 
 # ---------------------------------------------------------------------------
