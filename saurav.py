@@ -4238,7 +4238,7 @@ class Interpreter:
         def _json_encode(args):
             interpreter._expect_args('json_encode', args, 1)
             try:
-                return _json.dumps(args[0])
+                return _json.dumps(interpreter._srv_to_json(args[0]))
             except (TypeError, ValueError) as e:
                 raise RuntimeError(f"json_encode: {e}")
 
@@ -4247,7 +4247,7 @@ class Interpreter:
             if not isinstance(args[0], str):
                 raise RuntimeError("json_decode: argument must be a string")
             try:
-                return _json.loads(args[0])
+                return interpreter._json_to_srv(_json.loads(args[0]))
             except _json.JSONDecodeError as e:
                 raise RuntimeError(f"json_decode: {e}")
 
@@ -4259,7 +4259,15 @@ class Interpreter:
             else:
                 raise RuntimeError("json_pretty: expected 1-2 arguments")
             try:
-                return _json.dumps(args[0], indent=indent, sort_keys=True)
+                # Route values through _srv_to_json so sauravcode numbers (stored
+                # internally as floats) serialize consistently with json_stringify
+                # (e.g. ``1.0`` -> ``1``). Without this, json_pretty would emit
+                # ``1.0`` while json_stringify emits ``1`` for the same input.
+                return _json.dumps(
+                    interpreter._srv_to_json(args[0]),
+                    indent=indent,
+                    sort_keys=True,
+                )
             except (TypeError, ValueError) as e:
                 raise RuntimeError(f"json_pretty: {e}")
 

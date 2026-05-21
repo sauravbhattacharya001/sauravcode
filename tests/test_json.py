@@ -73,6 +73,24 @@ class TestJsonPretty:
         assert '1,' in out
         assert '\n' in out
 
+    def test_list_whole_floats_become_ints(self):
+        # Regression: json_pretty used to emit ``1.0`` / ``2.0`` for sauravcode
+        # numbers because it bypassed _srv_to_json. It should now agree with
+        # json_stringify and serialize whole-valued numbers as integers.
+        out = run_srv('print json_pretty [1, 2]')
+        assert '1.0' not in out
+        assert '2.0' not in out
+        assert '1' in out and '2' in out
+
+    def test_map_whole_floats_become_ints(self):
+        out = run_srv('print json_pretty {"x": 1}')
+        assert '1.0' not in out
+        assert '"x": 1' in out
+
+    def test_preserves_fractional_numbers(self):
+        out = run_srv('print json_pretty {"pi": 3.14}')
+        assert '3.14' in out
+
 
 class TestJsonParse:
     def test_roundtrip_map(self):
