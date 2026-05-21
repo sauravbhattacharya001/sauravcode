@@ -423,7 +423,7 @@ def main():
         sys.exit(1)
 
     # Read source
-    with open(args.file, "r", encoding="utf-8") as f:
+    with open(args.file, encoding="utf-8") as f:
         source = f.read()
 
     # Parse

@@ -292,9 +292,9 @@ ALL_DETECTORS = [
 def scan_file(filepath):
     """Scan a single .srv file and return findings."""
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
-    except (IOError, OSError) as e:
+    except OSError as e:
         return [Finding("Scanner Error", "info", 0, str(e), "Check file permissions")]
 
     all_findings = []

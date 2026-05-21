@@ -267,7 +267,7 @@ def load_baselines():
     try:
         with open(path, encoding='utf-8') as f:
             return json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return {}
 
 

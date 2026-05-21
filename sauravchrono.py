@@ -407,7 +407,7 @@ def text_report(recorder, anomalies):
 
     if recorder._line_hits:
         top = recorder._line_hits.most_common(5)
-        print(f"\nHottest lines:")
+        print("\nHottest lines:")
         for line, count in top:
             src = recorder.lines[line - 1].strip() if line <= len(recorder.lines) else '?'
             print(f"  L{line} ({count}x): {src[:60]}")
@@ -546,7 +546,7 @@ def main():
         print(f"Error: file not found: {args.file}", file=sys.stderr)
         sys.exit(1)
 
-    with open(args.file, 'r', encoding='utf-8') as f:
+    with open(args.file, encoding='utf-8') as f:
         source = f.read()
 
     recorder = ChronoRecorder(source, limit=args.limit)

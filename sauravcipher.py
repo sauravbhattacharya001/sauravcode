@@ -427,7 +427,7 @@ def repl():
         elif cmd == 'help':
             print(REPL_HELP)
         elif cmd == 'ciphers':
-            print(f"\n  Available ciphers:")
+            print("\n  Available ciphers:")
             for name, info in CIPHERS.items():
                 print(f"    {name:<12} params: {info['params']:<25} ex: {info['example']}")
             print()

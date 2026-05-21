@@ -63,7 +63,8 @@ class DeadCodePass:
         findings = []
         in_block = False
         brace_depth = 0
-        dead_start = None
+        dead_keyword = ''
+        dead_depth = 0
 
         for i, raw in enumerate(lines, 1):
             stripped = raw.strip()
@@ -72,7 +73,6 @@ class DeadCodePass:
             if in_block:
                 if brace_depth < dead_depth:
                     in_block = False
-                    dead_start = None
                 else:
                     if stripped and not stripped.startswith('//') and stripped != '}':
                         findings.append(OptFinding(
@@ -87,7 +87,6 @@ class DeadCodePass:
                 dead_keyword = stripped.split()[0]
                 dead_depth = brace_depth
                 in_block = True
-                dead_start = i
 
         return findings
 
@@ -114,7 +113,6 @@ class ConstantFoldPass:
         the ``**`` (exponentiation) operator to prevent CPU-bound
         computation.  Results exceeding ``_MAX_MAGNITUDE`` are discarded.
         """
-        import ast
         try:
             # Only allow digits, basic operators (+,-,*,/), dots, spaces, parens.
             # Reject '**' (exponentiation) to prevent DoS via huge powers.
@@ -447,7 +445,7 @@ class AdaptiveOptimizer:
         low = sum(1 for f in self.findings if f.impact == 'low')
 
         print(f"\n{'='*60}")
-        print(f"  sauravadapt - Adaptive Optimizer Report")
+        print("  sauravadapt - Adaptive Optimizer Report")
         print(f"  File: {self.filename}")
         print(f"  Lines: {len(self.lines)}  |  Findings: {total}")
         print(f"{'='*60}\n")
@@ -632,7 +630,7 @@ def main():
         sys.exit(1)
 
     def run_once():
-        with open(args.file, 'r', encoding='utf-8') as fh:
+        with open(args.file, encoding='utf-8') as fh:
             source = fh.read()
 
         opt = AdaptiveOptimizer(source, args.file)

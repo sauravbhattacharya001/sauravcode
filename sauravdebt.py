@@ -42,14 +42,12 @@ import sys
 import os
 import re
 import json
-import math
 import time as _time
-import glob
 import hashlib
 import argparse
 from collections import defaultdict, Counter
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Set, Optional, Tuple, Any
+from dataclasses import dataclass, field
+from typing import List, Dict, Set, Optional, Tuple
 from datetime import datetime
 
 __version__ = "1.0.0"
@@ -264,7 +262,7 @@ def _detect_duplicated_blocks(funcs: List[dict], filepath: str) -> List[DebtItem
                     id="D002", name="Duplicated Code Block",
                     file=filepath, line=l1, severity="high", effort=3, impact=7,
                     description=f"Functions '{n1}' and '{n2}' have ~{int(_jaccard(t1, t2)*100)}% structural similarity.",
-                    suggestion=f"Extract shared logic into a common helper function.",
+                    suggestion="Extract shared logic into a common helper function.",
                 ))
     return items
 
@@ -534,9 +532,9 @@ def _detect_coupling_hotspots(funcs: List[dict], lines: List[str], filepath: str
 def scan_file(filepath: str) -> List[DebtItem]:
     """Run all 12 detectors on a single .srv file."""
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
+        with open(filepath, encoding="utf-8", errors="replace") as fh:
             content = fh.read()
-    except (IOError, OSError):
+    except OSError:
         return []
 
     lines = content.splitlines()
@@ -568,10 +566,10 @@ def scan_project(paths: List[str], recursive: bool = False) -> ScanResult:
 
     for fp in files:
         try:
-            with open(fp, "r", encoding="utf-8", errors="replace") as fh:
+            with open(fp, encoding="utf-8", errors="replace") as fh:
                 line_count = sum(1 for _ in fh)
             result.total_lines += line_count
-        except (IOError, OSError):
+        except OSError:
             pass
         result.items.extend(scan_file(fp))
 
@@ -604,9 +602,9 @@ def generate_payoff_plan(items: List[DebtItem]) -> Dict[str, List[DebtItem]]:
 def _load_history(history_file: str = HISTORY_FILE) -> List[dict]:
     if os.path.isfile(history_file):
         try:
-            with open(history_file, "r", encoding="utf-8") as fh:
+            with open(history_file, encoding="utf-8") as fh:
                 return json.load(fh)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             pass
     return []
 
@@ -682,9 +680,9 @@ def print_results(result: ScanResult, *, top: int = 0, severity: str = "",
         items = items[:top]
 
     print()
-    print(c.bold(f"  ╔══════════════════════════════════════════════════════╗"))
-    print(c.bold(f"  ║         sauravdebt — Technical Debt Tracker         ║"))
-    print(c.bold(f"  ╚══════════════════════════════════════════════════════╝"))
+    print(c.bold("  ╔══════════════════════════════════════════════════════╗"))
+    print(c.bold("  ║         sauravdebt — Technical Debt Tracker         ║"))
+    print(c.bold("  ╚══════════════════════════════════════════════════════╝"))
     print()
 
     score = result.debt_score
