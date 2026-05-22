@@ -46,7 +46,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import math
 import statistics
 import sys
 from dataclasses import dataclass, field, asdict

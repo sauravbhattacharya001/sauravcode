@@ -50,7 +50,7 @@ import datetime as _dt
 import json
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
@@ -425,7 +425,12 @@ class OnboardingAdvisor:
         self.goal = goal
         self.minutes_per_week = int(minutes_per_week)
         self.risk_appetite = risk_appetite
-        self._now_fn = now_fn or _dt.datetime.utcnow
+        # Use timezone-aware UTC now; ``utcnow`` is deprecated in 3.12+.
+        # We strip the tzinfo so the rendered isoformat stays compact
+        # (existing tests/snapshots expect a naive ISO string).
+        self._now_fn = now_fn or (
+            lambda: _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        )
 
     # ------------------------------------------------------------------
 
