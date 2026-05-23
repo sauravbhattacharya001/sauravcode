@@ -165,13 +165,21 @@ def _quick_lint_from_path(path: str) -> int:
         return 0
     warnings = 0
     for line in lines:
-        if line != line.rstrip():
+        # ``readlines()`` keeps the trailing newline, so we must strip
+        # the line ending *first* before checking for trailing
+        # whitespace - otherwise every non-empty line in a normal file
+        # is reported as having trailing whitespace.
+        body = line.rstrip("\n").rstrip("\r")
+        if body != body.rstrip():
             warnings += 1
-        if len(line) > 120:
+        # ``len(line)`` includes the newline; subtract it so the limit
+        # measures the visible width of the line.
+        if len(body) > 120:
             warnings += 1
         if _RE_TODO_MARKER.search(line):
             warnings += 1
-    if lines and lines[-1].strip():
+    if lines and lines[-1].strip() and not lines[-1].endswith("\n"):
+        # Last line has content but no trailing newline - POSIX warning.
         warnings += 1
     return warnings
 
