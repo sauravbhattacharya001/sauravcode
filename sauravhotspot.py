@@ -75,6 +75,14 @@ _SOURCE_EXTS = {
 }
 _RISK_APPETITES = ("cautious", "balanced", "aggressive")
 
+# Default exclude globs used when callers don't override them. Exposed as a
+# module-level constant so the CLI (and other callers) can extend it without
+# needing to instantiate a HotspotAdvisor just to read the defaults.
+DEFAULT_EXCLUDE_GLOBS: tuple[str, ...] = (
+    ".git/*", "node_modules/*", "dist/*", "build/*", "*.min.js",
+    "*.lock", "__pycache__/*",
+)
+
 # Verdicts (ordered, lowest risk first)
 V_UNTRACKED = "UNTRACKED"
 V_STABLE = "STABLE"
@@ -335,10 +343,7 @@ class HotspotAdvisor:
         self.top = int(top)
         self.risk_appetite = risk_appetite
         self.include_globs = tuple(include_globs) if include_globs else ()
-        self.exclude_globs = tuple(exclude_globs) if exclude_globs else (
-            ".git/*", "node_modules/*", "dist/*", "build/*", "*.min.js",
-            "*.lock", "__pycache__/*",
-        )
+        self.exclude_globs = tuple(exclude_globs) if exclude_globs else DEFAULT_EXCLUDE_GLOBS
         self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
 
     # ----- public entry point -----
@@ -402,28 +407,56 @@ class HotspotAdvisor:
         current_author: Optional[str] = None
         # Authors per file (use set, then collapse at end)
         authors: dict[str, set[str]] = {}
+        # ---- Perf: hoist invariants out of the hot loop ----
+        # ``now.timestamp()`` and a freshly-bound ``self._is_excluded`` were
+        # being recomputed/looked-up per diff line. For repos with tens of
+        # thousands of numstat rows this is the bulk of the work.
+        now_ts = now.timestamp()
+        lookback = self.lookback_days
+        is_excluded = self._is_excluded
+        # Memoize per-path filter decisions: exclusion + extension. Same path
+        # appears many times across commits, so caching dominates.
+        path_filter_cache: dict[str, bool] = {}
+        source_exts = _SOURCE_EXTS
+        fix_re_search = _FIX_RE.search
+        COMMIT_MARKER = "\x00COMMIT\x00"
         for raw in log.splitlines():
             line = raw.rstrip("\r")
-            if line.startswith("\x00COMMIT\x00"):
+            if line.startswith(COMMIT_MARKER):
                 _, _, sha, author, ts, *subj = line.split("\x00")
                 subject = subj[0] if subj else ""
-                current_is_fix = bool(_FIX_RE.search(subject))
+                current_is_fix = bool(fix_re_search(subject))
                 try:
                     current_ts = int(ts)
                 except ValueError:
                     current_ts = None
                 current_author = author or "?"
                 continue
-            if not line.strip():
+            if not line or not line.strip():
                 continue
             parts = line.split("\t")
             if len(parts) != 3:
                 continue
             ins_s, del_s, path = parts
-            if not path or self._is_excluded(path):
+            if not path:
                 continue
-            ext = Path(path).suffix.lower()
-            if ext and ext not in _SOURCE_EXTS:
+            keep = path_filter_cache.get(path)
+            if keep is None:
+                if is_excluded(path):
+                    keep = False
+                else:
+                    # Cheap suffix extraction without constructing a Path.
+                    dot = path.rfind(".")
+                    slash = max(path.rfind("/"), path.rfind("\\"))
+                    if dot > slash and dot != -1:
+                        ext = path[dot:].lower()
+                        keep = (not ext) or (ext in source_exts)
+                    else:
+                        # No extension - keep (matches old behavior where
+                        # Path(path).suffix returned "").
+                        keep = True
+                path_filter_cache[path] = keep
+            if not keep:
                 continue
             # binary diffs report "-"
             try:
@@ -431,22 +464,27 @@ class HotspotAdvisor:
                 dele = int(del_s) if del_s != "-" else 0
             except ValueError:
                 ins, dele = 0, 0
-            st = stats.setdefault(path, FileStats(path=path))
+            st = stats.get(path)
+            if st is None:
+                st = FileStats(path=path)
+                stats[path] = st
             st.commits += 1
             st.insertions += ins
             st.deletions += dele
             if current_is_fix:
                 st.fix_commits += 1
             if current_ts is not None:
-                age_days = (
-                    now.timestamp() - float(current_ts)
-                ) / 86400.0
+                age_days = (now_ts - float(current_ts)) / 86400.0
                 if st.last_change_days is None or age_days < st.last_change_days:
                     st.last_change_days = age_days
             if current_author:
-                authors.setdefault(path, set()).add(current_author)
+                author_set = authors.get(path)
+                if author_set is None:
+                    author_set = set()
+                    authors[path] = author_set
+                author_set.add(current_author)
         for path, st in stats.items():
-            st.distinct_authors = len(authors.get(path, set()))
+            st.distinct_authors = len(authors.get(path, ()))
             self._fill_file_metrics(st)
         return stats
 
@@ -837,8 +875,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = _build_arg_parser().parse_args(argv)
     excludes: Optional[list[str]] = None
     if args.exclude is not None:
-        # Start from defaults and extend
-        excludes = list(HotspotAdvisor(root=args.root).exclude_globs) + list(args.exclude)
+        # Start from defaults and extend. Use the module-level default tuple
+        # so we don't have to instantiate a throwaway HotspotAdvisor (which
+        # would resolve ``root`` and do extra work just to read constants).
+        excludes = list(DEFAULT_EXCLUDE_GLOBS) + list(args.exclude)
     advisor = HotspotAdvisor(
         root=args.root,
         lookback_days=args.lookback_days,
