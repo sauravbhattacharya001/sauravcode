@@ -143,6 +143,34 @@ class TestSliceErrors:
             run('x = true\nprint x[0:1]')
 
 
+class TestSliceBuiltinOnStrings:
+    """Test that the slice() builtin function works on strings, not just lists."""
+
+    def test_slice_string_basic(self):
+        out = run('print slice "hello world" 0 5')
+        assert out == 'hello'
+
+    def test_slice_string_from_middle(self):
+        out = run('print slice "abcdef" 2 4')
+        assert out == 'cd'
+
+    def test_slice_string_no_end(self):
+        out = run('print slice "hello" 3')
+        assert out == 'lo'
+
+    def test_slice_string_negative_start(self):
+        out = run('x = -3\nprint slice "world" (x)')
+        assert out == 'rld'
+
+    def test_slice_list_still_works(self):
+        out = run('print slice [10, 20, 30, 40] 1 3')
+        assert out == '[20, 30]'
+
+    def test_slice_non_collection_raises(self):
+        with pytest.raises(RuntimeError, match="list or string"):
+            run('slice 42 0 1')
+
+
 # ══════════════════════════════════════════════════════════════
 # Assert Statement
 # ══════════════════════════════════════════════════════════════

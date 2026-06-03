@@ -7851,15 +7851,15 @@ class Interpreter:
         return all(lst)
 
     def _builtin_slice(self, args):
-        """slice(list, start, end) -> sub-list from start to end (exclusive)."""
+        """slice(collection, start, end) -> sub-list/sub-string from start to end (exclusive)."""
         if len(args) < 2 or len(args) > 3:
-            raise RuntimeError("slice expects 2-3 arguments: slice list start [end]")
-        lst = args[0]
-        if not isinstance(lst, list):
-            raise RuntimeError("slice expects a list as first argument")
+            raise RuntimeError("slice expects 2-3 arguments: slice(collection, start[, end])")
+        col = args[0]
+        if not isinstance(col, (list, str)):
+            raise RuntimeError("slice expects a list or string as first argument")
         start = int(args[1])
-        end = len(lst) if len(args) < 3 else int(args[2])
-        return lst[start:end]
+        end = len(col) if len(args) < 3 else int(args[2])
+        return col[start:end]
 
     def _builtin_chunk(self, args):
         """chunk(list, size) -> split list into sub-lists of given size."""
