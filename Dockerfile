@@ -17,7 +17,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Build & test
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -44,7 +44,7 @@ RUN pip install --no-cache-dir .
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 LABEL maintainer="Saurav Bhattacharya <online.saurav@gmail.com>"
 LABEL org.opencontainers.image.title="sauravcode"
