@@ -17,7 +17,12 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Build & test
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS builder
+# PYTHON_TAG is the single source of truth for the base image in BOTH stages.
+# Keeping the builder and runtime on the same tag is what lets the runtime
+# stage copy /usr/local wholesale below (see the COPY note in stage 2) without
+# hard-coding a python3.X site-packages path. Bump this one ARG to upgrade.
+ARG PYTHON_TAG=3.14-slim
+FROM python:${PYTHON_TAG} AS builder
 
 WORKDIR /app
 
@@ -44,7 +49,10 @@ RUN pip install --no-cache-dir .
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim
+# Re-declare the ARG so it is in scope after the first FROM, and reuse the same
+# tag as the builder so the copied /usr/local matches the interpreter ABI.
+ARG PYTHON_TAG=3.14-slim
+FROM python:${PYTHON_TAG}
 
 LABEL maintainer="Saurav Bhattacharya <online.saurav@gmail.com>"
 LABEL org.opencontainers.image.title="sauravcode"
@@ -59,10 +67,15 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Copy installed Python packages from builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin/sauravcode /usr/local/bin/sauravcode
-COPY --from=builder /usr/local/bin/sauravcode-compile /usr/local/bin/sauravcode-compile
+# Copy the whole /usr/local from the builder. This grabs the installed
+# site-packages (under lib/pythonX.Y/) AND the generated console-scripts
+# (bin/sauravcode, bin/sauravcode-compile) in one shot, without hard-coding the
+# Python minor version. The previous version pinned `python3.12/site-packages`,
+# which silently broke the runtime image whenever the base tag was bumped
+# (e.g. 3.12 -> 3.14): the path no longer existed and the COPY failed with
+# "/usr/local/lib/python3.12/site-packages: not found". Because builder and
+# runtime share PYTHON_TAG, /usr/local is ABI-compatible across the copy.
+COPY --from=builder /usr/local /usr/local
 
 # Copy the standalone scripts (interpreter + compiler)
 COPY saurav.py sauravcc.py ./
