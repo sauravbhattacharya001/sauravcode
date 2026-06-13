@@ -134,14 +134,23 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # Scan by immutable digest (same value cosign/attestation use), not a
+          # tag. The metadata-action emits a SHORT-sha tag (type=sha,prefix=),
+          # so referencing ${{ github.sha }} (the full 40-char SHA) pointed at a
+          # tag that was never pushed and Trivy failed with MANIFEST_UNKNOWN,
+          # which then took down the whole Docker job even though the image
+          # built, pushed and signed fine. The digest can't drift.
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
 
       - name: Upload Trivy scan results to GitHub Security tab
-        if: github.event_name != 'pull_request' && always()
+        # Only upload when the scan actually produced a report; hashFiles is ''
+        # (falsy) when the SARIF is missing, so a scanner hiccup no longer fails
+        # the pipeline after the image has already been published.
+        if: github.event_name != 'pull_request' && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
